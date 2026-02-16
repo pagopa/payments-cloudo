@@ -776,11 +776,7 @@ def Trigger(
 
     if not schema_entity:
         if monitor_condition and severity:
-            log_msg = (
-                "routed: Alarm detected\n\n"
-                f"{json.dumps(json.loads(resource_info.get('_raw')), ensure_ascii=False, indent=2) or '{}'}\n\n"
-                "ALARM -> ROUTED"
-            )
+            log_msg = "ALARM -> ROUTED (No runbook found)"
             payload_for_status = {
                 "requestedAt": requested_at,
                 "id": "NaN",
@@ -837,6 +833,43 @@ def Trigger(
         monitor_condition=monitor_condition,
         severity=severity,
     )
+
+    if not schema.enabled:
+        log_msg = f"RUNBOOK DISABLED -> ROUTED ({schema.id})"
+        payload_for_status = {
+            "requestedAt": requested_at,
+            "id": schema.id,
+            "name": schema.name or resource_name or "",
+            "exec_id": exec_id,
+            "runbook": schema.runbook or "alarm routed",
+            "run_args": schema.run_args,
+            "worker": schema.worker,
+            "oncall": schema.oncall,
+            "monitor_condition": monitor_condition or "",
+            "severity": severity or "",
+            "resource_info": resource_info if "resource_info" in locals() else {},
+            "routing_info": routing_info if "routing_info" in locals() else {},
+        }
+        cloudo_notification_q.set(
+            _post_status(payload_for_status, status="routed", log_message=log_msg)
+        )
+        return func.HttpResponse(
+            json.dumps(
+                {
+                    "routed": (
+                        f"Runbook {schema.id} is disabled.\n "
+                        "(This execution has been ROUTED)"
+                    )
+                },
+                ensure_ascii=False,
+            ),
+            status_code=200,
+            mimetype="application/json",
+            headers={
+                "Access-Control-Allow-Origin": "*",
+            },
+        )
+
     try:
         # Approval-required path: create pending with signed URL embedding resource_info and function key
         if schema.require_approval:
@@ -2197,7 +2230,7 @@ def Receiver(msg: func.QueueMessage, log_table: func.Out[str]) -> None:
                 ],
             },
             "opsgenie": {
-                "message": f"[{body.get('id')}] [{body.get('severity')}] {body.get('name')}",
+                "message": f"[{status_label.upper()}] [{body.get('id')}] [{body.get('severity')}] {body.get('name')}",
                 "priority": f"P{int(str(body.get('severity') or '').strip().lower().replace('sev', '') or '4') + 1}",
                 "alias": body.get("id"),
                 "monitor_condition": body.get("monitor_condition") or "",

@@ -45,6 +45,16 @@ COPY --from=builder /app/public ./public
 COPY --from=builder --chown=nextjs:nodejs /app/.next/standalone ./
 COPY --from=builder --chown=nextjs:nodejs /app/.next/static ./.next/static
 
+# Check if server.js is in a subdirectory and move it to /app if necessary
+# This happens when the project is not in the root of the builder WORKDIR
+RUN if [ ! -f server.js ]; then \
+    find . -name server.js -type f | grep -q "." && \
+    SERVER_PATH=$(find . -name server.js -type f | head -n 1) && \
+    DIR_PATH=$(dirname $SERVER_PATH) && \
+    cp -r $DIR_PATH/. ./ && \
+    rm -rf $DIR_PATH; \
+    fi
+
 USER nextjs
 
 EXPOSE 3000

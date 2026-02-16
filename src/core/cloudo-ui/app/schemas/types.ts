@@ -11,6 +11,7 @@ export interface Schema {
   worker: string;
   oncall: string;
   require_approval: boolean;
+  enabled?: boolean;
   severity?: string;
   monitor_condition?: string;
   tags?: string;
