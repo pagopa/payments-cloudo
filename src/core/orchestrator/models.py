@@ -18,6 +18,7 @@ class Schema:
     monitor_condition: Optional[str] = None
     severity: Optional[str] = None
     require_approval: bool = False
+    enabled: bool = True
     tags: Optional[list] = ""
 
     def __post_init__(self):
@@ -41,4 +42,5 @@ class Schema:
         self.require_approval = (
             str(e.get("require_approval", "false")).strip().lower() == "true"
         )
+        self.enabled = str(e.get("enabled", "true")).strip().lower() == "true"
         self.tags = (e.get("tags") or "").strip() or ""

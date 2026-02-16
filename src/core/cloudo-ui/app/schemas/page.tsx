@@ -24,6 +24,7 @@ import {
   HiOutlineEye,
   HiOutlineViewGrid,
   HiOutlineViewList,
+  HiOutlineBan,
 } from "react-icons/hi";
 import { MdOutlineSchema } from "react-icons/md";
 import { SiTerraform } from "react-icons/si";
@@ -49,6 +50,9 @@ export default function SchemasPage() {
   const [oncallFilter, setOncallFilter] = useState<
     "all" | "active" | "inactive"
   >("all");
+  const [enabledFilter, setEnabledFilter] = useState<
+    "all" | "enabled" | "disabled"
+  >("all");
   const [tagFilter, setTagFilter] = useState("all");
 
   const [copiedId, setCopiedId] = useState<string | null>(null);
@@ -66,6 +70,7 @@ export default function SchemasPage() {
         if (filters.workerFilter) setWorkerFilter(filters.workerFilter);
         if (filters.approvalFilter) setApprovalFilter(filters.approvalFilter);
         if (filters.oncallFilter) setOncallFilter(filters.oncallFilter);
+        if (filters.enabledFilter) setEnabledFilter(filters.enabledFilter);
         if (filters.tagFilter) setTagFilter(filters.tagFilter);
         if (filters.viewMode) setViewMode(filters.viewMode);
       } catch (e) {
@@ -85,6 +90,7 @@ export default function SchemasPage() {
       workerFilter,
       approvalFilter,
       oncallFilter,
+      enabledFilter,
       tagFilter,
       viewMode,
     };
@@ -95,6 +101,7 @@ export default function SchemasPage() {
     workerFilter,
     approvalFilter,
     oncallFilter,
+    enabledFilter,
     tagFilter,
     viewMode,
     isInitialized,
@@ -107,6 +114,7 @@ export default function SchemasPage() {
   const [schemaToDelete, setSchemaToDelete] = useState<Schema | null>(null);
   const [confirmRunId, setConfirmRunId] = useState<string | null>(null);
   const [executingId, setExecutingId] = useState<string | null>(null);
+  const [togglingId, setTogglingId] = useState<string | null>(null);
   const [notifications, setNotifications] = useState<Notification[]>([]);
   const [user, setUser] = useState<{ role: string } | null>(null);
 
@@ -239,6 +247,45 @@ export default function SchemasPage() {
     }
   };
 
+  const handleToggleSchema = async (schema: Schema) => {
+    setTogglingId(schema.id);
+    try {
+      const updatedSchema = {
+        ...schema,
+        enabled: schema.enabled === false,
+      };
+
+      const res = await cloudoFetch(`/schemas`, {
+        method: "PUT",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          ...updatedSchema,
+          PartitionKey: schema.PartitionKey || "RunbookSchema",
+          RowKey: schema.RowKey || schema.id,
+        }),
+      });
+
+      if (res.ok) {
+        addNotification(
+          "success",
+          `Runbook ${schema.id} ${
+            updatedSchema.enabled ? "enabled" : "disabled"
+          }`,
+        );
+        fetchSchemas();
+      } else {
+        const d = await res.json();
+        addNotification("error", d.error || "Operation failed");
+      }
+    } catch {
+      addNotification("error", "Network error");
+    } finally {
+      setTogglingId(null);
+    }
+  };
+
   const fetchRunbookContent = async (runbook: string) => {
     setFetchingRunbook(true);
     setRunbookContent(null);
@@ -293,6 +340,11 @@ export default function SchemasPage() {
         (oncallFilter === "active" && s.oncall === "true") ||
         (oncallFilter === "inactive" && s.oncall !== "true");
 
+      const matchesEnabled =
+        enabledFilter === "all" ||
+        (enabledFilter === "enabled" && s.enabled !== false) ||
+        (enabledFilter === "disabled" && s.enabled === false);
+
       const matchesTag =
         tagFilter === "all" ||
         (s.tags &&
@@ -307,6 +359,7 @@ export default function SchemasPage() {
         matchesWorker &&
         matchesApproval &&
         matchesOncall &&
+        matchesEnabled &&
         matchesTag
       );
     });
@@ -317,6 +370,7 @@ export default function SchemasPage() {
     workerFilter,
     approvalFilter,
     oncallFilter,
+    enabledFilter,
     tagFilter,
   ]);
 
@@ -347,6 +401,7 @@ export default function SchemasPage() {
       total: schemas.length,
       approvalRequired: schemas.filter((s) => s.require_approval).length,
       onCall: schemas.filter((s) => s.oncall === "true").length,
+      disabled: schemas.filter((s) => s.enabled === false).length,
     };
   }, [schemas]);
 
@@ -469,6 +524,8 @@ export default function SchemasPage() {
               setApprovalFilter={setApprovalFilter}
               oncallFilter={oncallFilter}
               setOncallFilter={setOncallFilter}
+              enabledFilter={enabledFilter}
+              setEnabledFilter={setEnabledFilter}
               tagFilter={tagFilter}
               setTagFilter={setTagFilter}
               availableWorkers={availableWorkers}
@@ -521,7 +578,7 @@ export default function SchemasPage() {
       <div className="flex-1 overflow-auto p-8 space-y-8">
         <div className="max-w-[1600px] mx-auto space-y-8">
           {/* Statistics Grid */}
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
             <StatSmall
               title="Total Assets"
               value={stats.total}
@@ -541,6 +598,13 @@ export default function SchemasPage() {
               icon={<HiOutlineUserGroup />}
               label="CRITICAL_PATH"
               color="text-cloudo-accent"
+            />
+            <StatSmall
+              title="Disabled"
+              value={stats.disabled}
+              icon={<HiOutlineBan />}
+              label="INACTIVE_RUNBOOKS"
+              color="text-cloudo-err"
             />
           </div>
 
@@ -563,8 +627,10 @@ export default function SchemasPage() {
                   copiedId={copiedId}
                   confirmRunId={confirmRunId}
                   executingId={executingId}
+                  togglingId={togglingId}
                   onCopyId={copyToClipboard}
                   onRun={handleRun}
+                  onToggle={handleToggleSchema}
                   onConfirmRun={setConfirmRunId}
                   onViewSource={fetchRunbookContent}
                   onEdit={(s) => {
@@ -591,8 +657,10 @@ export default function SchemasPage() {
               copiedId={copiedId}
               confirmRunId={confirmRunId}
               executingId={executingId}
+              togglingId={togglingId}
               onCopyId={copyToClipboard}
               onRun={handleRun}
+              onToggle={handleToggleSchema}
               onConfirmRun={setConfirmRunId}
               onViewSource={fetchRunbookContent}
               onEdit={(s) => {

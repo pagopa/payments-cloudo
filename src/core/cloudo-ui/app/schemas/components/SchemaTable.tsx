@@ -24,8 +24,10 @@ interface SchemaTableProps {
   copiedId: string | null;
   confirmRunId: string | null;
   executingId: string | null;
+  togglingId?: string | null;
   onCopyId: (id: string) => void;
   onRun: (id: string) => void;
+  onToggle?: (schema: Schema) => void;
   onConfirmRun: (id: string | null) => void;
   onViewSource: (runbook: string) => void;
   onEdit: (schema: Schema) => void;
@@ -39,8 +41,10 @@ export function SchemaTable({
   copiedId,
   confirmRunId,
   executingId,
+  togglingId,
   onCopyId,
   onRun,
+  onToggle,
   onConfirmRun,
   onViewSource,
   onEdit,
@@ -153,7 +157,33 @@ export function SchemaTable({
                   className="hover:bg-cloudo-accent/[0.02] transition-colors group"
                 >
                   <td className="px-6 py-4 whitespace-nowrap">
-                    <div className="flex gap-1.5">
+                    <div className="flex gap-1.5 items-center">
+                      <button
+                        onClick={() => onToggle && onToggle(schema)}
+                        disabled={togglingId === schema.id}
+                        className={`p-1 border transition-all ${
+                          schema.enabled !== false
+                            ? "bg-cloudo-ok/5 border-cloudo-ok/30 text-cloudo-ok hover:border-cloudo-ok/50"
+                            : "bg-cloudo-accent/10 border-cloudo-border text-cloudo-muted hover:border-white/20"
+                        } ${
+                          togglingId === schema.id
+                            ? "opacity-50 cursor-wait"
+                            : ""
+                        }`}
+                        title={
+                          schema.enabled !== false
+                            ? "Disable Runbook"
+                            : "Enable Runbook"
+                        }
+                      >
+                        {togglingId === schema.id ? (
+                          <HiOutlineRefresh className="w-3.5 h-3.5 animate-spin" />
+                        ) : schema.enabled !== false ? (
+                          <HiOutlineCheck className="w-3.5 h-3.5" />
+                        ) : (
+                          <HiOutlineCheck className="w-3.5 h-3.5 opacity-20" />
+                        )}
+                      </button>
                       <div
                         title={
                           schema.require_approval

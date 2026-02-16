@@ -102,29 +102,99 @@ def send_opsgenie_alert(
 
 
 def format_opsgenie_description(exec_id: str, resource_info: dict, api_body) -> str:
-    sep = "—" * 64
-
     raw_val = resource_info.get("_raw") or ""
+    alert_data = {}
     try:
-        raw_pretty = json.dumps(json.loads(raw_val), indent=2, ensure_ascii=False)
+        alert_data = json.loads(raw_val)
     except Exception:
-        raw_pretty = str(raw_val)
+        pass
 
     if isinstance(api_body, (dict, list)):
         result_text = json.dumps(api_body, indent=2, ensure_ascii=False)
     else:
         result_text = str(api_body)
 
+    # Extract key fields for a user-friendly summary
+    summary_parts = []
+    resource_details = []
+    try:
+        data = alert_data.get("data", {})
+        essentials = data.get("essentials", {})
+        context = data.get("alertContext", {})
+        labels = context.get("labels", {})
+
+        alert_name = essentials.get("alertRule") or labels.get("alertname")
+        severity = essentials.get("severity")
+        monitor_condition = essentials.get("monitorCondition")
+
+        if alert_name:
+            summary_parts.append(f"🚨 Alert: {alert_name}")
+        if severity:
+            summary_parts.append(f"📊 Severity: {severity}")
+        if monitor_condition:
+            summary_parts.append(f"🔍 Condition: {monitor_condition}")
+
+        cluster = labels.get("cluster")
+        namespace = labels.get("namespace")
+        deployment = labels.get("deployment")
+
+        if cluster:
+            summary_parts.append(f"🏗️ Cluster: {cluster}")
+        if namespace and namespace != "nonamespace":
+            summary_parts.append(f"📦 Namespace: {namespace}")
+        if deployment:
+            summary_parts.append(f"🚀 Deployment: {deployment}")
+
+        # Build Resource Info list from available fields
+        field_mapping = {
+            "resource_name": "Resource Name",
+            "resource_rg": "Resource Group",
+            "resource_id": "Resource ID",
+            "aks_namespace": "AKS Namespace",
+            "aks_pod": "AKS Pod",
+            "aks_deployment": "AKS Deployment",
+            "aks_job": "AKS Job",
+            "aks_horizontalpodautoscaler": "AKS HPA",
+            "team": "Team",
+        }
+
+        for key, label in field_mapping.items():
+            val = resource_info.get(key)
+            if val and str(val).lower() != "nonamespace":
+                resource_details.append(f"- {label}: `{val}`")
+
+    except Exception as e:
+        logging.debug(f"Could not extract summary fields: {e}")
+
+    summary_section = ""
+    if summary_parts:
+        summary_section = "### SUMMARY\n" + "\n".join(summary_parts) + "\n\n"
+
+    resource_section = ""
+    if resource_details:
+        resource_section = (
+            "#### 📋 RESOURCE INFO\n" + "\n".join(resource_details) + "\n\n"
+        )
+
+    raw_json_block = ""
+    if raw_val:
+        try:
+            pretty_json = json.dumps(alert_data, indent=2, ensure_ascii=False)
+            raw_json_block = (
+                f"\n\n---\n#### 📄 RAW ALARM DATA\n```json\n{pretty_json}\n```"
+            )
+        except Exception:
+            raw_json_block = f"\n\n---\n#### 📄 RAW ALARM DATA\n```\n{raw_val}\n```"
+
     return (
-        f"{sep}\n"
-        f"Alarm content (JSON)\n"
-        f"{sep}\n"
-        f"{raw_pretty}\n"
-        f"\n"
-        f"{sep}\n"
-        f"Execution result for {exec_id}\n"
-        f"{sep}\n"
-        f"{result_text}"
+        f"{summary_section}"
+        f"{resource_section}"
+        f"#### ⚙️ EXECUTION RESULT\n"
+        f"ExecID: `{exec_id}`\n"
+        f"```\n"
+        f"{result_text}\n"
+        f"```"
+        f"{raw_json_block}"
     )
 
 

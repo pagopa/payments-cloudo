@@ -11,6 +11,7 @@ import {
   HiOutlinePencil,
   HiOutlineEye,
   HiOutlineTrash,
+  HiOutlineBan,
 } from "react-icons/hi";
 import { SiTerraform } from "react-icons/si";
 import { Schema } from "../types";
@@ -22,8 +23,10 @@ interface SchemaCardProps {
   copiedId: string | null;
   confirmRunId: string | null;
   executingId: string | null;
+  togglingId?: string | null;
   onCopyId: (id: string) => void;
   onRun: (id: string) => void;
+  onToggle?: (schema: Schema) => void;
   onConfirmRun: (id: string | null) => void;
   onViewSource: (runbook: string) => void;
   onEdit: (schema: Schema) => void;
@@ -37,8 +40,10 @@ export function SchemaCard({
   copiedId,
   confirmRunId,
   executingId,
+  togglingId,
   onCopyId,
   onRun,
+  onToggle,
   onConfirmRun,
   onViewSource,
   onEdit,
@@ -61,6 +66,25 @@ export function SchemaCard({
             {schema.name}
           </h3>
           <div className="flex flex-wrap items-center gap-1.5 shrink-0">
+            <div
+              title={
+                schema.enabled === false
+                  ? "Runbook Disabled"
+                  : "Runbook Enabled"
+              }
+              className={`px-1.5 py-0.5 text-[9px] font-black uppercase border flex items-center gap-1 ${
+                schema.enabled === false
+                  ? "bg-cloudo-err/5 border-cloudo-err/30 text-cloudo-err"
+                  : "bg-cloudo-ok/5 border-cloudo-ok/30 text-cloudo-ok"
+              }`}
+            >
+              {schema.enabled === false ? (
+                <HiOutlineBan className="w-3 h-3" />
+              ) : (
+                <HiOutlineCheck className="w-3 h-3" />
+              )}
+              {schema.enabled === false ? "Disabled" : "Enabled"}
+            </div>
             <div
               title={
                 schema.require_approval
@@ -185,6 +209,36 @@ export function SchemaCard({
       {/* Card Actions */}
       <div className="p-4 border-t border-cloudo-border bg-cloudo-accent/[0.02] flex items-center justify-between gap-3">
         <div className="flex items-center gap-2">
+          {!isViewer && (
+            <div className="relative group/run">
+              <button
+                onClick={() => onToggle && onToggle(schema)}
+                disabled={togglingId === schema.id}
+                className={`p-2.5 border transition-all ${
+                  schema.enabled !== false
+                    ? "bg-cloudo-accent/10 border-cloudo-border text-cloudo-ok hover:border-cloudo-ok/40"
+                    : "bg-cloudo-accent/10 border-cloudo-border text-cloudo-muted hover:border-white/20"
+                } ${togglingId === schema.id ? "opacity-50 cursor-wait" : ""} ${
+                  userRole !== "ADMIN" && userRole !== "OPERATOR"
+                    ? "hidden"
+                    : ""
+                }`}
+                title={
+                  schema.enabled !== false
+                    ? "Disable Runbook"
+                    : "Enable Runbook"
+                }
+              >
+                {togglingId === schema.id ? (
+                  <HiOutlineRefresh className="w-4 h-4 animate-spin" />
+                ) : schema.enabled !== false ? (
+                  <HiOutlineBan className="w-4 h-4" />
+                ) : (
+                  <HiOutlineCheck className="w-4 h-4" />
+                )}
+              </button>
+            </div>
+          )}
           {!isViewer && (
             <div className="relative group/run">
               <button

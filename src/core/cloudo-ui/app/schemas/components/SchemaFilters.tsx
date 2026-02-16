@@ -13,6 +13,8 @@ interface SchemaFiltersProps {
   setApprovalFilter: (filter: "all" | "required" | "auto") => void;
   oncallFilter: "all" | "active" | "inactive";
   setOncallFilter: (filter: "all" | "active" | "inactive") => void;
+  enabledFilter: "all" | "enabled" | "disabled";
+  setEnabledFilter: (filter: "all" | "enabled" | "disabled") => void;
   tagFilter: string;
   setTagFilter: (tag: string) => void;
   availableWorkers: string[];
@@ -30,6 +32,8 @@ export function SchemaFilters({
   setApprovalFilter,
   oncallFilter,
   setOncallFilter,
+  enabledFilter,
+  setEnabledFilter,
   tagFilter,
   setTagFilter,
   availableWorkers,
@@ -41,6 +45,7 @@ export function SchemaFilters({
     workerFilter !== "all" ||
     approvalFilter !== "all" ||
     oncallFilter !== "all" ||
+    enabledFilter !== "all" ||
     tagFilter !== "all";
 
   const clearFilters = () => {
@@ -49,6 +54,7 @@ export function SchemaFilters({
     setWorkerFilter("all");
     setApprovalFilter("all");
     setOncallFilter("all");
+    setEnabledFilter("all");
     setTagFilter("all");
   };
 
@@ -141,6 +147,24 @@ export function SchemaFilters({
             <option value="all">ALL_FLOWS</option>
             <option value="active">CRITICAL_ONLY</option>
             <option value="inactive">STANDARD_ONLY</option>
+          </select>
+        </div>
+
+        {/* Enabled Filter */}
+        <div className="flex items-center gap-2">
+          <span className="text-[10px] font-black uppercase tracking-widest text-cloudo-muted">
+            Status:
+          </span>
+          <select
+            value={enabledFilter}
+            onChange={(e) =>
+              setEnabledFilter(e.target.value as "all" | "enabled" | "disabled")
+            }
+            className="bg-cloudo-dark border border-cloudo-border text-cloudo-text text-[10px] font-black px-2 py-1 outline-none focus:border-cloudo-accent/50 transition-colors"
+          >
+            <option value="all">ALL_STATUS</option>
+            <option value="enabled">ENABLED_ONLY</option>
+            <option value="disabled">DISABLED_ONLY</option>
           </select>
         </div>
 

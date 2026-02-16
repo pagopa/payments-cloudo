@@ -16,7 +16,7 @@ services:
     platform: linux/amd64
     build:
       context: src/core/cloudo-ui
-      dockerfile: Dockerfile
+      dockerfile: Dockerfile.frontend
     ports:
       - "3000:3000"
     environment:
