@@ -231,7 +231,7 @@ def _clean_path(p: Optional[str]) -> Optional[str]:
     return s
 
 
-def _run_aks_login(resource_info: dict, payload: dict = None) -> str:
+def _run_aks_login(resource_info: dict, payload: dict = None, env: dict = None) -> str:
     """
     Runs the local AKS login script:
       src/core/worker/utils/aks-login.sh <rg> <name> <namespace>
@@ -239,6 +239,9 @@ def _run_aks_login(resource_info: dict, payload: dict = None) -> str:
     Streams stdout lines to Receiver if payload is provided.
     """
     import tempfile
+
+    if env is None:
+        env = os.environ.copy()
 
     if isinstance(resource_info, str):
         try:
@@ -282,6 +285,7 @@ def _run_aks_login(resource_info: dict, payload: dict = None) -> str:
             text=True,
             bufsize=1,
             universal_newlines=True,
+            env=env,
         )
 
         collected_stdout = []
@@ -319,6 +323,7 @@ def _run_script(
     monitor_condition: Optional[str] = "",
     payload: Optional[dict] = None,
     kubeconfig_path: Optional[str] = None,
+    env: Optional[dict] = None,
 ) -> Optional[CompletedProcess[str]]:
     """Run the requested script fetching it from Blob Storage, falling back to the local folder, then GitHub."""
     tmp_path: Optional[str] = None
@@ -330,20 +335,22 @@ def _run_script(
     def to_str(x) -> str:
         return "" if x is None else str(x)
 
-    # Setting MONITOR_CONDITION env VAR
-    os.environ["MONITOR_CONDITION"] = to_str(monitor_condition)
-
     # ClouDO Execution Standard Variables
+    if env is None:
+        env = os.environ.copy()
+
+    env["MONITOR_CONDITION"] = to_str(monitor_condition)
+
     if payload:
-        os.environ["CLOUDO_PAYLOAD"] = json.dumps(payload)
-        os.environ["CLOUDO_EXEC_ID"] = to_str(payload.get("exec_id"))
-        os.environ["CLOUDO_REQUESTED_AT"] = to_str(
+        env["CLOUDO_PAYLOAD"] = json.dumps(payload)
+        env["CLOUDO_EXEC_ID"] = to_str(payload.get("exec_id"))
+        env["CLOUDO_REQUESTED_AT"] = to_str(
             payload.get("requestedAt") or payload.get("requested_at")
         )
-        os.environ["CLOUDO_NAME"] = to_str(payload.get("name"))
-        os.environ["CLOUDO_RUNBOOK"] = to_str(payload.get("runbook"))
-        os.environ["CLOUDO_WORKER"] = to_str(payload.get("worker"))
-        os.environ["CLOUDO_ONCALL"] = to_str(payload.get("oncall")).lower()
+        env["CLOUDO_NAME"] = to_str(payload.get("name"))
+        env["CLOUDO_RUNBOOK"] = to_str(payload.get("runbook"))
+        env["CLOUDO_WORKER"] = to_str(payload.get("worker"))
+        env["CLOUDO_ONCALL"] = to_str(payload.get("oncall")).lower()
 
     TERMINATED_CODES = {-signal.SIGTERM} if hasattr(signal, "SIGTERM") else set()
 
@@ -364,14 +371,14 @@ def _run_script(
         info = normalize_aks_info(resource_info)
         logging.debug(f"AKS info: {info}")
 
-        os.environ["RESOURCE_NAME"] = to_str(info.get("resource_name"))
-        os.environ["RESOURCE_RG"] = to_str(info.get("resource_rg"))
-        os.environ["RESOURCE_ID"] = to_str(info.get("resource_id"))
-        os.environ["AKS_NAMESPACE"] = to_str(info.get("aks_namespace"))
-        os.environ["AKS_POD"] = to_str(info.get("aks_pod"))
-        os.environ["AKS_DEPLOYMENT"] = to_str(info.get("aks_deployment"))
-        os.environ["AKS_JOB"] = to_str(info.get("aks_job"))
-        os.environ["AKS_HPA"] = to_str(info.get("aks_horizontalpodautoscaler"))
+        env["RESOURCE_NAME"] = to_str(info.get("resource_name"))
+        env["RESOURCE_RG"] = to_str(info.get("resource_rg"))
+        env["RESOURCE_ID"] = to_str(info.get("resource_id"))
+        env["AKS_NAMESPACE"] = to_str(info.get("aks_namespace"))
+        env["AKS_POD"] = to_str(info.get("aks_pod"))
+        env["AKS_DEPLOYMENT"] = to_str(info.get("aks_deployment"))
+        env["AKS_JOB"] = to_str(info.get("aks_job"))
+        env["AKS_HPA"] = to_str(info.get("aks_horizontalpodautoscaler"))
     except Exception as e:
         logging.warning("AKS set env failed: %s", e)
 
@@ -410,7 +417,7 @@ def _run_script(
         if run_args is not None:
             cmd = cmd + shlex.split(run_args)
 
-        script_env = get_sanitized_env(os.environ.copy())
+        script_env = get_sanitized_env(env)
         if kubeconfig_path:
             script_env["KUBECONFIG"] = kubeconfig_path
 
@@ -546,6 +553,9 @@ def process_runbook(
         )
     )
 
+    # Local environment to avoid race conditions in multithreading
+    env = os.environ.copy()
+
     try:
         info_raw = payload.get("resource_info")
         info: dict = {}
@@ -565,7 +575,7 @@ def process_runbook(
         kubeconfig_path = None
         if info and has_valid_ns:
             try:
-                kubeconfig_path = _run_aks_login(info, payload)
+                kubeconfig_path = _run_aks_login(info, payload, env=env)
                 logging.info(f"[{exec_id}] AKS login completed successfully")
             except Exception as e:
                 # Report error and stop processing
@@ -586,6 +596,7 @@ def process_runbook(
             monitor_condition=payload.get("monitor_condition"),
             payload=payload,
             kubeconfig_path=kubeconfig_path,
+            env=env,
         )
         stopped = False
         try:
