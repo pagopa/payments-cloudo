@@ -415,7 +415,7 @@ function LogsPanelContent() {
             <div className="flex items-center gap-3 shrink-0">
               <HiOutlineDatabase className="text-cloudo-accent w-5 h-5 shrink-0" />
               <h2 className="text-sm font-black uppercase tracking-[0.2em] text-cloudo-text truncate">
-                Log Explorer
+                Executions Explorer
               </h2>
             </div>
             <button
@@ -572,7 +572,7 @@ function LogsPanelContent() {
                 </div>
               </div>
 
-              <div className="flex-1 min-w-[180px] h-10 flex flex-col justify-end">
+              <div className="flex-[2] min-w-[180px] h-12 flex flex-col justify-end">
                 <button
                   onClick={() => runQuery()}
                   disabled={loading}
@@ -580,11 +580,11 @@ function LogsPanelContent() {
                   onKeyDown={handleKeyDown}
                 >
                   {loading ? (
-                    <HiOutlineRefresh className="animate-spin w-3.5 h-3.5" />
+                    <HiOutlineRefresh className="animate-spin w-4.5 h-4.5" />
                   ) : (
-                    <HiOutlineFilter className="w-3.5 h-3.5" />
+                    <HiOutlineFilter className="w-4.5 h-4.5" />
                   )}
-                  {loading ? "Executing..." : "Run Diagnostics"}
+                  {loading ? "Executing..." : "search // reload"}
                 </button>
               </div>
             </div>

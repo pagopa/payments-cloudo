@@ -697,6 +697,32 @@ def Trigger(
             headers={"Access-Control-Allow-Origin": "*"},
         )
 
+    from azure.data.tables import TableClient
+
+    # Fetch settings from Table Storage
+    conn_str = os.environ.get(STORAGE_CONN)
+    table_client = TableClient.from_connection_string(
+        conn_str, table_name=TABLE_SETTINGS
+    )
+
+    try:
+        # Get SLACK_TOKEN_DEFAULT and SLACK_CHANNEL from GlobalConfig
+        token_entity = table_client.get_entity(
+            partition_key="GlobalConfig", row_key="SLACK_TOKEN_DEFAULT"
+        )
+        token = token_entity.get("value", "").strip()
+
+        channel_entity = table_client.get_entity(
+            partition_key="GlobalConfig", row_key="SLACK_CHANNEL"
+        )
+        channel = channel_entity.get("value", "").strip() or "#cloudo-test"
+    except Exception as e:
+        logging.warning(
+            f"Failed to fetch Slack settings from Table Storage, falling back to ENV: {e}"
+        )
+        token = (os.environ.get("SLACK_TOKEN_DEFAULT") or "").strip()
+        channel = (os.environ.get("SLACK_CHANNEL") or "").strip() or "#cloudo-test"
+
     # Resolve schema_id from route first; fallback to query/body (alertId/schemaId)
     if (req.params.get("id")) is not None:
         schema_id = detection.extract_schema_id_from_req(req)
@@ -704,9 +730,11 @@ def Trigger(
         routing_info = {
             "team": route_params.get("team") or "",
             "slack_token": req.params.get("slack_token")
-            or resolve_slack_token(route_params.get("team") or ""),
+            or resolve_slack_token(route_params.get("team") or "")
+            or token,
             "slack_channel": req.params.get("slack_channel")
-            or (os.environ.get("SLACK_CHANNEL") or "#cloudo-test").strip(),
+            or (os.environ.get("SLACK_CHANNEL") or "#cloudo-test").strip()
+            or channel,
             "opsgenie_token": req.params.get("opsgenie_api_key")
             or resolve_opsgenie_apikey(route_params.get("team") or ""),
         }
@@ -744,9 +772,11 @@ def Trigger(
         routing_info = {
             "team": route_params.get("team") or "",
             "slack_token": req.params.get("slack_token")
-            or resolve_slack_token(route_params.get("team") or ""),
+            or resolve_slack_token(route_params.get("team") or "")
+            or token,
             "slack_channel": req.params.get("slack_channel")
-            or (os.environ.get("SLACK_CHANNEL") or "#cloudo-test").strip(),
+            or (os.environ.get("SLACK_CHANNEL") or "#cloudo-test").strip()
+            or channel,
             "opsgenie_token": req.params.get("opsgenie_api_key")
             or resolve_opsgenie_apikey(route_params.get("team") or ""),
         }

@@ -607,6 +607,14 @@ export default function StudioPage() {
                   desc="Horizontal Pod Autoscaler (se presente)."
                 />
                 <VarItem
+                  name="CLOUDO_ENVIRONMENT"
+                  desc="L'environment di riferimento cloudo (dev, uat, prod)."
+                />
+                <VarItem
+                  name="CLOUDO_ENVIRONMENT_SHORT"
+                  desc="L'environment di riferimento cloudo abbreviato (d, u, p)."
+                />
+                <VarItem
                   name="CLOUDO_PAYLOAD"
                   desc="L'intero payload JSON originale."
                 />
@@ -761,7 +769,7 @@ function VarItem({ name, desc }: { name: string; desc: string }) {
   return (
     <div className="flex flex-col gap-0.5 border-b border-cloudo-border/20 pb-2">
       <code className="text-cloudo-accent text-[11px] font-black">{name}</code>
-      <span className="text-[10px] text-cloudo-muted opacity-60 uppercase tracking-tighter">
+      <span className="text-[10px] text-cloudo-muted opacity-60 tracking-tighter">
         {desc}
       </span>
     </div>

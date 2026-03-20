@@ -161,6 +161,7 @@ module "cloudo_worker" {
     "ORCHESTRATOR_URL"                    = "https://${module.cloudo_orchestrator.default_hostname}/api/workers/register"
     "CLOUDO_SECRET_KEY"                   = random_password.internal_auth_token.result
     "WORKER_CAPABILITY"                   = each.value
+    "CLOUDO_ENVIRONMENT"                  = var.env
   }
 
   docker_image             = var.workers_config.image_name

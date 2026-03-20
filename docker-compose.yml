@@ -86,6 +86,7 @@ services:
       - QUEUE_NAME=local
       - WORKER_CAPABILITY=local
       - WEBSITE_SITE_NAME=worker-local
+      - CLOUDO_ENVIRONMENT=dev
     volumes:
       - ./src/runbooks:/work/runbooks:ro
       - ./src/core/worker:/home/site/wwwroot/
@@ -116,6 +117,7 @@ services:
       - QUEUE_NAME=alert
       - WORKER_CAPABILITY=alert
       - WEBSITE_SITE_NAME=worker-alert
+      - CLOUDO_ENVIRONMENT=dev
     volumes:
       - ./src/runbooks:/work/runbooks:ro
       - ./src/core/worker:/home/site/wwwroot/
