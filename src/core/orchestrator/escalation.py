@@ -242,7 +242,9 @@ def send_slack_execution(
     except SlackApiError as e:
         error_code = e.response.get("error")
         # Log the full error for debugging
-        logging.error(f"Slack API Error: {error_code}. Response: {e.response}")
+        logging.error(
+            f"[{channel}] Slack API Error: {error_code}. Response: {e.response}"
+        )
 
         # Fallback if blocks are invalid
         if error_code == "invalid_blocks" and blocks:

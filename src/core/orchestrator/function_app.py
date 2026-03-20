@@ -733,8 +733,8 @@ def Trigger(
             or resolve_slack_token(route_params.get("team") or "")
             or token,
             "slack_channel": req.params.get("slack_channel")
-            or (os.environ.get("SLACK_CHANNEL") or "#cloudo-test").strip()
-            or channel,
+            or channel
+            or (os.environ.get("SLACK_CHANNEL") or "#cloudo-test").strip(),
             "opsgenie_token": req.params.get("opsgenie_api_key")
             or resolve_opsgenie_apikey(route_params.get("team") or ""),
         }
@@ -775,8 +775,8 @@ def Trigger(
             or resolve_slack_token(route_params.get("team") or "")
             or token,
             "slack_channel": req.params.get("slack_channel")
-            or (os.environ.get("SLACK_CHANNEL") or "#cloudo-test").strip()
-            or channel,
+            or channel
+            or (os.environ.get("SLACK_CHANNEL") or "#cloudo-test").strip(),
             "opsgenie_token": req.params.get("opsgenie_api_key")
             or resolve_opsgenie_apikey(route_params.get("team") or ""),
         }
