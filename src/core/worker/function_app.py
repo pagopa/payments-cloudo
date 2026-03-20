@@ -340,6 +340,8 @@ def _run_script(
         env = os.environ.copy()
 
     env["MONITOR_CONDITION"] = to_str(monitor_condition)
+    env["CLOUDO_ENVIRONMENT"] = os.getenv("CLOUDO_ENVIRONMENT", "unknown")
+    env["CLOUDO_ENVIRONMENT_SHORT"] = os.getenv("CLOUDO_ENVIRONMENT", "0")[0]
 
     if payload:
         env["CLOUDO_PAYLOAD"] = json.dumps(payload)

@@ -8,6 +8,9 @@ azure-mgmt-compute
 azure-mgmt-storage
 azure-mgmt-resource
 azure-keyvault-secrets
+azure-mgmt-subscription
 azure-storage-blob
 azure-cli
 azure-identity
+azure-monitor-query
+slack-sdk==3.36.0
