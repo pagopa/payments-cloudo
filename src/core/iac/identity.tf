@@ -70,5 +70,6 @@ resource "azurerm_key_vault_access_policy" "key_vault_reader" {
 
   secret_permissions = [
     "Get",
+    "List"
   ]
 }
