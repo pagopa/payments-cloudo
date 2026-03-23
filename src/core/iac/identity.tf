@@ -59,3 +59,17 @@ resource "azurerm_role_assignment" "role_assignment" {
     azurerm_user_assigned_identity.identity.principal_id
   )
 }
+
+resource "azurerm_key_vault_access_policy" "key_vault_reader" {
+  for_each = {
+    for vault in data.azurerm_key_vault.key_vaults : vault.name => vault
+  }
+  key_vault_id = each.value.id
+  object_id    = azurerm_user_assigned_identity.identity.principal_id
+  tenant_id    = azurerm_user_assigned_identity.identity.tenant_id
+
+  secret_permissions = [
+    "Get",
+    "List"
+  ]
+}

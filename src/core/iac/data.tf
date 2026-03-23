@@ -1,8 +1,3 @@
-# Key vault
-# data "azurerm_key_vault" "kv" {
-#   name                = var.key_vault.name
-#   resource_group_name = var.key_vault.resource_group
-# }
 
 # App Insights
 data "azurerm_application_insights" "this" {
@@ -35,4 +30,12 @@ resource "random_password" "admin_password" {
 # Private DNS Zone
 data "azurerm_private_dns_zone" "this" {
   name = var.private_endpoint_dns_zone_name
+}
+
+data "azurerm_key_vault" "key_vaults" {
+  for_each = {
+    for vault in var.key_vaults_integration : vault.name => vault
+  }
+  name                = each.value.name
+  resource_group_name = each.value.resource_group
 }
