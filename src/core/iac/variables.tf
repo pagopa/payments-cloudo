@@ -180,6 +180,15 @@ variable "workers_config" {
 #   description = "(Required) The SKU for the plan. (Default: B1)"
 # }
 
+variable "key_vaults_integration" {
+  type = object({
+    name           = optional(string)
+    resource_group = optional(string)
+  })
+  default     = {}
+  description = "List of key vaults to integrate on data reader RBAC Role."
+}
+
 variable "slack_integration" {
   description = "(Optional) Configuration for Slack integration including the authentication token and target channel. If not provided, Slack integration will be disabled."
   type = object({
