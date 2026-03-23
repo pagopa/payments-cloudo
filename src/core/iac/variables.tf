@@ -181,10 +181,10 @@ variable "workers_config" {
 # }
 
 variable "key_vaults_integration" {
-  type = object({
+  type = map(object({
     name           = optional(string)
     resource_group = optional(string)
-  })
+  }))
   default     = {}
   description = "List of key vaults to integrate on data reader RBAC Role."
 }
