@@ -34,7 +34,7 @@ data "azurerm_private_dns_zone" "this" {
 
 data "azurerm_key_vault" "key_vaults" {
   for_each = {
-    for vault in var.key_vaults_integration : vault.name => vault
+    for vault in var.key_vaults_integration : vault.key => vault
   }
   name                = each.value.name
   resource_group_name = each.value.resource_group
