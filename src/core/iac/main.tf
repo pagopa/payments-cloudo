@@ -162,6 +162,7 @@ module "cloudo_worker" {
     "CLOUDO_SECRET_KEY"                   = random_password.internal_auth_token.result
     "WORKER_CAPABILITY"                   = each.value
     "CLOUDO_ENVIRONMENT"                  = var.env
+    "CLOUDO_ENVIRONMENT_SHORT"            = substr(var.env, 0, 1)
   }
 
   docker_image             = var.workers_config.image_name
