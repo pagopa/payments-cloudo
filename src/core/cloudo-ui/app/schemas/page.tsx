@@ -398,7 +398,7 @@ export default function SchemasPage() {
   }, [filteredSchemas, currentPage, pageSize]);
 
   const stats = useMemo(() => {
-    const isTrue = (val: any) => String(val) === "true" || val === true;
+    const isTrue = (val: string) => String(val) === "true" || val === true;
 
     return {
       total: schemas.length,
