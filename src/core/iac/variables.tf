@@ -37,6 +37,23 @@ variable "application_insights_rg" {
 variable "schemas" {
   description = "The name of the Storage Table for runbook schemas."
   type        = string
+  validation {
+    condition = alltrue([
+      for k, v in jsondecode(var.schemas) : (
+        length(setsubtract(keys(v), ["partition_key", "entity"])) == 0 &&
+
+        alltrue([
+          for item in v.entity : (
+            length(setsubtract(keys(item), [
+              "id", "name", "description", "runbook", "run_args", "worker", "oncall", "require_approval"
+            ])) == 0 &&
+            item.id != "" && item.name != "" && item.runbook && item.worker
+          )
+        ])
+      )
+    ])
+    error_message = "The schema contains invalid keys or empty required fields (id, name, runbook, worker)."
+  }
 }
 
 variable "subscription_id" {
