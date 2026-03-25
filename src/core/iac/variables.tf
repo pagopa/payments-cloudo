@@ -48,8 +48,8 @@ variable "schemas" {
               "id", "name", "description", "runbook", "run_args", "worker", "oncall", "tags", "require_approval"
             ])) == 0 &&
             item.id != "" && item.name != "" && item.runbook != "" && item.worker != "" &&
-            can(item.oncall) && isbool(item.oncall) &&
-            can(item.require_approval) && isbool(item.require_approval)
+            contains([true, false], lookup(item, "oncall", "")) &&
+            contains([true, false], lookup(item, "require_approval", ""))
           )
         ])
       )
