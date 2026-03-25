@@ -47,7 +47,7 @@ variable "schemas" {
             length(setsubtract(keys(item), [
               "id", "name", "description", "runbook", "run_args", "worker", "oncall", "require_approval"
             ])) == 0 &&
-            item.id != "" && item.name != "" && item.runbook && item.worker
+            item.id != "" && item.name != "" && item.runbook != "" && item.worker != ""
           )
         ])
       )
