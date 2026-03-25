@@ -286,7 +286,7 @@ export function SchemaForm({
         </div>
         <div
           className={`w-5 h-5 border flex items-center justify-center transition-all ${
-            formData.require_approval
+            formData.require_approval == true
               ? "bg-cloudo-accent border-cloudo-accent text-cloudo-dark"
               : "border-cloudo-border"
           }`}

@@ -87,12 +87,12 @@ export function SchemaCard({
             </div>
             <div
               title={
-                schema.require_approval
+                [true, "true"].includes(schema.require_approval as any)
                   ? "Approval Gate Active"
                   : "Auto-Execute"
               }
               className={`px-1.5 py-0.5 text-[9px] font-black uppercase border flex items-center gap-1 ${
-                schema.require_approval
+                [true, "true"].includes(schema.require_approval as any)
                   ? "bg-cloudo-warn/5 border-cloudo-warn/30 text-cloudo-warn"
                   : "bg-cloudo-ok/5 border-cloudo-ok/30 text-cloudo-ok"
               }`}
