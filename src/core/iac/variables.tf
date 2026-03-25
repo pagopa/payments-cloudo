@@ -45,7 +45,7 @@ variable "schemas" {
         alltrue([
           for item in v.entity : (
             length(setsubtract(keys(item), [
-              "id", "name", "description", "runbook", "run_args", "worker", "oncall", "require_approval"
+              "id", "name", "description", "runbook", "run_args", "worker", "oncall", "tags"
             ])) == 0 &&
             item.id != "" && item.name != "" && item.runbook != "" && item.worker != ""
           )
