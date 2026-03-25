@@ -332,8 +332,9 @@ export default function SchemasPage() {
 
       const matchesApproval =
         approvalFilter === "all" ||
-        (approvalFilter === "required" && s.require_approval) ||
-        (approvalFilter === "auto" && !s.require_approval);
+        (approvalFilter === "required" &&
+          String(s.require_approval) === "true") ||
+        (approvalFilter === "auto" && String(s.require_approval) !== "true");
 
       const matchesOncall =
         oncallFilter === "all" ||
@@ -397,10 +398,16 @@ export default function SchemasPage() {
   }, [filteredSchemas, currentPage, pageSize]);
 
   const stats = useMemo(() => {
+    const isTrue = (val: string | boolean | undefined | null): boolean => {
+      if (typeof val === "boolean") return val;
+      return val === "true";
+    };
+
     return {
       total: schemas.length,
-      approvalRequired: schemas.filter((s) => s.require_approval).length,
-      onCall: schemas.filter((s) => s.oncall === "true").length,
+      approvalRequired: schemas.filter((s) => isTrue(s.require_approval))
+        .length,
+      onCall: schemas.filter((s) => isTrue(s.oncall)).length,
       disabled: schemas.filter((s) => s.enabled === false).length,
     };
   }, [schemas]);

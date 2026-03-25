@@ -186,12 +186,12 @@ export function SchemaTable({
                       </button>
                       <div
                         title={
-                          schema.require_approval
+                          String(schema.require_approval) === "true"
                             ? "Approval Gate Active"
                             : "Auto-Execute"
                         }
                         className={`p-1 border ${
-                          schema.require_approval
+                          String(schema.require_approval) === "true"
                             ? "bg-cloudo-warn/5 border-cloudo-warn/30 text-cloudo-warn"
                             : "bg-cloudo-ok/5 border-cloudo-ok/30 text-cloudo-ok"
                         }`}

@@ -87,18 +87,18 @@ export function SchemaCard({
             </div>
             <div
               title={
-                schema.require_approval
+                String(schema.require_approval) === "true"
                   ? "Approval Gate Active"
                   : "Auto-Execute"
               }
               className={`px-1.5 py-0.5 text-[9px] font-black uppercase border flex items-center gap-1 ${
-                schema.require_approval
+                String(schema.require_approval) === "true"
                   ? "bg-cloudo-warn/5 border-cloudo-warn/30 text-cloudo-warn"
                   : "bg-cloudo-ok/5 border-cloudo-ok/30 text-cloudo-ok"
               }`}
             >
               <HiOutlineShieldCheck className="w-3 h-3" />
-              {schema.require_approval ? "Gate" : "Auto"}
+              {String(schema.require_approval) === "true" ? "Gate" : "Auto"}
             </div>
             {schema.oncall === "true" && (
               <div className="px-1.5 py-0.5 text-[9px] font-black uppercase border bg-cloudo-accent/10 border-cloudo-accent/40 text-cloudo-accent flex items-center gap-1">
