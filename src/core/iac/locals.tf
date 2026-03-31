@@ -23,7 +23,7 @@ locals {
     },
     {
       ROUTING_RULES = local.routing_rules_json_from_object
-    }
+    },
   )
 
 }

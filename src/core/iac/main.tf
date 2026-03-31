@@ -39,6 +39,7 @@ module "cloudo_orchestrator" {
       "APPROVAL_SECRET"                     = var.approval_runbook.secret
       "CLOUDO_SECRET_KEY"                   = random_password.internal_auth_token.result
       "NEXTJS_URL"                          = "${var.prefix}-cloudo-ui.azurewebsites.net"
+      "FEATURE_DEV"                         = var.env == "dev" ? "true" : "false"
     },
     local.orchestrator_smart_routing_app_settings
   )
@@ -96,6 +97,7 @@ module "cloudo_ui" {
     "CLOUDO_KEY"                          = random_password.internal_auth_token.result
     "GOOGLE_CLIENT_ID"                    = var.cloudo_google_sso_integration_client_id
     "WEBSITES_ENABLE_APP_SERVICE_STORAGE" = false
+    "FEATURE_DEV"                         = var.env == "dev" ? "true" : "false"
   }
 
   docker_image             = var.ui_image.image_name
@@ -163,6 +165,7 @@ module "cloudo_worker" {
     "WORKER_CAPABILITY"                   = each.value
     "CLOUDO_ENVIRONMENT"                  = var.env
     "CLOUDO_ENVIRONMENT_SHORT"            = substr(var.env, 0, 1)
+    "FEATURE_DEV"                         = var.env == "dev" ? "true" : "false"
   }
 
   docker_image             = var.workers_config.image_name
