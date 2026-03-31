@@ -51,6 +51,10 @@ def parse_resource_fields(req: func.HttpRequest) -> dict[str, Any]:
         lower = lower_keys(data)
     except ValueError:
         lower = {}
+    except AttributeError as e:
+        logging.warning("Failed to parse JSON body: %s - Fallback on req", e)
+        data = req or {}
+        lower = lower_keys(data)
 
     e = lower.get("data", {}) or {}
     essentials = e.get("essentials", {}) or {}
@@ -191,15 +195,20 @@ def extract_schema_id_from_req(req: func.HttpRequest) -> Optional[list[str]]:
 
     candidates: list[str] = []
 
-    q_id = req.params.get("id")
-    if q_id:
-        logging.info("Resolving schema_id: %s", q_id)
-        candidates.append(normalize(q_id))
-        return candidates
+    try:
+        q_id = req.params.get("id")
+        if q_id:
+            logging.info("Resolving schema_id: %s", q_id)
+            candidates.append(normalize(q_id))
+            return candidates
+    except Exception as e:
+        logging.warning("Error parsing id query parameters: %s", e)
 
     try:
         body = req.get_json()
         logging.info("body: %s", body)
+    except AttributeError:
+        body = req
     except ValueError:
         body = None
 
