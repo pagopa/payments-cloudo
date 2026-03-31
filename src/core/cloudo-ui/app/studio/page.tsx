@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef, ChangeEvent } from "react";
 import {
   HiOutlineCode,
   HiOutlineTerminal,
@@ -20,6 +20,23 @@ import {
   HiOutlineExclamationCircle,
   HiOutlineCheckCircle,
 } from "react-icons/hi";
+import {
+  HiOutlineCodeBracket,
+  HiOutlineRocketLaunch,
+  HiOutlineDocumentArrowUp,
+  HiOutlineArrowsRightLeft,
+} from "react-icons/hi2";
+import { cloudoFetch } from "@/lib/api";
+import {
+  IconLabel,
+  SectionHeader,
+  FormField,
+  CollapsibleSection,
+  IconBox,
+  InfoGrid,
+  ResizeHandle,
+  TruncatedText,
+} from "./components";
 
 const TEMPLATES = [
   {
@@ -135,6 +152,15 @@ export default function StudioPage() {
   const [notifications, setNotifications] = useState<
     { id: string; type: "success" | "error"; message: string }[]
   >([]);
+  const [isTestModalOpen, setIsTestModalOpen] = useState(false);
+  const [isFeatureDevEnabled, setIsFeatureDevEnabled] = useState(false);
+  const [modalWidth, setModalWidth] = useState(1200); // Default width in pixels
+  const [modalHeight, setModalHeight] = useState(700); // Default height in pixels
+
+  const handleTestSuccess = (msg: string) => {
+    addNotification("success", msg);
+    setIsTestModalOpen(false);
+  };
 
   // Payload Simulator State
   const [payloadInput, setPayloadInput] = useState(
@@ -171,6 +197,44 @@ export default function StudioPage() {
   const [runArgsInput, setRunArgsInput] = useState("--verbose --timeout 30");
   const [parsedEnv, setParsedEnv] = useState<Record<string, string>>({});
 
+  // Fetch feature flag for dev test run
+  useEffect(() => {
+    const checkFeatureFlag = async () => {
+      try {
+        const response = await cloudoFetch("/api/features");
+        if (response.ok) {
+          const data = await response.json();
+          setIsFeatureDevEnabled(data.FEATURE_DEV === true);
+        }
+      } catch (error) {
+        console.error("Failed to fetch feature flag:", error);
+      }
+    };
+    checkFeatureFlag();
+  }, []);
+
+  const createResizeHandler =
+    (onResize: (dx: number, dy: number) => void) =>
+    (e: React.MouseEvent<HTMLDivElement>) => {
+      e.preventDefault();
+      const startX = e.clientX;
+      const startY = e.clientY;
+
+      const handleMouseMove = (moveEvent: MouseEvent) => {
+        const dx = moveEvent.clientX - startX;
+        const dy = moveEvent.clientY - startY;
+        onResize(dx, dy);
+      };
+
+      const handleMouseUp = () => {
+        document.removeEventListener("mousemove", handleMouseMove);
+        document.removeEventListener("mouseup", handleMouseUp);
+      };
+
+      document.addEventListener("mousemove", handleMouseMove);
+      document.addEventListener("mouseup", handleMouseUp);
+    };
+
   useEffect(() => {
     try {
       const parsed = JSON.parse(payloadInput);
@@ -192,7 +256,7 @@ export default function StudioPage() {
       const labels = getLower(ctx, "labels") || {};
       const annotations = getLower(ctx, "annotations") || {};
 
-      // 1. Resolve Resource ID
+      // Resolve Resource ID
       let resource_id: string | null = null;
       const candidates: string[] = [];
 
@@ -210,7 +274,7 @@ export default function StudioPage() {
       resource_id =
         candidates.find((x) => x.startsWith("/subscriptions/")) || null;
 
-      // 2. Resolve RG and Name
+      // Resolve RG and Name
       let resource_group: string | null = null;
       let resource_name: string | null = null;
 
@@ -244,7 +308,7 @@ export default function StudioPage() {
       if (resource_group) env["RESOURCE_RG"] = resource_group;
       if (resource_name) env["RESOURCE_NAME"] = resource_name;
 
-      // 3. Kubernetes fields
+      // Kubernetes fields
       const namespace =
         getLower(labels, "namespace") ||
         getLower(labels, "kubernetes_namespace") ||
@@ -359,12 +423,25 @@ export default function StudioPage() {
           </div>
           <div>
             <h1 className="text-sm font-black tracking-[0.2em] text-cloudo-text uppercase">
-              Developer Runbook Guide
+              Developer Runbook Studio
             </h1>
             <p className="text-[11px] text-cloudo-muted font-bold uppercase tracking-[0.3em] opacity-70">
               Technical Documentation // HANDBOOK_MODE_ACTIVE
             </p>
           </div>
+        </div>
+        <div className="flex items-center gap-6">
+          {isFeatureDevEnabled && (
+            <div className="relative group">
+              <button
+                onClick={() => setIsTestModalOpen(true)}
+                className="btn btn-primary h-10 px-4 flex items-center gap-2 group"
+              >
+                <HiOutlineRocketLaunch className="w-4 h-4 transition-transform" />
+                Test Runbook
+              </button>
+            </div>
+          )}
         </div>
       </div>
 
@@ -573,21 +650,18 @@ export default function StudioPage() {
               <div className="grid grid-cols-2 gap-x-12 gap-y-4 mt-4">
                 <VarItem
                   name="RESOURCE_ID"
-                  desc="ID risorsa Azure (/subscriptions/...)"
+                  desc="Azure resource ID (/subscriptions/...)"
                 />
                 <VarItem
                   name="RESOURCE_RG"
-                  desc="Resource Group della risorsa."
+                  desc="Resource Group of the resource."
                 />
-                <VarItem
-                  name="RESOURCE_NAME"
-                  desc="Nome finale della risorsa."
-                />
+                <VarItem name="RESOURCE_NAME" desc="Final resource name." />
                 <VarItem
                   name="MONITOR_CONDITION"
-                  desc="Stato allarme (Fired/Resolved)."
+                  desc="Alert state (Fired/Resolved)."
                 />
-                <VarItem name="SEVERITY" desc="Livello di gravità (Sev0-4)." />
+                <VarItem name="SEVERITY" desc="Severity level (Sev0-4)." />
                 <VarItem
                   name="SCHEMA_ID // ALERT_ID"
                   desc="Identificativo dello schema di allarme."
@@ -729,6 +803,66 @@ export default function StudioPage() {
           </div>
         ))}
       </div>
+      {isTestModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-cloudo-bg/80 backdrop-blur-sm p-4">
+          <div
+            className="relative bg-cloudo-panel border border-cloudo-border shadow-2xl overflow-hidden flex flex-col"
+            style={{
+              width: `${modalWidth}px`,
+              height: `${modalHeight}px`,
+              minWidth: "800px",
+              minHeight: "500px",
+            }}
+          >
+            {/* Modal Header */}
+            <div className="px-8 py-4 border-b border-cloudo-border bg-cloudo-accent/5 flex justify-between items-center flex-shrink-0">
+              <h2 className="text-xs font-black uppercase tracking-[0.3em] text-cloudo-accent">
+                Script Debugger // Live_Test_Environment
+              </h2>
+              <button
+                onClick={() => setIsTestModalOpen(false)}
+                className="text-cloudo-muted hover:text-cloudo-text transition-colors"
+              >
+                ✕
+              </button>
+            </div>
+
+            {/* Modal Content - scrollable */}
+            <div className="flex-1 overflow-y-auto">
+              <TestScriptForm
+                onSuccess={handleTestSuccess}
+                onCancel={() => setIsTestModalOpen(false)}
+                onError={(err: string) => addNotification("error", err)}
+              />
+            </div>
+
+            <ResizeHandle
+              direction="e"
+              onResize={createResizeHandler((dx) => {
+                setModalWidth(Math.max(800, modalWidth + dx));
+              })}
+              title="Drag to resize width"
+            />
+
+            <ResizeHandle
+              direction="s"
+              onResize={createResizeHandler((_, dy) => {
+                setModalHeight(Math.max(500, modalHeight + dy));
+              })}
+              title="Drag to resize height"
+            />
+
+            <ResizeHandle
+              direction="se"
+              onResize={createResizeHandler((dx, dy) => {
+                setModalWidth(Math.max(800, modalWidth + dx));
+                setModalHeight(Math.max(500, modalHeight + dy));
+              })}
+              title="Drag corner to resize both"
+            />
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -773,5 +907,412 @@ function VarItem({ name, desc }: { name: string; desc: string }) {
         {desc}
       </span>
     </div>
+  );
+}
+
+function TestScriptForm({
+  onSuccess,
+  onCancel,
+  onError,
+}: {
+  onSuccess: (msg: string) => void;
+  onCancel: () => void;
+  onError: (err: string) => void;
+}) {
+  const STORAGE_KEY = "cloudo_test_form_data";
+
+  const [formData, setFormData] = useState(() => {
+    if (typeof window !== "undefined") {
+      const saved = localStorage.getItem(STORAGE_KEY);
+      if (saved) {
+        try {
+          return JSON.parse(saved);
+        } catch {
+          return {
+            script: "",
+            args: "",
+            body: "{}",
+            capability: "",
+            scriptType: "python",
+          };
+        }
+      }
+    }
+    return {
+      script: "",
+      args: "",
+      body: "{}",
+      capability: "",
+      scriptType: "python",
+    };
+  });
+  const [isBodyOpen, setIsBodyOpen] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const [workers, setWorkers] = useState<any[]>([]);
+  const [capabilities, setCapabilities] = useState<string[]>([]);
+  const [loadingWorkers, setLoadingWorkers] = useState(true);
+  const scriptInputRef = useRef<HTMLInputElement>(null);
+
+  // Persist formData to localStorage whenever it changes
+  useEffect(() => {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(formData));
+  }, [formData]);
+
+  // Fetch workers on mount
+  useEffect(() => {
+    const fetchWorkers = async () => {
+      try {
+        const response = await cloudoFetch("/api/workers");
+        if (response.ok) {
+          const data = await response.json();
+          setWorkers(Array.isArray(data) ? data : []);
+
+          // Extract unique capabilities (PartitionKey)
+          const uniqueCapabilities = Array.from(
+            new Set(
+              // eslint-disable-next-line @typescript-eslint/no-explicit-any
+              (data || []).map((w: any) => w.PartitionKey).filter(Boolean),
+            ),
+          ) as string[];
+          setCapabilities(uniqueCapabilities.sort());
+
+          // Only set capability if not already set
+          if (uniqueCapabilities.length > 0 && !formData.capability) {
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            setFormData((prev: any) => ({
+              ...prev,
+              capability: uniqueCapabilities[0],
+            }));
+          }
+        }
+      } catch (err) {
+        onError("Failed to fetch workers");
+      } finally {
+        setLoadingWorkers(false);
+      }
+    };
+    fetchWorkers();
+  }, [formData.capability, onError]);
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const handleScriptUpload = (e: any) => {
+    const file = e.target?.files?.[0];
+    if (!file) return;
+
+    // Auto-detect script type from file extension
+    const fileName = file.name.toLowerCase();
+    let detectedType = "python"; // default
+    if (fileName.endsWith(".sh") || fileName.endsWith(".bash")) {
+      detectedType = "shell";
+    } else if (fileName.endsWith(".py") || fileName.endsWith(".python")) {
+      detectedType = "python";
+    }
+
+    const reader = new FileReader();
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    reader.onload = (event: any) => {
+      const content = event.target?.result;
+      setFormData({ ...formData, script: content, scriptType: detectedType });
+    };
+    reader.readAsText(file);
+  };
+
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const lineNumbersRef = useRef<HTMLDivElement>(null);
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const handleScroll = (e: any) => {
+    if (lineNumbersRef.current) {
+      lineNumbersRef.current.scrollTop = e.target?.scrollTop ?? 0;
+    }
+  };
+
+  const formatJson = () => {
+    try {
+      const formatted = JSON.stringify(JSON.parse(formData.body), null, 2);
+      setFormData({ ...formData, body: formatted });
+    } catch (err) {
+      onError("Invalid JSON format");
+    }
+  };
+
+  const handleClear = () => {
+    setFormData({
+      script: "",
+      args: "",
+      body: "{}",
+      capability: "",
+      scriptType: "python",
+    });
+  };
+
+  const handleSubmit = async () => {
+    if (!formData.script.trim()) {
+      onError("Script cannot be empty");
+      return;
+    }
+
+    setSubmitting(true);
+    try {
+      if (!formData.capability) {
+        onError("Please select a capability");
+        setSubmitting(false);
+        return;
+      }
+
+      let bodyPayload = {};
+      try {
+        bodyPayload = JSON.parse(formData.body);
+      } catch {
+        bodyPayload = {};
+      }
+
+      const payload = {
+        script: formData.script,
+        args: formData.args,
+        body: bodyPayload,
+        capability: formData.capability,
+        scriptType: formData.scriptType,
+      };
+
+      const response = await cloudoFetch("/api/dev/testrun", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(payload),
+      });
+
+      if (!response.ok) {
+        const errorData = await response
+          .json()
+          .catch(() => ({ error: "Unknown error" }));
+        throw new Error(
+          errorData.error ||
+            errorData.message ||
+            `Test run failed: ${response.statusText}`,
+        );
+      }
+
+      const result = await response.json();
+      onSuccess(`Test scheduled successfully (ID: ${result.exec_id})`);
+    } catch (err) {
+      onError(err instanceof Error ? err.message : "Failed to schedule test");
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  return (
+    <form
+      onSubmit={(e) => e.preventDefault()}
+      className="p-8 h-full flex flex-col gap-5 w-full"
+    >
+      <div className="flex gap-6 flex-1 overflow-hidden">
+        {/* LEFT COLUMN: SETTINGS */}
+        <div className="w-80 flex flex-col gap-5 overflow-y-auto pr-2 flex-shrink-0">
+          <FormField
+            label="Worker Capability"
+            icon={<HiOutlineCube className="w-3 h-3 text-cloudo-accent" />}
+            type="select"
+            value={formData.capability}
+            onChange={(e) =>
+              setFormData({ ...formData, capability: e.target.value })
+            }
+            disabled={loadingWorkers}
+            options={capabilities.map((cap) => ({ value: cap, label: cap }))}
+          />
+
+          <FormField
+            label="Script Type"
+            icon={<HiOutlineTerminal className="w-3 h-3 text-cloudo-accent" />}
+            type="select"
+            value={formData.scriptType}
+            onChange={(
+              e: ChangeEvent<
+                HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement,
+                Element
+              >,
+            ) => setFormData({ ...formData, scriptType: e.target.value })}
+            options={[
+              { value: "python", label: "Python (.py)" },
+              { value: "shell", label: "Shell (.sh)" },
+            ]}
+          />
+
+          <FormField
+            label="Runtime Arguments"
+            icon={<HiOutlineVariable className="w-3 h-3 text-cloudo-accent" />}
+            value={formData.args}
+            onChange={(e) => setFormData({ ...formData, args: e.target.value })}
+            placeholder="--mode=dry-run --target=prod"
+          />
+
+          {/* COLLAPSIBLE JSON BODY */}
+          <CollapsibleSection
+            title="Input Payload (JSON)"
+            icon={
+              <HiOutlineCodeBracket
+                className={`w-4 h-4 ${
+                  isBodyOpen ? "text-cloudo-accent" : "text-cloudo-muted"
+                }`}
+              />
+            }
+            isOpen={isBodyOpen}
+            onToggle={() => setIsBodyOpen(!isBodyOpen)}
+            actions={
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  formatJson();
+                }}
+                className="text-[9px] font-bold text-cloudo-muted hover:text-cloudo-accent flex items-center gap-1"
+              >
+                <HiOutlineArrowsRightLeft className="w-3 h-3 rotate-90" />{" "}
+                FORMAT_JSON
+              </button>
+            }
+          >
+            <textarea
+              spellCheck={false}
+              className="w-full h-32 p-3 font-mono text-[11px] bg-black/20 text-cloudo-accent outline-none border border-cloudo-border focus:border-cloudo-accent/30 resize-none"
+              value={formData.body}
+              onChange={(e) =>
+                setFormData({ ...formData, body: e.target.value })
+              }
+            />
+          </CollapsibleSection>
+        </div>
+
+        {/* RIGHT COLUMN: CODE EDITOR */}
+        <div className="flex-1 flex flex-col gap-2 min-w-0">
+          <div className="space-y-2 flex-1 flex flex-col">
+            <div className="flex justify-between items-end ml-1">
+              <IconLabel
+                icon={
+                  <HiOutlineTerminal className="w-3 h-3 text-cloudo-accent" />
+                }
+                text="Source Code Editor"
+              />
+              <button
+                type="button"
+                onClick={() => scriptInputRef.current?.click()}
+                className="flex items-center gap-1 text-[9px] font-bold text-cloudo-accent hover:text-white transition-colors bg-cloudo-accent/5 px-2 py-0.5 border border-cloudo-accent/20"
+              >
+                <HiOutlineDocumentArrowUp className="w-3 h-3" /> IMPORT_FILE
+              </button>
+              <input
+                type="file"
+                ref={scriptInputRef}
+                onChange={handleScriptUpload}
+                className="hidden"
+              />
+            </div>
+
+            <div className="relative group border border-cloudo-border bg-[#0a0a0b] focus-within:border-cloudo-accent/50 shadow-inner overflow-hidden flex-1 flex flex-col">
+              {/* Line Numbers Simulation Overlay */}
+              <div
+                ref={lineNumbersRef}
+                className="absolute left-0 top-0 bottom-0 w-10 bg-black/40 border-r border-cloudo-border/50 flex flex-col items-center pt-4 select-none pointer-events-none overflow-hidden"
+              >
+                {Array.from({
+                  length: Math.max(formData.script.split("\n").length, 20),
+                }).map((_, i) => (
+                  <span
+                    key={i}
+                    className="text-[9px] font-mono text-cloudo-muted/30 h-6 flex items-center justify-center w-full shrink-0"
+                  >
+                    {i + 1}
+                  </span>
+                ))}
+              </div>
+
+              <textarea
+                ref={textareaRef}
+                required
+                spellCheck={false}
+                onScroll={handleScroll}
+                className="w-full flex-1 p-4 pl-12 font-mono text-xs bg-transparent text-cloudo-text outline-none
+                          leading-6 scrollbar-thin scrollbar-thumb-cloudo-accent/20 scrollbar-track-transparent"
+                placeholder="#!/bin/bash&#10;# Scrivi qui lo script..."
+                value={formData.script}
+                onChange={(e) =>
+                  setFormData({ ...formData, script: e.target.value })
+                }
+                style={{
+                  tabSize: 4,
+                  lineHeight: "1.5rem",
+                  backgroundImage:
+                    "linear-gradient(rgba(255,255,255,0.02) 1px, transparent 1px)",
+                  backgroundSize: "100% 1.5rem",
+                  backgroundAttachment: "local",
+                }}
+              />
+
+              {/* Resize Indicator */}
+              <div className="absolute bottom-1 right-1 pointer-events-none opacity-30 group-hover:opacity-100 transition-opacity">
+                <svg
+                  width="10"
+                  height="10"
+                  viewBox="0 0 10 10"
+                  className="text-cloudo-muted"
+                >
+                  <line
+                    x1="10"
+                    y1="0"
+                    x2="0"
+                    y2="10"
+                    stroke="currentColor"
+                    strokeWidth="1"
+                  />
+                  <line
+                    x1="10"
+                    y1="5"
+                    x2="5"
+                    y2="10"
+                    stroke="currentColor"
+                    strokeWidth="1"
+                  />
+                </svg>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* ACTIONS */}
+      <div className="flex gap-4 pt-4 border-t border-cloudo-border">
+        <button
+          type="button"
+          onClick={onCancel}
+          className="btn btn-ghost flex-1 h-11 text-[11px] font-bold uppercase tracking-[0.2em]"
+        >
+          Abort
+        </button>
+        <button
+          type="button"
+          onClick={handleClear}
+          className="btn btn-ghost flex-1 h-11 text-[11px] font-bold uppercase tracking-[0.2em]"
+        >
+          Clear
+        </button>
+        <button
+          type="submit"
+          disabled={submitting}
+          onClick={(e) => {
+            e.preventDefault();
+            handleSubmit();
+          }}
+          className="btn btn-primary flex-1 h-11 flex items-center justify-center gap-2 group"
+        >
+          <HiOutlinePlay className="w-4 h-4 group-hover:scale-125 transition-transform" />
+          <span className="text-[11px] font-bold uppercase tracking-[0.2em]">
+            Execute
+          </span>
+        </button>
+      </div>
+    </form>
   );
 }

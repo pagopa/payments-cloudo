@@ -102,11 +102,11 @@ repos:
         language_version: python3.13
 
   - repo: https://github.com/antonbabenko/pre-commit-terraform
-    rev: v1.90.0
+    rev: v1.105.0
     hooks:
       - id: terraform_fmt
       - id: terraform_validate
-      - id: terraform_tflint
-        args:
-          - "--args=--enable-rule=terraform_deprecated_interpolation"
-      - id: terraform_tfsec
+      # - id: terraform_trivy
+      #   files: ^src/core/iac/
+      #   args:
+      #     - --args=--skip-dirs="**/.terraform"

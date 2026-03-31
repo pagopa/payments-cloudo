@@ -26,6 +26,9 @@ import {
   HiPlay,
   HiStop,
   HiOutlineChevronDoubleRight,
+  HiOutlineInbox,
+  HiOutlineCheckCircle,
+  HiOutlineInformationCircle,
 } from "react-icons/hi";
 import {
   parseDate,
@@ -33,6 +36,7 @@ import {
   getLocalTimeZone,
   CalendarDate,
 } from "@internationalized/date";
+import { HiArrowPath, HiOutlineExclamationCircle } from "react-icons/hi2";
 
 interface LogEntry {
   PartitionKey: string;
@@ -132,7 +136,7 @@ function LogsPanelContent() {
         const data = await res.json();
         const rawLogs = data.items || [];
 
-        // Group by ExecId and keep only the final status
+        // Group by ExecId and keep the final status (highest priority wins)
         const groupedByExecId = new Map<string, LogEntry>();
         const statusPriority: Record<string, number> = {
           succeeded: 5,
@@ -240,8 +244,10 @@ function LogsPanelContent() {
     const s = status.toLowerCase();
     if (s === "succeeded" || s === "completed")
       return <HiCheckCircle className="w-4 h-4 text-cloudo-ok" />;
-    if (s === "running" || s === "accepted")
+    if (s === "accepted")
       return <HiPlay className="w-4 h-4 text-cloudo-accent" />;
+    if (s === "running")
+      return <HiArrowPath className="w-4 h-4 text-cloudo-accent" />;
     if (s === "failed" || s === "error")
       return <HiXCircle className="w-4 h-4 text-cloudo-err" />;
     if (s === "rejected")
@@ -910,6 +916,12 @@ function LogsPanelContent() {
             </div>
 
             <div className="flex-1 overflow-auto p-8 space-y-8 custom-scrollbar bg-cloudo-dark/30">
+              {/* Section: Execution Timeline */}
+              <ExecutionTimeline
+                execId={selectedLog.ExecId}
+                partitionKey={selectedLog.PartitionKey}
+              />
+
               {/* Section: Identity & Deployment */}
               <div className="space-y-4">
                 <div className="flex items-center gap-2">
@@ -1067,6 +1079,7 @@ function LogsPanelContent() {
                 }
 
                 const validEntries = Object.entries(info).filter(
+                  // eslint-disable-next-line @typescript-eslint/no-unused-vars
                   ([__unused, v]) =>
                     v !== null && v !== undefined && String(v).trim() !== "",
                 );
@@ -1177,6 +1190,153 @@ function LogsPanelContent() {
           </div>
         </>
       )}
+    </div>
+  );
+}
+
+function ExecutionTimeline({
+  execId,
+  partitionKey,
+}: {
+  execId: string;
+  partitionKey: string;
+}) {
+  const [timelineLogs, setTimelineLogs] = useState<LogEntry[]>([]);
+  const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    const fetchTimeline = async () => {
+      setLoading(true);
+      try {
+        const params = new URLSearchParams();
+        params.set("partitionKey", partitionKey);
+        params.set("execId", execId);
+        params.set("limit", "100");
+
+        const res = await cloudoFetch(`/logs/query?${params}`);
+        const data = await res.json();
+
+        // Sort all logs chronologically for this execution
+        const allLogs = (data.items || []).sort((a: LogEntry, b: LogEntry) =>
+          a.RequestedAt.localeCompare(b.RequestedAt),
+        );
+        setTimelineLogs(allLogs);
+      } catch (error) {
+        console.error("Failed to fetch timeline logs:", error);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    if (execId && partitionKey) {
+      fetchTimeline();
+    }
+  }, [execId, partitionKey]);
+
+  const getStatusColor = (status: string) => {
+    const s = status.toLowerCase();
+    if (s === "accepted")
+      return "bg-cloudo-accent/20 border-cloudo-accent text-cloudo-accent";
+    if (s === "running")
+      return "bg-yellow-500/20 border-yellow-500/50 text-yellow-400";
+    if (s === "succeeded" || s === "completed")
+      return "bg-cloudo-ok/20 border-cloudo-ok text-cloudo-ok";
+    if (s === "failed" || s === "error")
+      return "bg-cloudo-err/20 border-cloudo-err text-cloudo-err";
+    return "bg-cloudo-muted/10 border-cloudo-muted/30 text-cloudo-muted";
+  };
+
+  const getStatusIcon = (status: string) => {
+    const s = status.toLowerCase();
+    if (s === "accepted") return <HiOutlineInbox className="w-3 h-3" />;
+    if (s === "running") return <HiPlay className="w-3 h-3" />;
+    if (s === "succeeded" || s === "completed")
+      return <HiOutlineCheckCircle className="w-3 h-3" />;
+    if (s === "failed" || s === "error")
+      return <HiOutlineExclamationCircle className="w-3 h-3" />;
+    return <HiOutlineInformationCircle className="w-3 h-3" />;
+  };
+
+  if (loading) {
+    return (
+      <div className="space-y-4">
+        <div className="flex items-center gap-2">
+          <div className="w-1 h-3 bg-cloudo-accent" />
+          <h3 className="text-[10px] font-black uppercase tracking-[0.2em] text-cloudo-muted">
+            Execution Timeline
+          </h3>
+        </div>
+        <div className="text-[11px] text-cloudo-muted">Loading timeline...</div>
+      </div>
+    );
+  }
+
+  if (timelineLogs.length === 0) {
+    return null;
+  }
+
+  return (
+    <div className="space-y-4">
+      <div className="flex items-center gap-2">
+        <div className="w-1 h-3 bg-cloudo-accent" />
+        <h3 className="text-[10px] font-black uppercase tracking-[0.2em] text-cloudo-muted">
+          Execution Timeline
+        </h3>
+      </div>
+
+      {/* Timeline Schema - Simple and Clean */}
+      <div className="flex flex-wrap items-center justify-center gap-2 md:gap-3">
+        {timelineLogs.map((log, idx) => {
+          const duration =
+            idx > 0
+              ? Math.floor(
+                  (new Date(log.RequestedAt).getTime() -
+                    new Date(timelineLogs[idx - 1].RequestedAt).getTime()) /
+                    1000,
+                )
+              : 0;
+
+          // Calculate connector width based on duration (flex)
+          const connectorWidth = Math.max(24, Math.min(96, 24 + duration * 4));
+
+          return (
+            <div
+              key={`${log.ExecId}-${log.RowKey}`}
+              className="flex items-center gap-2 md:gap-3"
+            >
+              {/* Phase Box */}
+              <div
+                className={`flex flex-col items-center gap-1 p-3 md:p-4 rounded-lg border-2 transition-all hover:shadow-lg ${getStatusColor(
+                  log.Status || "",
+                )}`}
+              >
+                <div className="text-2xl md:text-3xl">
+                  {getStatusIcon(log.Status || "")}
+                </div>
+                <div className="text-xs md:text-sm font-bold uppercase tracking-wide">
+                  {log.Status || "UNKNOWN"}
+                </div>
+                <div className="text-xs md:text-xs font-bold">
+                  {log.RequestedAt || "UNKNOWN"}
+                </div>
+              </div>
+
+              {/* Connector with Duration */}
+              {idx < timelineLogs.length - 1 && (
+                <div className="flex flex-col items-center gap-1">
+                  <div
+                    className="h-1 bg-gradient-to-r from-cloudo-accent to-cloudo-accent/30 rounded-full"
+                    style={{ width: `${connectorWidth}px` }}
+                  />
+                  <div className="text-[10px] md:text-xs font-mono font-bold text-cloudo-muted whitespace-nowrap">
+                    +{duration}s
+                  </div>
+                </div>
+              )}
+            </div>
+          );
+        })}
+      </div>
     </div>
   );
 }

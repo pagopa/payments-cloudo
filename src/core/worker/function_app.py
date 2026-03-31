@@ -38,7 +38,7 @@ GITHUB_PATH_PREFIX = os.environ.get("GITHUB_PATH_PREFIX", "src/runbooks")
 
 _PROCESS_BY_EXEC: dict[str, subprocess.Popen] = {}
 
-if os.getenv("FEATURE_DEV", "false").lower() != "true":
+if os.getenv("LOCAL_DEV", "false").lower() != "true":
     AUTH = func.AuthLevel.FUNCTION
 else:
     AUTH = func.AuthLevel.ANONYMOUS
@@ -121,6 +121,31 @@ def _github_auth_headers() -> list[dict]:
         h2["Authorization"] = f"token {GITHUB_TOKEN}"
         headers_list.append(h2)
     return headers_list
+
+
+def _create_inline_script_temp_file(
+    script_content: str, script_type: str = "python"
+) -> str:
+    """
+    Create a temporary file with the provided script content.
+    For shell scripts, sets executable permissions.
+    Returns the path to the temporary file.
+    """
+    import tempfile
+
+    suffix = ".sh" if script_type == "shell" else ".py"
+    with tempfile.NamedTemporaryFile(
+        mode="w", suffix=suffix, delete=False, dir="/tmp"
+    ) as f:
+        f.write(script_content)
+        temp_path = f.name
+
+    # Make shell scripts executable
+    if script_type == "shell":
+        os.chmod(temp_path, 0o755)
+
+    logging.debug("Created inline %s script: %s", script_type, temp_path)
+    return temp_path
 
 
 def _download_from_github(script_name: str) -> str:
@@ -384,8 +409,18 @@ def _run_script(
     except Exception as e:
         logging.warning("AKS set env failed: %s", e)
 
+    # Check if script content is provided in payload (for dev/test runs)
+    script_content = None
+    script_type = "python"  # Default to python
+    if payload and isinstance(payload, dict):
+        script_content = payload.get("script")
+        script_type = payload.get("script_type", "python").lower()
+
+    # If we have inline script content, use it directly (dev/test feature)
+    if script_content:
+        script_path = _create_inline_script_temp_file(script_content, script_type)
     # GitHub if not found locally
-    if script_path is None:
+    elif script_path is None:
         try:
             github_tmp_path = _download_from_github(script_name)
             logging.debug("Downloaded script from GitHub: %s", github_tmp_path)
@@ -507,19 +542,20 @@ def _inspect_duplicate_runs(items: list[Any], payload: Any):
 
 
 @app.queue_trigger(arg_name="msg", queue_name=QUEUE_NAME, connection=STORAGE_CONNECTION)
-@app.queue_output(
-    arg_name="cloudo_notification_q",
-    queue_name=NOTIFICATION_QUEUE_NAME,
-    connection=STORAGE_CONNECTION,
-)
-def process_runbook(
-    msg: func.QueueMessage, cloudo_notification_q: func.Out[str]
-) -> None:
+def process_runbook(msg: func.QueueMessage) -> None:
     payload = json.loads(msg.get_body().decode("utf-8"))
     logging.info(f"[{payload.get('exec_id')}] Job started: %s", payload)
 
     started_at = _format_requested_at()
     exec_id = payload.get("exec_id") or ""
+
+    from azure.storage.queue import QueueClient, TextBase64EncodePolicy
+
+    q_client = QueueClient.from_connection_string(
+        conn_str=os.environ.get(STORAGE_CONNECTION),
+        queue_name=NOTIFICATION_QUEUE_NAME,
+        message_encode_policy=TextBase64EncodePolicy(),
+    )
 
     # Check if this execution is already running
     with _ACTIVE_LOCK:
@@ -527,7 +563,7 @@ def process_runbook(
         if _inspect_duplicate_runs(items, payload):
             log_msg = f"Execution {exec_id} already in progress, skipping"
             logging.info(f"[{payload.get('exec_id')}] {log_msg}")
-            cloudo_notification_q.set(
+            q_client.send_message(
                 _post_status(payload, status="skipped", log_message=log_msg)
             )
             return
@@ -547,13 +583,9 @@ def process_runbook(
             "status": "running",
         }
 
-    cloudo_notification_q.set(
-        _post_status(
-            payload,
-            status="running",
-            log_message=f"[{exec_id}] Job {payload.get('name')} started",
-        )
-    )
+    log_msg = f"[{exec_id}] Job {payload.get('name')} started"
+    q_client.send_message(_post_status(payload, status="running", log_message=log_msg))
+    logging.info(f"[{exec_id}] Receiver response: status=running")
 
     # Local environment to avoid race conditions in multithreading
     env = os.environ.copy()
@@ -582,7 +614,7 @@ def process_runbook(
             except Exception as e:
                 # Report error and stop processing
                 err_msg = f"[{exec_id}] AKS login failed: {type(e).__name__}: {e}"
-                cloudo_notification_q.set(
+                q_client.send_message(
                     _post_status(payload, status="error", log_message=err_msg)
                 )
                 logging.error(f"{err_msg}")
@@ -609,17 +641,14 @@ def process_runbook(
 
         if not stopped:
             log_msg = f"{result.stdout.strip() if result else 'No output'}"
-            logging.info(f"[{exec_id}] {log_msg}")
-            cloudo_notification_q.set(
+            q_client.send_message(
                 _post_status(payload, status="completed", log_message=log_msg)
             )
-            logging.debug(
-                f"[{exec_id}] Receiver response: status=queued",
-            )
+
     except subprocess.CalledProcessError as e:
         error_message = f"Script failed. returncode={e.returncode} stderr={e.stderr.strip()} stdout={e.stdout.strip()}"
         try:
-            cloudo_notification_q.set(
+            q_client.send_message(
                 _post_status(payload, status="failed", log_message=error_message)
             )
             logging.error(
@@ -630,7 +659,7 @@ def process_runbook(
     except Exception as e:
         err_msg = f"{type(e).__name__}: {str(e)}"
         try:
-            cloudo_notification_q.set(
+            q_client.send_message(
                 _post_status(payload, status="error", log_message=err_msg)
             )
             logging.error(
@@ -843,13 +872,13 @@ def stop_process(
 def dev_run_script(req: func.HttpRequest) -> func.HttpResponse:
     """
     Development endpoint to test _run_script.
-    Optionally enabled via FEATURE_DEV=true.
+    Optionally enabled via LOCAL_DEV=true.
     Parameters:
       - name (or 'script') query string, or 'runbook' header with the file name.
     Response: JSON with stdout/stderr/returncode.
     """
     # Feature flag for test and develop of runbooks
-    if os.getenv("FEATURE_DEV", "false").lower() != "true":
+    if os.getenv("LOCAL_DEV", "false").lower() != "true":
         return func.HttpResponse("Not found", status_code=404)
     elif os.getenv("DEV_SCRIPT_PATH"):
         script_path = os.getenv("DEV_SCRIPT_PATH", "/work/runbooks/")

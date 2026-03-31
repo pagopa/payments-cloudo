@@ -54,6 +54,7 @@ services:
       - FUNCTIONS_WORKER_RUNTIME=python
       - DOTNET_RUNNING_IN_CONTAINER=true
       - FEATURE_DEV=true
+      - LOCAL_DEV=true
       - DEV_SCRIPT_PATH=/work/runbooks/
       - CLOUDO_SECRET_KEY=local
       - NEXTJS_URL=http://frontend:3000
@@ -75,7 +76,7 @@ services:
         required: false
     environment:
       - AzureWebJobsStorage=DefaultEndpointsProtocol=http;AccountName=devstoreaccount1;AccountKey=Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==;BlobEndpoint=http://azurite:10000/devstoreaccount1;QueueEndpoint=http://azurite:10001/devstoreaccount1;TableEndpoint=http://azurite:10002/devstoreaccount1
-      - FEATURE_DEV=true
+      - LOCAL_DEV=true
       - DEV_SCRIPT_PATH=/work/runbooks/
       - RECEIVER_URL=http://orchestrator/api/Receiver
       - AzureWebJobsFeatureFlags=EnableWorkerIndexing
@@ -106,7 +107,7 @@ services:
         required: false
     environment:
       - AzureWebJobsStorage=DefaultEndpointsProtocol=http;AccountName=devstoreaccount1;AccountKey=Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==;BlobEndpoint=http://azurite:10000/devstoreaccount1;QueueEndpoint=http://azurite:10001/devstoreaccount1;TableEndpoint=http://azurite:10002/devstoreaccount1
-      - FEATURE_DEV=true
+      - LOCAL_DEV=true
       - DEV_SCRIPT_PATH=/work/runbooks/
       - RECEIVER_URL=http://orchestrator/api/Receiver
       - AzureWebJobsFeatureFlags=EnableWorkerIndexing

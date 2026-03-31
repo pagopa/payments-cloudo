@@ -29,6 +29,8 @@
       "dynamicThrottlesEnabled": true
     },
     "queues": {
+      "batchSize": 16,
+      "newBatchThreshold": 8,
       "maxDequeueCount": 1
     }
   },

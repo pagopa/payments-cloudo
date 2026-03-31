@@ -45,7 +45,7 @@ const navigation: NavItem[] = [
   { name: "Executions", href: "/executions", icon: <HiOutlineTerminal /> },
   { name: "Compute Nodes", href: "/workers", icon: <HiOutlineChip /> },
   { name: "Analytics", href: "/analytics", icon: <HiOutlineChartBar /> },
-  { name: "Runbook Guide", href: "/studio", icon: <HiOutlineBookOpen /> },
+  { name: "Runbook Studio", href: "/studio", icon: <HiOutlineBookOpen /> },
   { name: "Collection", href: "/collection", icon: <HiOutlineCollection /> },
   { name: "Users", href: "/users", icon: <HiOutlineUsers />, adminOnly: true },
   {

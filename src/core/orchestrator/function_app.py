@@ -34,7 +34,7 @@ MAX_TABLE_CHARS = int(os.getenv("MAX_TABLE_LOG_CHARS", "32000"))
 APPROVAL_TTL_MIN = int(os.getenv("APPROVAL_TTL_MIN", "60"))
 APPROVAL_SECRET = (os.getenv("APPROVAL_SECRET") or "").strip()
 SESSION_SECRET = (os.getenv("SESSION_SECRET") or "").strip()
-if not SESSION_SECRET and os.getenv("FEATURE_DEV", "false").lower() != "true":
+if not SESSION_SECRET and os.getenv("LOCAL_DEV", "false").lower() != "true":
     logging.error("CRITICAL: SESSION_SECRET not configured. Authentication will fail.")
 
 GITHUB_TOKEN = os.environ.get("GITHUB_TOKEN")
@@ -42,7 +42,7 @@ GITHUB_REPO = os.environ.get("GITHUB_REPO", "pagopa/payments-cloudo")
 GITHUB_BRANCH = os.environ.get("GITHUB_BRANCH", "main")
 GITHUB_PATH_PREFIX = os.environ.get("GITHUB_PATH_PREFIX", "")
 
-if os.getenv("FEATURE_DEV", "false").lower() != "true":
+if os.getenv("LOCAL_DEV", "false").lower() != "true":
     AUTH = func.AuthLevel.FUNCTION
 else:
     AUTH = func.AuthLevel.ANONYMOUS
@@ -1498,8 +1498,8 @@ def approve(
     p = (req.params.get("p") or "").strip()
     s = (req.params.get("s") or "").strip()
 
-    # Security: check session token if not in FEATURE_DEV mode
-    if os.getenv("FEATURE_DEV", "false").lower() != "true":
+    # Security: check session token if not in LOCAL_DEV mode
+    if os.getenv("LOCAL_DEV", "false").lower() != "true":
         session, error_res = _get_authenticated_user(req)
         if error_res:
             # Fallback for Slack/Email links
@@ -1511,7 +1511,7 @@ def approve(
         else:
             approver = session.get("username")
     else:
-        # Trust headers in FEATURE_DEV
+        # Trust headers in LOCAL_DEV
         approver = (
             req.headers.get("x-cloudo-user")
             or req.headers.get("X-Approver")
@@ -1838,8 +1838,8 @@ def reject(
     p = (req.params.get("p") or "").strip()
     s = (req.params.get("s") or "").strip()
 
-    # Security: check session token if not in FEATURE_DEV mode
-    if os.getenv("FEATURE_DEV", "false").lower() != "true":
+    # Security: check session token if not in LOCAL_DEV mode
+    if os.getenv("LOCAL_DEV", "false").lower() != "true":
         session, error_res = _get_authenticated_user(req)
         if error_res:
             # Fallback for Slack/Email links
@@ -1851,7 +1851,7 @@ def reject(
         else:
             approver = session.get("username")
     else:
-        # Trust headers in FEATURE_DEV
+        # Trust headers in LOCAL_DEV
         approver = (
             req.headers.get("x-cloudo-user")
             or req.headers.get("X-Approver")
@@ -2014,6 +2014,7 @@ def Receiver(msg: func.QueueMessage, log_table: func.Out[str]) -> None:
 
     try:
         body = json.loads(msg.get_body().decode("utf-8"))
+        logging.warning(f"[Receiver] Message received: {body}")
     except Exception as e:
         logging.error(f"[Receiver] Invalid queue message: {e}")
         return
@@ -2024,8 +2025,8 @@ def Receiver(msg: func.QueueMessage, log_table: func.Out[str]) -> None:
         logging.warning(f"[{body.get('exec_id')}] Missing required fields: {missing}")
         return
 
-    logging.info(
-        f"[{body.get('exec_id')}] Receiver invoked",
+    logging.warning(
+        f"[{body.get('exec_id')}][{body.get('status')}] Receiver invoked",
         extra={
             "headers": {
                 "ExecId": body.get("exec_id"),
@@ -2071,11 +2072,6 @@ def Receiver(msg: func.QueueMessage, log_table: func.Out[str]) -> None:
         severity=body.get("severity"),
     )
     log_table.set(json.dumps(log_entity, ensure_ascii=False))
-
-    # TODO check if can be deprecated
-    if status_label == "running":
-        logging.debug(f"[{body.get('exec_id')}] Status 'running' logged to table")
-        return
 
     resource_info = body.get("resource_info") or {}
     routing_info = body.get("routing_info") or {}
@@ -2299,6 +2295,273 @@ def Receiver(msg: func.QueueMessage, log_table: func.Out[str]) -> None:
             logging.error(f"[{exec_id}] smart routing failed: {e}")
     else:
         logging.warning("Routing module not available, keeping legacy notifications")
+
+
+# =========================
+# Development Test Run Endpoint
+# =========================
+
+
+@app.route(route="dev/testrun", auth_level=AUTH)
+@app.table_output(
+    arg_name="log_table",
+    table_name=TABLE_NAME,
+    connection=STORAGE_CONN,
+)
+@app.table_input(
+    arg_name="workers",
+    table_name=TABLE_WORKERS_SCHEMAS,
+    connection=STORAGE_CONN,
+)
+@app.queue_output(
+    arg_name="cloudo_notification_q",
+    queue_name=NOTIFICATION_QUEUE_NAME,
+    connection=STORAGE_CONNECTION,
+)
+def dev_test_run(
+    req: func.HttpRequest,
+    log_table: func.Out[str],
+    workers: str,
+    cloudo_notification_q: func.Out[str],
+) -> func.HttpResponse:
+    """
+    Development endpoint to test runbook execution with feature flag.
+    Accepts a runbook/script and arguments, selects a worker by capability using smart routing,
+    and sends to worker via queue. Only available when FEATURE_DEV=true.
+
+    Request body (JSON):
+    {
+      "script": "script_name.sh",
+      "args": "command_args",
+      "body": {"json": "payload"},
+      "capability": "worker_capability"
+    }
+    """
+    # Feature flag for test execution
+    if os.getenv("FEATURE_DEV", "false").lower() != "true":
+        return func.HttpResponse("Not found", status_code=404)
+
+    try:
+        req_body = req.get_json()
+    except ValueError:
+        return func.HttpResponse(
+            json.dumps({"error": "Invalid JSON in request body"}, ensure_ascii=False),
+            status_code=400,
+            mimetype="application/json",
+        )
+
+    # Import utilities needed for this function
+    import detection
+    import utils
+    from worker_routing import worker_routing
+
+    script = req_body.get("script", "").strip()
+    run_args = req_body.get("args") or ""
+    capability = req_body.get("capability", "").strip()
+    script_type = req_body.get("scriptType", "python").lower()  # Default to python
+
+    # Parse resource_info from the body using detection (same as Trigger endpoint)
+    (
+        _raw,
+        resource_name,
+        resource_group,
+        resource_id,
+        schema_id,
+        namespace,
+        pod,
+        deployment,
+        horizontalpodautoscaler,
+        job,
+        monitor_condition,
+        severity,
+    ) = detection.parse_resource_fields(req_body.get("body")).values()
+    resource_info = {
+        "_raw": _raw,
+        "resource_name": resource_name,
+        "resource_rg": resource_group,
+        "resource_id": resource_id,
+        "aks_namespace": namespace,
+        "aks_pod": pod,
+        "aks_deployment": deployment,
+        "aks_job": job,
+        "aks_horizontalpodautoscaler": horizontalpodautoscaler,
+        "team": "dev-test",
+    }
+
+    if not script:
+        return func.HttpResponse(
+            json.dumps(
+                {"error": "missing 'script' field in request body"},
+                ensure_ascii=False,
+            ),
+            status_code=400,
+            mimetype="application/json",
+        )
+
+    # Generate unique test name for logging (instead of dumping full script)
+    script_name = f"dev-test-{uuid.uuid4().hex[:8]}"
+
+    if not capability:
+        return func.HttpResponse(
+            json.dumps(
+                {"error": "missing 'capability' field in request body"},
+                ensure_ascii=False,
+            ),
+            status_code=400,
+            mimetype="application/json",
+        )
+
+    # Generate execution ID
+    exec_id = str(uuid.uuid4())
+    requested_at = utils.format_requested_at()
+
+    # Get authenticated user
+    session, error_res = _get_authenticated_user(req)
+    if error_res:
+        return error_res
+
+    logging.info(
+        f"[DEV TEST] Scheduling test run: {script_name} with capability {capability} (exec_id={exec_id})"
+    )
+
+    try:
+        # Create a simple schema-like object for worker_routing
+        class TestSchema:
+            def __init__(self, worker):
+                self.worker = worker
+
+        schema = TestSchema(capability)
+
+        # Use smart routing to select worker by capability
+        target_queue = worker_routing(workers, schema)
+
+        if not target_queue:
+            return func.HttpResponse(
+                json.dumps(
+                    {
+                        "status": "error",
+                        "script": script_name,
+                        "error": f"No active workers found for capability '{capability}'",
+                    },
+                    ensure_ascii=False,
+                ),
+                status_code=404,
+                mimetype="application/json",
+            )
+
+        # Construct queue payload for worker (like Trigger endpoint does)
+        queue_payload = {
+            "runbook": script_name,
+            "script": script,
+            "script_type": script_type,
+            "run_args": run_args,
+            "id": script_name,
+            "name": "Dev Test Run",
+            "requestedAt": requested_at,
+            "exec_id": exec_id,
+            "oncall": "false",
+            "monitor_condition": "Fired",
+            "severity": severity or "Sev4",
+            "worker": capability,
+            "resource_info": resource_info or {},
+            "routing_info": {},
+        }
+
+        logging.info(
+            f"[DEV TEST] Selected queue '{target_queue}' for capability '{capability}'. Sending payload: {queue_payload}"
+        )
+
+        # Send to the selected queue
+        from azure.storage.queue import QueueClient, TextBase64EncodePolicy
+
+        q_client = QueueClient.from_connection_string(
+            conn_str=os.environ.get(STORAGE_CONN),
+            queue_name=target_queue,
+            message_encode_policy=TextBase64EncodePolicy(),
+        )
+        q_client.send_message(json.dumps(queue_payload, ensure_ascii=False))
+
+        # Log audit entry for test run
+        log_audit(
+            user=session.get("username", "dev-user"),
+            action="RUNBOOK_DEV_TEST_RUN",
+            target=exec_id,
+            details=f"Script: {script_name}, Capability: {capability}, Args: {run_args}",
+        )
+
+        # Write log entry to the table
+        api_body = {"status": "accepted", "queue": target_queue}
+        partition_key = utils.today_partition_key()
+        start_log = build_log_entry(
+            status="accepted",
+            partition_key=partition_key,
+            exec_id=exec_id,
+            row_key=exec_id,
+            requested_at=requested_at,
+            name="Dev Test Run" or "",
+            schema_id=script_name,
+            runbook=script_name,
+            run_args=run_args,
+            worker=schema.worker,
+            log_msg=api_body,
+            oncall="false",
+            monitor_condition=monitor_condition or "Fired",
+            severity=severity or "Sev4",
+            resource_info=resource_info,
+        )
+        log_table.set(json.dumps(start_log, ensure_ascii=False))
+
+        response_body = json.dumps(
+            {
+                "status": "accepted",
+                "exec_id": exec_id,
+                "script": script_name,
+                "capability": capability,
+                "queue": target_queue,
+                "message": "Test run scheduled on worker",
+            },
+            ensure_ascii=False,
+        )
+        return func.HttpResponse(
+            response_body, status_code=202, mimetype="application/json"
+        )
+
+    except Exception as e:
+        logging.error(
+            f"[DEV TEST] Error scheduling test run: {type(e).__name__}: {str(e)}"
+        )
+        error_body = json.dumps(
+            {
+                "status": "error",
+                "script": script_name,
+                "error": f"{type(e).__name__}: {str(e)}",
+            },
+            ensure_ascii=False,
+        )
+        return func.HttpResponse(
+            error_body, status_code=500, mimetype="application/json"
+        )
+
+
+# =========================
+# Features Flag Endpoint
+# =========================
+
+
+@app.route(route="features", auth_level=AUTH)
+def features(req: func.HttpRequest) -> func.HttpResponse:
+    """Expose feature flags to frontend"""
+    import os
+
+    feature_dev_enabled = os.getenv("FEATURE_DEV", "false").lower() == "true"
+
+    body = json.dumps(
+        {
+            "FEATURE_DEV": feature_dev_enabled,
+        },
+        ensure_ascii=False,
+    )
+    return func.HttpResponse(body, status_code=200, mimetype="application/json")
 
 
 # =========================
@@ -2659,7 +2922,7 @@ def get_worker_processes(req: func.HttpRequest) -> func.HttpResponse:
 
     # Construct target URL (assuming http protocol for internal workers)
     # If your workers use https or a specific port logic, adjust here.
-    if os.getenv("FEATURE_DEV", "false").lower() != "true":
+    if os.getenv("LOCAL_DEV", "false").lower() != "true":
         target_url = f"https://{worker}.azurewebsites.net/api/processes"
     else:
         target_url = f"http://{worker}/api/processes"
@@ -3689,7 +3952,7 @@ def stop_worker_process(req: func.HttpRequest) -> func.HttpResponse:
             },
         )
 
-    if os.getenv("FEATURE_DEV", "false").lower() != "true":
+    if os.getenv("LOCAL_DEV", "false").lower() != "true":
         target_url = (
             f"https://{worker}.azurewebsites.net/api/processes/stop?exec_id={exec_id}"
         )
@@ -3987,8 +4250,8 @@ def get_runbook_content(req: func.HttpRequest) -> func.HttpResponse:
     content_text = None
     error_msg = "File not found"
 
-    # FEATURE_DEV: read from local file system
-    if os.getenv("FEATURE_DEV", "false").lower() == "true":
+    # LOCAL_DEV: read from local file system
+    if os.getenv("LOCAL_DEV", "false").lower() == "true":
         try:
             # Check if a dev script path is explicitly set (e.g. in Docker)
             dev_script_path = os.getenv("DEV_SCRIPT_PATH")
@@ -4098,8 +4361,8 @@ def list_runbooks(req: func.HttpRequest) -> func.HttpResponse:
 
     runbooks = []
 
-    # FEATURE_DEV: list from local file system
-    if os.getenv("FEATURE_DEV", "false").lower() == "true":
+    # LOCAL_DEV: list from local file system
+    if os.getenv("LOCAL_DEV", "false").lower() == "true":
         try:
             dev_script_path = os.getenv("DEV_SCRIPT_PATH")
             if dev_script_path:
