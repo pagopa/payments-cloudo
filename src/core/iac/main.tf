@@ -8,7 +8,7 @@ resource "random_password" "internal_auth_token" {
 
 # Orchestrator Function
 module "cloudo_orchestrator" {
-  source                                   = "git::https://github.com/pagopa/terraform-azurerm-v4//IDH/app_service_function?ref=2093f55a78bcc673e1671a4ce8b0e88e10d7eb07" #v8.8.1
+  source                                   = "git::https://github.com/pagopa/terraform-azurerm-v4//IDH/app_service_function?ref=28d56d27f9e6a58d01f501ef9fe4d1a9b785e2e6" #v9.10.3
   env                                      = var.env
   idh_resource_tier                        = var.cloudo_function_tier
   location                                 = var.location
@@ -78,7 +78,7 @@ module "cloudo_orchestrator" {
 # UI App Service
 module "cloudo_ui" {
   count               = var.enable_ui ? 1 : 0
-  source              = "git::https://github.com/pagopa/terraform-azurerm-v4//IDH/app_service_webapp?ref=2093f55a78bcc673e1671a4ce8b0e88e10d7eb07" #v8.8.1
+  source              = "git::https://github.com/pagopa/terraform-azurerm-v4//IDH/app_service_webapp?ref=28d56d27f9e6a58d01f501ef9fe4d1a9b785e2e6" #v9.10.3
   env                 = var.env
   idh_resource_tier   = var.cloudo_ui_tier
   location            = var.location
@@ -128,7 +128,7 @@ module "cloudo_ui" {
 
 # Workers Function Module
 module "cloudo_worker" {
-  source   = "git::https://github.com/pagopa/terraform-azurerm-v4//IDH/app_service_function?ref=2093f55a78bcc673e1671a4ce8b0e88e10d7eb07" #v8.8.1
+  source   = "git::https://github.com/pagopa/terraform-azurerm-v4//IDH/app_service_function?ref=28d56d27f9e6a58d01f501ef9fe4d1a9b785e2e6" #v9.10.3
   for_each = var.workers_config.workers
 
   env                                      = var.env
