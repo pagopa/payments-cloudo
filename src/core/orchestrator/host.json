@@ -15,7 +15,7 @@
       "Function.list_workers": "Warning",
       "Function.stop_worker_process": "Warning",
       "Function.get_worker_processes": "Warning",
-      "Function.dev_test_run": "Information",
+      "Function.dev_test_run": "Warning",
       "Host": "Error",
       "Host.Results": "Error",
       "Host.Aggregator": "Error",
@@ -38,6 +38,11 @@
       "maxOutstandingRequests": 200,
       "maxConcurrentRequests": 100,
       "dynamicThrottlesEnabled": true
+    },
+    "queues": {
+      "batchSize": 16,
+      "newBatchThreshold": 8,
+      "maxDequeueCount": 1
     }
   },
   "aggregator": {
