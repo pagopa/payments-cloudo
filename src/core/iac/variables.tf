@@ -45,7 +45,7 @@ variable "schemas" {
         alltrue([
           for item in v.entity : (
             length(setsubtract(keys(item), [
-              "id", "name", "description", "runbook", "run_args", "worker", "oncall", "tags", "require_approval"
+              "id", "name", "description", "runbook", "run_args", "worker", "oncall", "enabled", "tags", "require_approval"
             ])) == 0 &&
             item.id != "" && item.name != "" && item.runbook != "" && item.worker != "" &&
             contains([true, false], lookup(item, "oncall", "")) &&
@@ -191,6 +191,12 @@ variable "workers_config" {
     registry_username = optional(string)
     registry_password = optional(string)
   })
+}
+
+variable "autoscale_max_capacity" {
+  default     = 1
+  type        = number
+  description = "(Optional) Autoscale settings max capacity."
 }
 
 # variable "service_plan_sku" {

@@ -1284,7 +1284,7 @@ function ExecutionTimeline({
         </h3>
       </div>
 
-      {/* Timeline Schema - Simple and Clean */}
+      {/* Timeline Schema */}
       <div className="flex flex-wrap items-center justify-center gap-2 md:gap-3">
         {timelineLogs.map((log, idx) => {
           const duration =

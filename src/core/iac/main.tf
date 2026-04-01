@@ -186,7 +186,7 @@ module "cloudo_worker" {
   }
 
   autoscale_settings = {
-    max_capacity                  = 1
+    max_capacity                  = var.autoscale_max_capacity
     scale_up_requests_threshold   = 250
     scale_down_requests_threshold = 150
   }

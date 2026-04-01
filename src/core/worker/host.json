@@ -3,7 +3,7 @@
   "logging": {
     "logLevel": {
       "Default": "Warning",
-      "Function": "Information",
+      "Function": "Warning",
       "Function.list_processes": "Warning",
       "Function.heartbeat_trigger": "Warning",
       "Host": "Error",
