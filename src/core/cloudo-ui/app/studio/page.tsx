@@ -1215,14 +1215,14 @@ function TestScriptForm({
               {/* Line Numbers Simulation Overlay */}
               <div
                 ref={lineNumbersRef}
-                className="absolute left-0 top-0 bottom-0 w-10 bg-black/40 border-r border-cloudo-border/50 flex flex-col items-center pt-4 select-none pointer-events-none overflow-hidden"
+                className="absolute left-0 top-0 bottom-0 w-10 bg-black/10 border-r border-cloudo-border/50 flex flex-col items-center pt-4 select-none pointer-events-none overflow-hidden"
               >
                 {Array.from({
                   length: Math.max(formData.script.split("\n").length, 20),
                 }).map((_, i) => (
                   <span
                     key={i}
-                    className="text-[9px] font-mono text-cloudo-muted/30 h-6 flex items-center justify-center w-full shrink-0"
+                    className="text-[9px] font-mono text-cloudo-muted/60 h-6 flex items-center justify-center w-full shrink-0"
                   >
                     {i + 1}
                   </span>
@@ -1234,7 +1234,7 @@ function TestScriptForm({
                 required
                 spellCheck={false}
                 onScroll={handleScroll}
-                className="w-full flex-1 p-4 pl-12 font-mono text-xs bg-transparent text-cloudo-text outline-none
+                className="w-full flex-1 p-4 pl-12 input-editor bg-transparent text-cloudo-text font-mono text-xs outline-none
                           leading-6 scrollbar-thin scrollbar-thumb-cloudo-accent/20 scrollbar-track-transparent"
                 placeholder="#!/bin/bash&#10;# Scrivi qui lo script..."
                 value={formData.script}
@@ -1250,33 +1250,6 @@ function TestScriptForm({
                   backgroundAttachment: "local",
                 }}
               />
-
-              {/* Resize Indicator */}
-              <div className="absolute bottom-1 right-1 pointer-events-none opacity-30 group-hover:opacity-100 transition-opacity">
-                <svg
-                  width="10"
-                  height="10"
-                  viewBox="0 0 10 10"
-                  className="text-cloudo-muted"
-                >
-                  <line
-                    x1="10"
-                    y1="0"
-                    x2="0"
-                    y2="10"
-                    stroke="currentColor"
-                    strokeWidth="1"
-                  />
-                  <line
-                    x1="10"
-                    y1="5"
-                    x2="5"
-                    y2="10"
-                    stroke="currentColor"
-                    strokeWidth="1"
-                  />
-                </svg>
-              </div>
             </div>
           </div>
         </div>

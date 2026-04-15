@@ -3,6 +3,8 @@
 import { useState, useEffect, useMemo } from "react";
 import { cloudoFetch } from "@/lib/api";
 import { DeleteConfirmationModal } from "../utils/modals";
+import { parseRunbookIntoCells } from "../utils/parser";
+
 import {
   HiOutlinePlus,
   HiOutlineSearch,
@@ -569,15 +571,27 @@ export default function SchedulesPage() {
               </button>
             </div>
 
-            <div className="flex-1 overflow-auto p-6 font-mono text-xs bg-black/40">
+            {/* ── content area ── */}
+            <div className="flex-1 overflow-auto p-6 input-editor font-mono text-xs bg-black/40 space-y-2">
               {fetchingRunbook ? (
                 <div className="flex items-center justify-center h-64 text-cloudo-accent animate-pulse uppercase tracking-widest font-black">
                   Retrieving Source from Git...
                 </div>
               ) : (
-                <pre className="text-cloudo-text/90 whitespace-pre-wrap break-all leading-relaxed">
-                  {runbookContent || "No content available."}
-                </pre>
+                parseRunbookIntoCells(runbookContent || "").map((cell, i) => (
+                  <div key={i}>
+                    {cell.heading && (
+                      <p className="text-[9px] font-black uppercase tracking-widest text-cloudo-accent/70 mb-1.5 mt-4 first:mt-0">
+                        {cell.heading}
+                      </p>
+                    )}
+                    <div className="border border-cloudo-border bg-cloudo-panel/60">
+                      <pre className="p-4 text-cloudo-text/90 whitespace-pre-wrap break-all leading-relaxed">
+                        {cell.code}
+                      </pre>
+                    </div>
+                  </div>
+                ))
               )}
             </div>
 

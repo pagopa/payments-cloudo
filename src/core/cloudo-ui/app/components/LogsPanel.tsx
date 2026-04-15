@@ -57,6 +57,19 @@ interface LogEntry {
   ResourceInfo?: string;
 }
 
+const statusPriority: Record<string, number> = {
+  succeeded: 5,
+  completed: 5,
+  failed: 4,
+  error: 4,
+  running: 3,
+  skipped: 3,
+  rejected: 3,
+  stopped: 3,
+  accepted: 2,
+  pending: 1,
+};
+
 export function LogsPanel() {
   return (
     <Suspense
@@ -138,18 +151,6 @@ function LogsPanelContent() {
 
         // Group by ExecId and keep the final status (highest priority wins)
         const groupedByExecId = new Map<string, LogEntry>();
-        const statusPriority: Record<string, number> = {
-          succeeded: 5,
-          completed: 5,
-          failed: 4,
-          error: 4,
-          running: 3,
-          skipped: 3,
-          rejected: 3,
-          stopped: 3,
-          accepted: 2,
-          pending: 1,
-        };
 
         rawLogs.forEach((log: LogEntry) => {
           const logExecId = log.ExecId;
@@ -1216,10 +1217,14 @@ function ExecutionTimeline({
         const res = await cloudoFetch(`/logs/query?${params}`);
         const data = await res.json();
 
-        // Sort all logs chronologically for this execution
-        const allLogs = (data.items || []).sort((a: LogEntry, b: LogEntry) =>
-          a.RequestedAt.localeCompare(b.RequestedAt),
-        );
+        // Sort all logs chronologically for this execution by time and priority
+        const allLogs = (data.items || []).sort((a: LogEntry, b: LogEntry) => {
+          const priorityDiff =
+            (statusPriority[a.Status] ?? 0) - (statusPriority[b.Status] ?? 0);
+          if (priorityDiff !== 0) return priorityDiff;
+          return a.RequestedAt.localeCompare(b.RequestedAt);
+        });
+
         setTimelineLogs(allLogs);
       } catch (error) {
         console.error("Failed to fetch timeline logs:", error);
@@ -1297,7 +1302,7 @@ function ExecutionTimeline({
               : 0;
 
           // Calculate connector width based on duration (flex)
-          const connectorWidth = Math.max(24, Math.min(96, 24 + duration * 4));
+          const connectorWidth = Math.max(24, Math.min(36, 24 + duration * 4));
 
           return (
             <div

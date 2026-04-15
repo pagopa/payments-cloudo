@@ -29,6 +29,7 @@ import {
 import { MdOutlineSchema } from "react-icons/md";
 import { SiTerraform } from "react-icons/si";
 import { DeleteConfirmationModal } from "../utils/modals";
+import { parseRunbookIntoCells } from "../utils/parser";
 import { Schema, Notification } from "./types";
 import { StatSmall } from "./components/StatSmall";
 import { SchemaForm } from "./components/SchemaForm";
@@ -187,7 +188,6 @@ export default function SchemasPage() {
       const res = await cloudoFetch(`/workers`);
       const data = await res.json();
       if (res.ok && Array.isArray(data)) {
-        // Use PartitionKey as the capability as requested
         const capabilities = Array.from(
           new Set(
             data
@@ -463,7 +463,7 @@ export default function SchemasPage() {
         ))}
       </div>
 
-      {/* Top Bar - Solid Technical Style */}
+      {/* Top Bar */}
       <div className="flex flex-col border-b border-cloudo-border bg-cloudo-panel sticky top-0 z-20">
         <div className="flex items-center justify-between px-8 py-4">
           <div className="flex items-center gap-4 shrink-0">
@@ -865,15 +865,27 @@ export default function SchemasPage() {
               </button>
             </div>
 
-            <div className="flex-1 overflow-auto p-6 font-mono text-xs bg-black/40">
+            {/* ── content area ── */}
+            <div className="flex-1 overflow-auto p-6 input-editor font-mono text-xs bg-black/40 space-y-2">
               {fetchingRunbook ? (
                 <div className="flex items-center justify-center h-64 text-cloudo-accent animate-pulse uppercase tracking-widest font-black">
                   Retrieving Source from Git...
                 </div>
               ) : (
-                <pre className="text-cloudo-text/90 whitespace-pre-wrap break-all leading-relaxed">
-                  {runbookContent || "No content available."}
-                </pre>
+                parseRunbookIntoCells(runbookContent || "").map((cell, i) => (
+                  <div key={i}>
+                    {cell.heading && (
+                      <p className="text-[9px] font-black uppercase tracking-widest text-cloudo-accent/70 mb-1.5 mt-4 first:mt-0">
+                        {cell.heading}
+                      </p>
+                    )}
+                    <div className="border border-cloudo-border bg-cloudo-panel/60">
+                      <pre className="p-4 text-cloudo-text/90 whitespace-pre-wrap break-all leading-relaxed">
+                        {cell.code}
+                      </pre>
+                    </div>
+                  </div>
+                ))
               )}
             </div>
 

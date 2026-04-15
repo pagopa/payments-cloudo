@@ -65,16 +65,16 @@ def parse_resource_fields(req: func.HttpRequest) -> dict[str, Any]:
     # Build candidate ARM IDs from the most reliable locations
     candidates: list[str] = []
 
-    # 1) essentials.alertTargetIDs (list of ARM IDs)
+    # essentials.alertTargetIDs (list of ARM IDs)
     alert_target_ids = essentials.get("alerttargetids") or []
     candidates.extend(x for x in alert_target_ids if isinstance(x, str))
 
-    # 2) alertContext.labels["microsoft.resourceid"]
+    # alertContext.labels["microsoft.resourceid"]
     mrid = labels.get("microsoft.resourceid")
     if isinstance(mrid, str):
         candidates.append(mrid)
 
-    # 3) alertContext.resourceId
+    # alertContext.resourceId
     rid = ctx.get("resourceid")
     if isinstance(rid, str):
         candidates.append(rid)
@@ -178,8 +178,8 @@ def parse_resource_fields(req: func.HttpRequest) -> dict[str, Any]:
 def extract_schema_id_from_req(req: func.HttpRequest) -> Optional[list[str]]:
     """
     Resolve schema_id from the incoming request:
-      1) Query string (?id=...)
-      2) JSON body: data.essentials.alertId and data.essentials.alertRule
+      - Query string (?id=...)
+      - JSON body: data.essentials.alertId and data.essentials.alertRule
 
     Normalization:
       - If the value contains '/', return the trailing segment.
