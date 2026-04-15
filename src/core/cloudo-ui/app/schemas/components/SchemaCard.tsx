@@ -131,10 +131,10 @@ export function SchemaCard({
             </div>
             <div className="flex flex-col min-w-0">
               <span className="text-[10px] text-cloudo-muted/50 uppercase font-black tracking-widest">
-                Execution Path
+                Runbook
               </span>
               <span
-                className="text-xs text-cloudo-text/80 font-bold truncate cursor-pointer hover:text-cloudo-accent transition-colors"
+                className="text-xs hover:text-cloudo-accent truncate cursor-pointer hover:text-cloudo-accent transition-colors"
                 onClick={() => onViewSource(schema.runbook)}
                 title="View Source"
               >

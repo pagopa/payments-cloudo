@@ -230,7 +230,7 @@ export function SchemaTable({
                     <div className="flex items-center gap-2 max-w-[200px]">
                       <HiOutlineTerminal className="text-cloudo-accent/60 w-3.5 h-3.5 shrink-0" />
                       <span
-                        className="text-[11px] font-mono text-cloudo-text/80 truncate cursor-pointer hover:text-cloudo-accent transition-colors"
+                        className="text-[11px] font-mono hover:text-cloudo-accent truncate cursor-pointer hover:text-cloudo-accent transition-colors"
                         onClick={() => onViewSource(schema.runbook)}
                         title="View Source"
                       >

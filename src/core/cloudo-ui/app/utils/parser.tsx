@@ -9,34 +9,53 @@ export function parseRunbookIntoCells(
 
   const lines = code.split("\n");
   const cells: { heading: string | null; code: string }[] = [];
-  let current: { heading: string | null; lines: string[] } = {
-    heading: null,
-    lines: [],
+  let currentHeading: string | null = null;
+  let currentLines: string[] = [];
+
+  const pushCell = () => {
+    const codeContent = currentLines.join("\n").trim();
+    if (codeContent !== "" || currentHeading !== null) {
+      cells.push({
+        heading: currentHeading,
+        code: codeContent || "",
+      });
+    }
   };
 
-  for (const line of lines) {
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
     const trimmed = line.trim();
-    // Match "# Heading" — single hash followed by a space and text
-    const isHeading = /^#\s+\S/.test(trimmed) && !trimmed.startsWith("//");
-    if (isHeading) {
-      if (current.lines.some((l) => l.trim() !== "")) {
-        cells.push({
-          heading: current.heading,
-          code: current.lines.join("\n").replace(/^\n+|\n+$/g, ""),
-        });
+
+    if (trimmed === "#" || /^#\s+/.test(trimmed)) {
+      if (currentLines.some((l) => l.trim() !== "")) {
+        pushCell();
+        currentLines = [];
       }
-      current = { heading: trimmed.slice(2).trim(), lines: [] };
-    } else {
-      current.lines.push(line);
+
+      if (trimmed === "#") {
+        let j = i + 1;
+        while (j < lines.length && lines[j].trim() === "#") j++;
+
+        if (j < lines.length && /^#\s+/.test(lines[j].trim())) {
+          currentHeading = lines[j].trim().replace(/^#\s+/, "");
+          i = j;
+        } else {
+          currentHeading = currentHeading || "Sezione";
+        }
+      } else {
+        currentHeading = trimmed.replace(/^#\s+/, "");
+      }
+
+      if (i + 1 < lines.length && lines[i + 1].trim() === "#") {
+        i++;
+      }
+      continue;
     }
+
+    currentLines.push(line);
   }
 
-  if (current.lines.some((l) => l.trim() !== "")) {
-    cells.push({
-      heading: current.heading,
-      code: current.lines.join("\n").replace(/^\n+|\n+$/g, ""),
-    });
-  }
+  pushCell();
 
   return cells.length > 0 ? cells : [{ heading: null, code: code }];
 }
