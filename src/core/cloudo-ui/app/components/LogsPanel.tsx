@@ -1292,18 +1292,6 @@ function ExecutionTimeline({
       {/* Timeline Schema */}
       <div className="flex flex-wrap items-center justify-center gap-2 md:gap-3">
         {timelineLogs.map((log, idx) => {
-          const duration =
-            idx > 0
-              ? Math.floor(
-                  (new Date(log.RequestedAt).getTime() -
-                    new Date(timelineLogs[idx - 1].RequestedAt).getTime()) /
-                    1000,
-                )
-              : 0;
-
-          // Calculate connector width based on duration (flex)
-          const connectorWidth = Math.max(24, Math.min(36, 24 + duration * 4));
-
           return (
             <div
               key={`${log.ExecId}-${log.RowKey}`}
@@ -1331,11 +1319,8 @@ function ExecutionTimeline({
                 <div className="flex flex-col items-center gap-1">
                   <div
                     className="h-1 bg-gradient-to-r from-cloudo-accent to-cloudo-accent/30 rounded-full"
-                    style={{ width: `${connectorWidth}px` }}
+                    style={{ width: `24px` }}
                   />
-                  <div className="text-[10px] md:text-xs font-mono font-bold text-cloudo-muted whitespace-nowrap">
-                    +{duration}s
-                  </div>
                 </div>
               )}
             </div>
