@@ -32,6 +32,7 @@ interface Schedule {
   queue?: string;
   worker_pool?: string;
   enabled: boolean;
+  oncall: boolean;
   last_run?: string;
 }
 
@@ -424,8 +425,8 @@ export default function SchedulesPage() {
                             disabled={togglingId === s.id}
                             className={`p-2.5 border transition-all ${
                               s.enabled
-                                ? "bg-cloudo-accent/10 border-cloudo-border text-cloudo-ok hover:border-cloudo-ok/40"
-                                : "bg-cloudo-accent/10 border-cloudo-border text-cloudo-muted hover:border-white/20"
+                                ? "bg-cloudo-accent/10 border-cloudo-border text-cloudo-muted hover:border-cloudo-muted/40"
+                                : "bg-cloudo-accent/10 border-cloudo-border text-cloudo-ok hover:border-white/20"
                             } ${
                               togglingId === s.id
                                 ? "opacity-50 cursor-wait"
@@ -644,6 +645,7 @@ function ScheduleForm({
     run_args: initialData?.run_args || "",
     worker_pool: initialData?.worker_pool || "",
     enabled: initialData?.enabled ?? true,
+    oncall: initialData?.oncall ?? false,
   });
   const [submitting, setSubmitting] = useState(false);
 
@@ -821,6 +823,33 @@ function ScheduleForm({
             <HiOutlineBan className="w-4 h-4 text-cloudo-muted" />
           )}
           {formData.enabled ? "Yes" : "Nope"}
+        </div>
+      </div>
+      <div
+        className="flex items-center justify-between p-4 bg-cloudo-accent/10 border border-cloudo-border group hover:border-cloudo-accent/40 transition-all cursor-pointer"
+        onClick={() => setFormData({ ...formData, oncall: !formData.oncall })}
+      >
+        <div className="space-y-1">
+          <p className="text-sm font-black text-cloudo-text uppercase tracking-widest">
+            On Call
+          </p>
+          <p className="text-[11px] text-cloudo-muted uppercase font-bold opacity-70">
+            Set On Call Flow
+          </p>
+        </div>
+        <div
+          className={`flex items-center gap-2 px-3 py-1 border font-black text-[11px] uppercase tracking-widest transition-all ${
+            formData.oncall
+              ? "bg-cloudo-ok/10 border-cloudo-ok text-cloudo-ok"
+              : "bg-cloudo-muted/10 border-cloudo-muted text-cloudo-muted opacity-70"
+          }`}
+        >
+          {formData.oncall ? (
+            <HiOutlineSwitchHorizontal className="w-4 h-4 text-cloudo-accent" />
+          ) : (
+            <HiOutlineBan className="w-4 h-4 text-cloudo-muted" />
+          )}
+          {formData.oncall ? "Yes" : "Nope"}
         </div>
       </div>
 

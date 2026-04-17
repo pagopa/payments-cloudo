@@ -364,7 +364,7 @@ def normalize_context(raw_ctx: dict[str, Any]) -> dict[str, Any]:
         "schemaName": raw_ctx.get("schemaName"),
         "severity": raw_ctx.get("severity"),
         "namespace": raw_ctx.get("namespace"),
-        "oncall": str(raw_ctx.get("oncall") or "").strip().lower(),
+        "oncall": str(raw_ctx.get("oncall") or False),
         "status": raw_ctx.get("status"),
         "execId": raw_ctx.get("execId"),
         "name": raw_ctx.get("name"),
