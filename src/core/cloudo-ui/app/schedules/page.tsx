@@ -342,6 +342,9 @@ export default function SchedulesPage() {
                   <th className="px-8 py-5 font-black text-cloudo-muted uppercase tracking-[0.3em] text-[11px]">
                     Last Execution
                   </th>
+                  <th className="px-8 py-5 font-black text-cloudo-muted uppercase tracking-[0.3em] text-[11px]">
+                    On Call
+                  </th>
                   <th className="px-8 py-5 font-black text-cloudo-muted uppercase tracking-[0.3em] text-right text-[11px]">
                     Actions
                   </th>
@@ -417,6 +420,13 @@ export default function SchedulesPage() {
                         {s.last_run
                           ? new Date(s.last_run).toLocaleString()
                           : "NEVER_EXECUTED"}
+                      </td>
+                      <td className="px-4 py-4 text-center">
+                        {s.oncall && (
+                          <div className="flex justify-center">
+                            <div className="w-2 h-2 bg-cloudo-err animate-pulse" />
+                          </div>
+                        )}
                       </td>
                       <td className="px-8 py-6 text-right">
                         <div className="flex items-center justify-end gap-2">

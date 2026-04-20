@@ -216,8 +216,8 @@ export function SchemaCard({
                 disabled={togglingId === schema.id}
                 className={`p-2.5 border transition-all ${
                   schema.enabled !== false
-                    ? "bg-cloudo-accent/10 border-cloudo-border text-cloudo-ok hover:border-cloudo-ok/40"
-                    : "bg-cloudo-accent/10 border-cloudo-border text-cloudo-muted hover:border-white/20"
+                    ? "bg-cloudo-accent/10 border-cloudo-border text-cloudo-muted hover:border-cloudo-muted/40"
+                    : "bg-cloudo-accent/10 border-cloudo-border text-cloudo-ok hover:border-white/20"
                 } ${togglingId === schema.id ? "opacity-50 cursor-wait" : ""} ${
                   userRole !== "ADMIN" && userRole !== "OPERATOR"
                     ? "hidden"

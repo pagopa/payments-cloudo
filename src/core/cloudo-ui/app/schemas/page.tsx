@@ -419,7 +419,7 @@ export default function SchemasPage() {
         {notifications.map((n) => (
           <div
             key={n.id}
-            className={`px-6 py-4 flex items-center gap-4 animate-in slide-in-from-right-full duration-300 border shadow-2xl pointer-events-auto min-w-[300px] relative overflow-hidden ${
+            className={`px-6 py-4 flex items-center gap-4 animate-in slide-in-from-right-full duration-300 border shadow-2xl pointer-events-auto min-w-75 relative overflow-hidden ${
               n.type === "success"
                 ? "bg-cloudo-panel border-cloudo-ok/30 text-cloudo-ok"
                 : "bg-cloudo-panel border-cloudo-err/30 text-cloudo-err"
