@@ -334,7 +334,7 @@ export default function DashboardPage() {
                                 {(exec.Name as string) || "SYS_TASK"}
                               </div>
                             </td>
-                            <td className="px-6 py-4 font-mono text-cloudo-accent/60">
+                            <td className="px-6 py-4 font-mono hover:text-cloudo-accent">
                               {(exec.Runbook as string) || "--"}
                             </td>
                             <td className="px-6 py-4">

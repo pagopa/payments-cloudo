@@ -2110,7 +2110,7 @@ def Receiver(msg: func.QueueMessage, log_table: func.Out[str]) -> None:
             "schemaName": body.get("name"),
             "severity": body.get("severity"),
             "namespace": namespace or None,
-            "oncall": (body.get("oncall") or "").strip().lower(),
+            "oncall": (body.get("oncall") or False),
             "status": status_label,
             "execId": exec_id,
             "name": body.get("name"),
@@ -3826,6 +3826,7 @@ def schedules_management(req: func.HttpRequest) -> func.HttpResponse:
                         "queue": e.get("queue"),
                         "worker_pool": e.get("worker_pool"),
                         "enabled": e.get("enabled"),
+                        "oncall": e.get("oncall"),
                         "last_run": e.get("last_run"),
                     }
                 )
@@ -3857,6 +3858,7 @@ def schedules_management(req: func.HttpRequest) -> func.HttpResponse:
                 "queue": body.get("queue"),
                 "worker_pool": body.get("worker_pool"),
                 "enabled": body.get("enabled", True),
+                "oncall": body.get("oncall", True),
                 "last_run": body.get("last_run", ""),
             }
             table_client.upsert_entity(entity=entity, mode=UpdateMode.REPLACE)
@@ -4527,7 +4529,7 @@ def scheduler_engine(schedulerTimer: func.TimerRequest) -> None:
                     "id": s.get("RowKey"),
                     "name": s.get("name"),
                     "status": "scheduled",
-                    "oncall": False,
+                    "oncall": s.get("oncall"),
                     "require_approval": False,
                     "requested_at": requested_at,
                 }
@@ -4547,7 +4549,7 @@ def scheduler_engine(schedulerTimer: func.TimerRequest) -> None:
                         runbook=s.get("runbook"),
                         run_args=s.get("run_args"),
                         worker=worker_pool,
-                        oncall="false",
+                        oncall=s.get("oncall"),
                         log_msg=json.dumps(
                             {
                                 "status": "scheduled",

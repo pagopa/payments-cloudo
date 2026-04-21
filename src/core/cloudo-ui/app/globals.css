@@ -17,16 +17,16 @@
 }
 
 .light {
-  --color-cloudo-dark: #fcfbf9;
+  --color-cloudo-dark: #f0f4f8;
   --color-cloudo-panel: #ffffff;
-  --color-cloudo-panel-2: #f2f5f8;
-  --color-cloudo-text: #111a24;
+  --color-cloudo-panel-2: #e5eaf1;
+  --color-cloudo-text: #020617;
   --color-cloudo-muted: #475569;
-  --color-cloudo-border: #94a3b8;
-  --color-cloudo-accent: #0284c7;
-  --color-cloudo-ok: #166534;
+  --color-cloudo-border: #cbd5e1;
+  --color-cloudo-accent: #3730a3;
+  --color-cloudo-ok: #065f46;
   --color-cloudo-warn: #9a3412;
-  --color-cloudo-err: #991b1b;
+  --color-cloudo-err: #9f1239;
 }
 
 @theme inline {
@@ -72,6 +72,9 @@ body {
   @apply border px-4 py-3 w-full border-cloudo-border focus:border-cloudo-accent bg-cloudo-dark text-cloudo-text outline-none transition-all placeholder:text-cloudo-muted/50 font-mono text-sm;
 }
 
+.input-editor {
+  @apply w-full border-cloudo-border focus:border-cloudo-accent bg-cloudo-dark text-cloudo-text outline-none transition-all placeholder:text-cloudo-muted/50 font-mono text-sm;
+}
 .input-icon {
   @apply pl-14;
 }

@@ -313,7 +313,7 @@ function ApprovalsPageContent() {
       </div>
 
       <div className="flex-1 overflow-auto p-8">
-        <div className="max-w-[1400px] mx-auto">
+        <div className="max-w-350 mx-auto">
           {loading ? (
             <div className="py-24 text-center flex flex-col items-center gap-4">
               <div className="w-8 h-8 border-2 border-cloudo-warn/30 border-t-cloudo-warn rounded-full animate-spin" />
@@ -361,7 +361,7 @@ function ApprovalsPageContent() {
                                 : "bg-cloudo-warn"
                             }`}
                           />
-                          <h3 className="text-sm font-black text-cloudo-text uppercase tracking-widest truncate max-w-[180px]">
+                          <h3 className="text-sm font-black text-cloudo-text uppercase tracking-widest truncate max-w-45">
                             {item.Name || "SYS_TASK"}
                           </h3>
                           {item.Status === "running" && (
@@ -383,7 +383,7 @@ function ApprovalsPageContent() {
                         {item.Runbook}
                       </div>
                       {selectedExec?.ExecId === item.ExecId && (
-                        <div className="absolute left-[-1px] top-0 w-[2px] h-full bg-cloudo-warn" />
+                        <div className="absolute -left-px top-0 w-0.5 h-full bg-cloudo-warn" />
                       )}
                     </div>
                   ))}
@@ -402,7 +402,7 @@ function ApprovalsPageContent() {
                   <div
                     className={`bg-cloudo-panel border border-cloudo-border flex flex-col transition-all duration-500 ease-in-out overflow-hidden ${
                       isExpanded
-                        ? "fixed inset-4 z-[60] shadow-2xl animate-in zoom-in-95 fade-in duration-500 overflow-y-auto custom-scrollbar ring-1 ring-cloudo-warn/20"
+                        ? "fixed inset-4 z-60 shadow-2xl animate-in zoom-in-95 fade-in duration-500 overflow-y-auto custom-scrollbar ring-1 ring-cloudo-warn/20"
                         : "sticky top-8 animate-in fade-in slide-in-from-right-4 duration-300"
                     }`}
                   >

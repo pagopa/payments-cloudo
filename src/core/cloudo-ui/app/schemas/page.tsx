@@ -1,40 +1,36 @@
 "use client";
 
-import { useState, useEffect, useMemo, useRef } from "react";
+import React, { useState, useEffect, useMemo, useRef } from "react";
 import { cloudoFetch } from "@/lib/api";
 import {
   HiOutlinePlus,
   HiOutlineSearch,
-  HiOutlineChip,
   HiOutlineTerminal,
   HiOutlineUserGroup,
   HiOutlineShieldCheck,
-  HiOutlineTrash,
-  HiOutlinePlay,
-  HiOutlinePencil,
   HiOutlineX,
   HiOutlineClipboardCopy,
-  HiOutlineCheck,
   HiOutlineCheckCircle,
   HiOutlineExclamationCircle,
-  HiOutlineRefresh,
-  HiOutlineCloud,
   HiOutlineChevronLeft,
   HiOutlineChevronRight,
-  HiOutlineEye,
   HiOutlineViewGrid,
   HiOutlineViewList,
   HiOutlineBan,
+  HiCode,
 } from "react-icons/hi";
 import { MdOutlineSchema } from "react-icons/md";
-import { SiTerraform } from "react-icons/si";
 import { DeleteConfirmationModal } from "../utils/modals";
+import { parseRunbookIntoCells } from "../utils/parser";
 import { Schema, Notification } from "./types";
 import { StatSmall } from "./components/StatSmall";
 import { SchemaForm } from "./components/SchemaForm";
 import { SchemaCard } from "./components/SchemaCard";
 import { SchemaTable } from "./components/SchemaTable";
 import { SchemaFilters } from "./components/SchemaFilters";
+import { SiTerraform } from "react-icons/si";
+import { GiJupiter } from "react-icons/gi";
+import { HiCodeBracket, HiMiniComputerDesktop } from "react-icons/hi2";
 
 export default function SchemasPage() {
   const [schemas, setSchemas] = useState<Schema[]>([]);
@@ -43,6 +39,10 @@ export default function SchemasPage() {
   const [activeFilter, setActiveFilter] = useState<"all" | "terraform" | "ui">(
     "all",
   );
+  const [codeSourceSelector, setCodeSourceSelector] = useState<
+    "parsed" | "source"
+  >("parsed");
+
   const [workerFilter, setWorkerFilter] = useState("all");
   const [approvalFilter, setApprovalFilter] = useState<
     "all" | "required" | "auto"
@@ -187,7 +187,6 @@ export default function SchemasPage() {
       const res = await cloudoFetch(`/workers`);
       const data = await res.json();
       if (res.ok && Array.isArray(data)) {
-        // Use PartitionKey as the capability as requested
         const capabilities = Array.from(
           new Set(
             data
@@ -419,7 +418,7 @@ export default function SchemasPage() {
         {notifications.map((n) => (
           <div
             key={n.id}
-            className={`px-6 py-4 flex items-center gap-4 animate-in slide-in-from-right-full duration-300 border shadow-2xl pointer-events-auto min-w-[300px] relative overflow-hidden ${
+            className={`px-6 py-4 flex items-center gap-4 animate-in slide-in-from-right-full duration-300 border shadow-2xl pointer-events-auto min-w-75 relative overflow-hidden ${
               n.type === "success"
                 ? "bg-cloudo-panel border-cloudo-ok/30 text-cloudo-ok"
                 : "bg-cloudo-panel border-cloudo-err/30 text-cloudo-err"
@@ -463,7 +462,7 @@ export default function SchemasPage() {
         ))}
       </div>
 
-      {/* Top Bar - Solid Technical Style */}
+      {/* Top Bar */}
       <div className="flex flex-col border-b border-cloudo-border bg-cloudo-panel sticky top-0 z-20">
         <div className="flex items-center justify-between px-8 py-4">
           <div className="flex items-center gap-4 shrink-0">
@@ -856,6 +855,26 @@ export default function SchemasPage() {
                 <h3 className="text-[10px] font-black uppercase tracking-[0.3em] text-cloudo-text">
                   Runbook Source Viewer
                 </h3>
+                <button
+                  onClick={() => setCodeSourceSelector("parsed")}
+                  className={`px-3 py-1 text-[10px] cursor-pointer font-black uppercase tracking-widest transition-all flex items-center gap-2 ${
+                    codeSourceSelector === "parsed"
+                      ? "bg-cloudo-accent text-cloudo-dark"
+                      : "text-cloudo-muted hover:text-cloudo-text"
+                  }`}
+                >
+                  <HiMiniComputerDesktop className="w-3 h-3" /> Parsed Code
+                </button>
+                <button
+                  onClick={() => setCodeSourceSelector("source")}
+                  className={`px-3 py-1 text-[10px] cursor-pointer font-black uppercase tracking-widest transition-all flex items-center gap-2 ${
+                    codeSourceSelector === "source"
+                      ? "bg-cloudo-accent text-cloudo-dark"
+                      : "text-cloudo-muted hover:text-cloudo-text"
+                  }`}
+                >
+                  <HiCode className="w-3 h-3" /> Raw Code
+                </button>
               </div>
               <button
                 onClick={() => setIsRunbookModalOpen(false)}
@@ -865,11 +884,27 @@ export default function SchemasPage() {
               </button>
             </div>
 
-            <div className="flex-1 overflow-auto p-6 font-mono text-xs bg-black/40">
+            {/* ── content area ── */}
+            <div className="flex-1 overflow-auto p-6 input-editor font-mono text-xs bg-black/40 space-y-2">
               {fetchingRunbook ? (
                 <div className="flex items-center justify-center h-64 text-cloudo-accent animate-pulse uppercase tracking-widest font-black">
                   Retrieving Source from Git...
                 </div>
+              ) : codeSourceSelector === "parsed" ? (
+                parseRunbookIntoCells(runbookContent || "").map((cell, i) => (
+                  <div key={i}>
+                    {cell.heading && (
+                      <p className="text-[9px] font-black uppercase tracking-widest text-cloudo-accent/70 mb-1.5 mt-4 first:mt-0">
+                        {cell.heading}
+                      </p>
+                    )}
+                    <div className="border border-cloudo-border bg-cloudo-panel/60">
+                      <pre className="p-4 text-cloudo-text/90 whitespace-pre-wrap break-all leading-relaxed">
+                        {cell.code}
+                      </pre>
+                    </div>
+                  </div>
+                ))
               ) : (
                 <pre className="text-cloudo-text/90 whitespace-pre-wrap break-all leading-relaxed">
                   {runbookContent || "No content available."}

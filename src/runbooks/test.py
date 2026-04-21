@@ -10,6 +10,7 @@ import sys
 import time
 
 
+# Fibonacci function
 def fibonacci(n: int) -> int:
     if n < 0:
         raise ValueError("n must be >= 0")
@@ -21,6 +22,7 @@ def fibonacci(n: int) -> int:
     return b
 
 
+# -- Main --
 def main(argv=None) -> int:
     parser = argparse.ArgumentParser(
         description="Simple Fibonacci load: compute Fibonacci(n) repeatedly."

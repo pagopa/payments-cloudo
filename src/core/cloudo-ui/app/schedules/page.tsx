@@ -1,8 +1,10 @@
 "use client";
 
-import { useState, useEffect, useMemo } from "react";
+import React, { useState, useEffect, useMemo } from "react";
 import { cloudoFetch } from "@/lib/api";
 import { DeleteConfirmationModal } from "../utils/modals";
+import { parseRunbookIntoCells } from "../utils/parser";
+
 import {
   HiOutlinePlus,
   HiOutlineSearch,
@@ -19,7 +21,9 @@ import {
   HiOutlineBan,
   HiOutlineClipboardCopy,
   HiOutlineChip,
+  HiCode,
 } from "react-icons/hi";
+import { HiMiniComputerDesktop } from "react-icons/hi2";
 
 interface Schedule {
   id: string;
@@ -30,6 +34,7 @@ interface Schedule {
   queue?: string;
   worker_pool?: string;
   enabled: boolean;
+  oncall: boolean;
   last_run?: string;
 }
 
@@ -53,6 +58,9 @@ export default function SchedulesPage() {
   const [notifications, setNotifications] = useState<Notification[]>([]);
   const [togglingId, setTogglingId] = useState<string | null>(null);
   const [user, setUser] = useState<{ role: string } | null>(null);
+  const [codeSourceSelector, setCodeSourceSelector] = useState<
+    "parsed" | "source"
+  >("parsed");
 
   const [runbookContent, setRunbookContent] = useState<string | null>(null);
   const [isRunbookModalOpen, setIsRunbookModalOpen] = useState(false);
@@ -339,6 +347,9 @@ export default function SchedulesPage() {
                   <th className="px-8 py-5 font-black text-cloudo-muted uppercase tracking-[0.3em] text-[11px]">
                     Last Execution
                   </th>
+                  <th className="px-8 py-5 font-black text-cloudo-muted uppercase tracking-[0.3em] text-[11px]">
+                    On Call
+                  </th>
                   <th className="px-8 py-5 font-black text-cloudo-muted uppercase tracking-[0.3em] text-right text-[11px]">
                     Actions
                   </th>
@@ -415,6 +426,13 @@ export default function SchedulesPage() {
                           ? new Date(s.last_run).toLocaleString()
                           : "NEVER_EXECUTED"}
                       </td>
+                      <td className="px-4 py-4 text-center">
+                        {s.oncall && (
+                          <div className="flex justify-center">
+                            <div className="w-2 h-2 bg-cloudo-err animate-pulse" />
+                          </div>
+                        )}
+                      </td>
                       <td className="px-8 py-6 text-right">
                         <div className="flex items-center justify-end gap-2">
                           <button
@@ -422,8 +440,8 @@ export default function SchedulesPage() {
                             disabled={togglingId === s.id}
                             className={`p-2.5 border transition-all ${
                               s.enabled
-                                ? "bg-cloudo-accent/10 border-cloudo-border text-cloudo-ok hover:border-cloudo-ok/40"
-                                : "bg-cloudo-accent/10 border-cloudo-border text-cloudo-muted hover:border-white/20"
+                                ? "bg-cloudo-accent/10 border-cloudo-border text-cloudo-muted hover:border-cloudo-muted/40"
+                                : "bg-cloudo-accent/10 border-cloudo-border text-cloudo-ok hover:border-white/20"
                             } ${
                               togglingId === s.id
                                 ? "opacity-50 cursor-wait"
@@ -560,6 +578,26 @@ export default function SchedulesPage() {
                 <h3 className="text-[10px] font-black uppercase tracking-[0.3em] text-cloudo-text">
                   Runbook Source Viewer
                 </h3>
+                <button
+                  onClick={() => setCodeSourceSelector("parsed")}
+                  className={`px-3 py-1 text-[10px] cursor-pointer font-black uppercase tracking-widest transition-all flex items-center gap-2 ${
+                    codeSourceSelector === "parsed"
+                      ? "bg-cloudo-accent text-cloudo-dark"
+                      : "text-cloudo-muted hover:text-cloudo-text"
+                  }`}
+                >
+                  <HiMiniComputerDesktop className="w-3 h-3" /> Parsed Code
+                </button>
+                <button
+                  onClick={() => setCodeSourceSelector("source")}
+                  className={`px-3 py-1 text-[10px] cursor-pointer font-black uppercase tracking-widest transition-all flex items-center gap-2 ${
+                    codeSourceSelector === "source"
+                      ? "bg-cloudo-accent text-cloudo-dark"
+                      : "text-cloudo-muted hover:text-cloudo-text"
+                  }`}
+                >
+                  <HiCode className="w-3 h-3" /> Raw Code
+                </button>
               </div>
               <button
                 onClick={() => setIsRunbookModalOpen(false)}
@@ -569,11 +607,27 @@ export default function SchedulesPage() {
               </button>
             </div>
 
-            <div className="flex-1 overflow-auto p-6 font-mono text-xs bg-black/40">
+            {/* ── content area ── */}
+            <div className="flex-1 overflow-auto p-6 input-editor font-mono text-xs bg-black/40 space-y-2">
               {fetchingRunbook ? (
                 <div className="flex items-center justify-center h-64 text-cloudo-accent animate-pulse uppercase tracking-widest font-black">
                   Retrieving Source from Git...
                 </div>
+              ) : codeSourceSelector === "parsed" ? (
+                parseRunbookIntoCells(runbookContent || "").map((cell, i) => (
+                  <div key={i}>
+                    {cell.heading && (
+                      <p className="text-[9px] font-black uppercase tracking-widest text-cloudo-accent/70 mb-1.5 mt-4 first:mt-0">
+                        {cell.heading}
+                      </p>
+                    )}
+                    <div className="border border-cloudo-border bg-cloudo-panel/60">
+                      <pre className="p-4 text-cloudo-text/90 whitespace-pre-wrap break-all leading-relaxed">
+                        {cell.code}
+                      </pre>
+                    </div>
+                  </div>
+                ))
               ) : (
                 <pre className="text-cloudo-text/90 whitespace-pre-wrap break-all leading-relaxed">
                   {runbookContent || "No content available."}
@@ -630,6 +684,7 @@ function ScheduleForm({
     run_args: initialData?.run_args || "",
     worker_pool: initialData?.worker_pool || "",
     enabled: initialData?.enabled ?? true,
+    oncall: initialData?.oncall ?? false,
   });
   const [submitting, setSubmitting] = useState(false);
 
@@ -807,6 +862,33 @@ function ScheduleForm({
             <HiOutlineBan className="w-4 h-4 text-cloudo-muted" />
           )}
           {formData.enabled ? "Yes" : "Nope"}
+        </div>
+      </div>
+      <div
+        className="flex items-center justify-between p-4 bg-cloudo-accent/10 border border-cloudo-border group hover:border-cloudo-accent/40 transition-all cursor-pointer"
+        onClick={() => setFormData({ ...formData, oncall: !formData.oncall })}
+      >
+        <div className="space-y-1">
+          <p className="text-sm font-black text-cloudo-text uppercase tracking-widest">
+            On Call
+          </p>
+          <p className="text-[11px] text-cloudo-muted uppercase font-bold opacity-70">
+            Set On Call Flow
+          </p>
+        </div>
+        <div
+          className={`flex items-center gap-2 px-3 py-1 border font-black text-[11px] uppercase tracking-widest transition-all ${
+            formData.oncall
+              ? "bg-cloudo-ok/10 border-cloudo-ok text-cloudo-ok"
+              : "bg-cloudo-muted/10 border-cloudo-muted text-cloudo-muted opacity-70"
+          }`}
+        >
+          {formData.oncall ? (
+            <HiOutlineSwitchHorizontal className="w-4 h-4 text-cloudo-accent" />
+          ) : (
+            <HiOutlineBan className="w-4 h-4 text-cloudo-muted" />
+          )}
+          {formData.oncall ? "Yes" : "Nope"}
         </div>
       </div>
 

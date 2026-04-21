@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect, useMemo, useCallback } from "react";
 import { cloudoFetch } from "@/lib/api";
+import { parseRunbookIntoCells } from "../utils/parser";
 import {
   HiOutlineSearch,
   HiOutlineTerminal,
@@ -13,8 +14,10 @@ import {
   HiOutlineDownload,
   HiOutlineFolder,
   HiOutlineFolderOpen,
+  HiCode,
 } from "react-icons/hi";
 import { HiOutlineCollection } from "react-icons/hi";
+import { HiMiniComputerDesktop } from "react-icons/hi2";
 
 interface Notification {
   id: string;
@@ -33,6 +36,9 @@ export default function CollectionPage() {
   const [selectedRunbook, setSelectedRunbook] = useState<string | null>(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [fetchingContent, setFetchingContent] = useState(false);
+  const [codeSourceSelector, setCodeSourceSelector] = useState<
+    "parsed" | "source"
+  >("parsed");
 
   const addNotification = (type: "success" | "error", message: string) => {
     const id = Date.now().toString();
@@ -439,6 +445,26 @@ export default function CollectionPage() {
                 <h3 className="text-[10px] font-black uppercase tracking-[0.3em] text-cloudo-text">
                   Runbook Source: {selectedRunbook}
                 </h3>
+                <button
+                  onClick={() => setCodeSourceSelector("parsed")}
+                  className={`px-3 py-1 text-[10px] cursor-pointer font-black uppercase tracking-widest transition-all flex items-center gap-2 ${
+                    codeSourceSelector === "parsed"
+                      ? "bg-cloudo-accent text-cloudo-dark"
+                      : "text-cloudo-muted hover:text-cloudo-text"
+                  }`}
+                >
+                  <HiMiniComputerDesktop className="w-3 h-3" /> Parsed Code
+                </button>
+                <button
+                  onClick={() => setCodeSourceSelector("source")}
+                  className={`px-3 py-1 text-[10px] cursor-pointer font-black uppercase tracking-widest transition-all flex items-center gap-2 ${
+                    codeSourceSelector === "source"
+                      ? "bg-cloudo-accent text-cloudo-dark"
+                      : "text-cloudo-muted hover:text-cloudo-text"
+                  }`}
+                >
+                  <HiCode className="w-3 h-3" /> Raw Code
+                </button>
               </div>
               <button
                 onClick={() => setIsModalOpen(false)}
@@ -448,11 +474,27 @@ export default function CollectionPage() {
               </button>
             </div>
 
-            <div className="flex-1 overflow-auto p-6 font-mono text-xs bg-black/40">
+            {/* ── content area ── */}
+            <div className="flex-1 overflow-auto p-6 input-editor font-mono text-xs bg-black/40 space-y-2">
               {fetchingContent ? (
                 <div className="flex items-center justify-center h-64 text-cloudo-accent animate-pulse uppercase tracking-widest font-black">
                   Retrieving Source from Git...
                 </div>
+              ) : codeSourceSelector === "parsed" ? (
+                parseRunbookIntoCells(runbookContent || "").map((cell, i) => (
+                  <div key={i}>
+                    {cell.heading && (
+                      <p className="text-[9px] font-black uppercase tracking-widest text-cloudo-accent/70 mb-1.5 mt-4 first:mt-0">
+                        {cell.heading}
+                      </p>
+                    )}
+                    <div className="border border-cloudo-border bg-cloudo-panel/60">
+                      <pre className="p-4 text-cloudo-text/90 whitespace-pre-wrap break-all leading-relaxed">
+                        {cell.code}
+                      </pre>
+                    </div>
+                  </div>
+                ))
               ) : (
                 <pre className="text-cloudo-text/90 whitespace-pre-wrap break-all leading-relaxed">
                   {runbookContent || "No content available."}
