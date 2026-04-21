@@ -1,33 +1,25 @@
 "use client";
 
-import { useState, useEffect, useMemo, useRef } from "react";
+import React, { useState, useEffect, useMemo, useRef } from "react";
 import { cloudoFetch } from "@/lib/api";
 import {
   HiOutlinePlus,
   HiOutlineSearch,
-  HiOutlineChip,
   HiOutlineTerminal,
   HiOutlineUserGroup,
   HiOutlineShieldCheck,
-  HiOutlineTrash,
-  HiOutlinePlay,
-  HiOutlinePencil,
   HiOutlineX,
   HiOutlineClipboardCopy,
-  HiOutlineCheck,
   HiOutlineCheckCircle,
   HiOutlineExclamationCircle,
-  HiOutlineRefresh,
-  HiOutlineCloud,
   HiOutlineChevronLeft,
   HiOutlineChevronRight,
-  HiOutlineEye,
   HiOutlineViewGrid,
   HiOutlineViewList,
   HiOutlineBan,
+  HiCode,
 } from "react-icons/hi";
 import { MdOutlineSchema } from "react-icons/md";
-import { SiTerraform } from "react-icons/si";
 import { DeleteConfirmationModal } from "../utils/modals";
 import { parseRunbookIntoCells } from "../utils/parser";
 import { Schema, Notification } from "./types";
@@ -36,6 +28,9 @@ import { SchemaForm } from "./components/SchemaForm";
 import { SchemaCard } from "./components/SchemaCard";
 import { SchemaTable } from "./components/SchemaTable";
 import { SchemaFilters } from "./components/SchemaFilters";
+import { SiTerraform } from "react-icons/si";
+import { GiJupiter } from "react-icons/gi";
+import { HiCodeBracket, HiMiniComputerDesktop } from "react-icons/hi2";
 
 export default function SchemasPage() {
   const [schemas, setSchemas] = useState<Schema[]>([]);
@@ -44,6 +39,10 @@ export default function SchemasPage() {
   const [activeFilter, setActiveFilter] = useState<"all" | "terraform" | "ui">(
     "all",
   );
+  const [codeSourceSelector, setCodeSourceSelector] = useState<
+    "parsed" | "source"
+  >("parsed");
+
   const [workerFilter, setWorkerFilter] = useState("all");
   const [approvalFilter, setApprovalFilter] = useState<
     "all" | "required" | "auto"
@@ -856,6 +855,26 @@ export default function SchemasPage() {
                 <h3 className="text-[10px] font-black uppercase tracking-[0.3em] text-cloudo-text">
                   Runbook Source Viewer
                 </h3>
+                <button
+                  onClick={() => setCodeSourceSelector("parsed")}
+                  className={`px-3 py-1 text-[10px] cursor-pointer font-black uppercase tracking-widest transition-all flex items-center gap-2 ${
+                    codeSourceSelector === "parsed"
+                      ? "bg-cloudo-accent text-cloudo-dark"
+                      : "text-cloudo-muted hover:text-cloudo-text"
+                  }`}
+                >
+                  <HiMiniComputerDesktop className="w-3 h-3" /> Parsed Code
+                </button>
+                <button
+                  onClick={() => setCodeSourceSelector("source")}
+                  className={`px-3 py-1 text-[10px] cursor-pointer font-black uppercase tracking-widest transition-all flex items-center gap-2 ${
+                    codeSourceSelector === "source"
+                      ? "bg-cloudo-accent text-cloudo-dark"
+                      : "text-cloudo-muted hover:text-cloudo-text"
+                  }`}
+                >
+                  <HiCode className="w-3 h-3" /> Raw Code
+                </button>
               </div>
               <button
                 onClick={() => setIsRunbookModalOpen(false)}
@@ -871,7 +890,7 @@ export default function SchemasPage() {
                 <div className="flex items-center justify-center h-64 text-cloudo-accent animate-pulse uppercase tracking-widest font-black">
                   Retrieving Source from Git...
                 </div>
-              ) : (
+              ) : codeSourceSelector === "parsed" ? (
                 parseRunbookIntoCells(runbookContent || "").map((cell, i) => (
                   <div key={i}>
                     {cell.heading && (
@@ -886,6 +905,10 @@ export default function SchemasPage() {
                     </div>
                   </div>
                 ))
+              ) : (
+                <pre className="text-cloudo-text/90 whitespace-pre-wrap break-all leading-relaxed">
+                  {runbookContent || "No content available."}
+                </pre>
               )}
             </div>
 

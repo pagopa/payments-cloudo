@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useMemo } from "react";
+import React, { useState, useEffect, useMemo } from "react";
 import { cloudoFetch } from "@/lib/api";
 import { DeleteConfirmationModal } from "../utils/modals";
 import { parseRunbookIntoCells } from "../utils/parser";
@@ -21,7 +21,9 @@ import {
   HiOutlineBan,
   HiOutlineClipboardCopy,
   HiOutlineChip,
+  HiCode,
 } from "react-icons/hi";
+import { HiMiniComputerDesktop } from "react-icons/hi2";
 
 interface Schedule {
   id: string;
@@ -56,6 +58,9 @@ export default function SchedulesPage() {
   const [notifications, setNotifications] = useState<Notification[]>([]);
   const [togglingId, setTogglingId] = useState<string | null>(null);
   const [user, setUser] = useState<{ role: string } | null>(null);
+  const [codeSourceSelector, setCodeSourceSelector] = useState<
+    "parsed" | "source"
+  >("parsed");
 
   const [runbookContent, setRunbookContent] = useState<string | null>(null);
   const [isRunbookModalOpen, setIsRunbookModalOpen] = useState(false);
@@ -573,6 +578,26 @@ export default function SchedulesPage() {
                 <h3 className="text-[10px] font-black uppercase tracking-[0.3em] text-cloudo-text">
                   Runbook Source Viewer
                 </h3>
+                <button
+                  onClick={() => setCodeSourceSelector("parsed")}
+                  className={`px-3 py-1 text-[10px] cursor-pointer font-black uppercase tracking-widest transition-all flex items-center gap-2 ${
+                    codeSourceSelector === "parsed"
+                      ? "bg-cloudo-accent text-cloudo-dark"
+                      : "text-cloudo-muted hover:text-cloudo-text"
+                  }`}
+                >
+                  <HiMiniComputerDesktop className="w-3 h-3" /> Parsed Code
+                </button>
+                <button
+                  onClick={() => setCodeSourceSelector("source")}
+                  className={`px-3 py-1 text-[10px] cursor-pointer font-black uppercase tracking-widest transition-all flex items-center gap-2 ${
+                    codeSourceSelector === "source"
+                      ? "bg-cloudo-accent text-cloudo-dark"
+                      : "text-cloudo-muted hover:text-cloudo-text"
+                  }`}
+                >
+                  <HiCode className="w-3 h-3" /> Raw Code
+                </button>
               </div>
               <button
                 onClick={() => setIsRunbookModalOpen(false)}
@@ -588,7 +613,7 @@ export default function SchedulesPage() {
                 <div className="flex items-center justify-center h-64 text-cloudo-accent animate-pulse uppercase tracking-widest font-black">
                   Retrieving Source from Git...
                 </div>
-              ) : (
+              ) : codeSourceSelector === "parsed" ? (
                 parseRunbookIntoCells(runbookContent || "").map((cell, i) => (
                   <div key={i}>
                     {cell.heading && (
@@ -603,6 +628,10 @@ export default function SchedulesPage() {
                     </div>
                   </div>
                 ))
+              ) : (
+                <pre className="text-cloudo-text/90 whitespace-pre-wrap break-all leading-relaxed">
+                  {runbookContent || "No content available."}
+                </pre>
               )}
             </div>
 

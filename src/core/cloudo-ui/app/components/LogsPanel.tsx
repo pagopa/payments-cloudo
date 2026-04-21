@@ -213,6 +213,16 @@ function LogsPanelContent() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []); // Run only on mount
 
+  useEffect(() => {
+    const intervalId = window.setInterval(() => {
+      runQuery();
+    }, 10_000);
+
+    return () => {
+      window.clearInterval(intervalId);
+    };
+  }, [runQuery]);
+
   const handleReset = () => {
     setExecId("");
     setStatus("");
