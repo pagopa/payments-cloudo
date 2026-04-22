@@ -45,7 +45,7 @@ variable "schemas" {
         alltrue([
           for item in v.entity : (
             length(setsubtract(keys(item), [
-              "id", "name", "description", "runbook", "run_args", "worker", "oncall", "enabled", "tags", "require_approval"
+              "id", "name", "description", "runbook", "run_args", "worker", "oncall", "enabled", "tags", "require_approval", "group"
             ])) == 0 &&
             item.id != "" && item.name != "" && item.runbook != "" && item.worker != "" &&
             contains([true, false], lookup(item, "oncall", "")) &&
