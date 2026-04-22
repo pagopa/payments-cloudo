@@ -258,7 +258,7 @@ export function SchemaTable({
                     <div className="flex items-center gap-2">
                       <HiOutlineUserGroup className="text-cloudo-accent/60 w-3.5 h-3.5" />
                       <span className="text-[11px] font-mono text-cloudo-text/70 uppercase">
-                        {schema.group || "default"}
+                        {schema.group || "-"}
                       </span>
                     </div>
                   </td>

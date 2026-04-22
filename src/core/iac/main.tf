@@ -282,7 +282,7 @@ resource "azurerm_storage_table_entity" "schemas" {
   entity = merge(
     each.value.entity,
     {
-      group = lookup(each.value.entity, "group", null) == null ? "default" : each.value.entity.group
+      group = lookup(each.value.entity, "group", null) == null ? "-" : each.value.entity.group
       tags  = lookup(each.value.entity, "tags", null) == null ? "terraform" : contains(split(",", each.value.entity.tags), "terraform") ? each.value.entity.tags : "${each.value.entity.tags},terraform"
     }
   )

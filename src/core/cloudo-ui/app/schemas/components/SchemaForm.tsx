@@ -31,7 +31,7 @@ export function SchemaForm({
     id: initialData?.id || "",
     name: initialData?.name || "",
     description: initialData?.description || "",
-    group: initialData?.group || "default",
+    group: initialData?.group || "-",
     runbook: initialData?.runbook || "",
     run_args: initialData?.run_args || "",
     worker: initialData?.worker || "",
@@ -156,7 +156,7 @@ export function SchemaForm({
           className="input w-full"
           value={formData.group}
           onChange={(e) => setFormData({ ...formData, group: e.target.value })}
-          placeholder="default"
+          placeholder="-"
         />
       </div>
 

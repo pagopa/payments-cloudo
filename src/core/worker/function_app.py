@@ -592,13 +592,13 @@ def _run_script(
 
 
 def _inspect_duplicate_runs(items: list[Any], payload: Any) -> Optional[str]:
-    payload_group = str(payload.get("group") or "default").strip().lower()
+    payload_group = str(payload.get("group") or "-").strip().lower()
 
     for item in items:
-        item_group = str(item.get("group") or "default").strip().lower()
+        item_group = str(item.get("group") or "-").strip().lower()
 
         # Non-default groups are mutually exclusive: only one run at a time.
-        if payload_group != "default" and item_group == payload_group:
+        if payload_group != "-" and item_group == payload_group:
             return f"group '{payload_group}' is already running"
 
         # Keep duplicate run protection for identical requests.
