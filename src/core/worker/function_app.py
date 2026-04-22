@@ -3,6 +3,7 @@ import json
 import logging
 import os
 import shlex
+import shutil
 import signal
 import stat
 import subprocess
@@ -26,9 +27,11 @@ NOTIFICATION_QUEUE_NAME = os.environ.get(
     "NOTIFICATION_QUEUE_NAME", "cloudo-notification"
 )
 STORAGE_CONNECTION = "AzureWebJobsStorage"
-MAX_LOG_BODY_BYTES = int(
-    os.environ.get("MAX_LOG_BODY_BYTES", "131072")
-)  # Max size for log body (bytes)
+MAX_INLINE_LOG_BYTES = int(
+    os.environ.get("MAX_INLINE_LOG_BYTES", "48000")
+)  # Keep queue message below Azure Table/queue limits when inlined
+LOGS_BLOB_CONTAINER = os.environ.get("LOGS_BLOB_CONTAINER", "runbook-logs")
+LOGS_REF_PREFIX = "blobref://"
 
 # GitHub fallback configuration
 GITHUB_REPO = os.environ.get("GITHUB_REPO", "pagopa/payments-cloudo")
@@ -70,14 +73,57 @@ def _build_status_headers(payload: dict, status: str, log_message: str) -> dict:
     }
 
 
+def _make_worker_log_blob_name(payload: dict, status: str) -> str:
+    requested_at = str(payload.get("requestedAt") or "").strip()
+    if (
+        len(requested_at) >= 10
+        and requested_at[4:5] == "-"
+        and requested_at[7:8] == "-"
+    ):
+        partition_key = requested_at[:10].replace("-", "")
+    else:
+        partition_key = _format_requested_at()[:10].replace("-", "")
+
+    safe_exec_id = str(payload.get("exec_id") or "unknown").strip() or "unknown"
+    safe_status_raw = str(status or "UNKNOWN").strip().upper() or "UNKNOWN"
+    safe_status = "".join(ch if ch.isalnum() else "_" for ch in safe_status_raw).strip(
+        "_"
+    )
+    safe_status = safe_status or "UNKNOWN"
+    return f"{partition_key}/{safe_exec_id}/{safe_status}_{safe_exec_id}.log"
+
+
 def _post_status(payload: dict, status: str, log_message: str) -> str:
     """POST execution status to the Receiver with logs in the JSON body (truncated if too large)."""
     headers = _build_status_headers(payload, status, log_message)
 
     log_text = log_message or ""
     log_bytes = encode_logs(log_text)
-    if len(log_bytes) > MAX_LOG_BODY_BYTES:
-        log_bytes = log_bytes[:MAX_LOG_BODY_BYTES]
+    log_ref = ""
+    if len(log_bytes) > MAX_INLINE_LOG_BYTES:
+        try:
+            from azure.storage.blob import BlobServiceClient
+
+            blob_name = _make_worker_log_blob_name(payload, status)
+            conn_str = os.environ.get(STORAGE_CONNECTION)
+            service = BlobServiceClient.from_connection_string(conn_str)
+            container = service.get_container_client(LOGS_BLOB_CONTAINER)
+            try:
+                container.create_container()
+            except Exception:
+                pass
+            blob = container.get_blob_client(blob_name)
+            blob.upload_blob(log_text.encode("utf-8", errors="replace"), overwrite=True)
+            log_ref = f"{LOGS_REF_PREFIX}{LOGS_BLOB_CONTAINER}/{blob_name}"
+            log_bytes = b""
+        except Exception as e:
+            logging.warning(
+                "[%s] worker blob upload failed, fallback to inline logs: %s: %s",
+                payload.get("exec_id"),
+                type(e).__name__,
+                e,
+            )
+            log_bytes = log_bytes[:MAX_INLINE_LOG_BYTES]
 
     message = {
         "requestedAt": payload.get("requestedAt"),
@@ -94,6 +140,7 @@ def _post_status(payload: dict, status: str, log_message: str) -> str:
         "severity": headers.get("Severity"),
         "resource_info": headers.get("ResourceInfo"),
         "routing_info": headers.get("RoutingInfo"),
+        "log_ref": log_ref,
         "logs_b64": log_bytes.decode("utf-8"),
         "content_type": "text/plain; charset=utf-8",
         "sent_at": _format_requested_at(),
@@ -126,7 +173,7 @@ def _github_auth_headers() -> list[dict]:
 
 
 def _create_inline_script_temp_file(
-    script_content: str, script_type: str = "python"
+    script_content: str, script_type: str = "python", temp_dir: Optional[str] = None
 ) -> str:
     """
     Create a temporary file with the provided script content.
@@ -137,7 +184,7 @@ def _create_inline_script_temp_file(
 
     suffix = ".sh" if script_type == "shell" else ".py"
     with tempfile.NamedTemporaryFile(
-        mode="w", suffix=suffix, delete=False, dir="/tmp"
+        mode="w", suffix=suffix, delete=False, dir=temp_dir or "/tmp"
     ) as f:
         f.write(script_content)
         temp_path = f.name
@@ -150,7 +197,7 @@ def _create_inline_script_temp_file(
     return temp_path
 
 
-def _download_from_github(script_name: str) -> str:
+def _download_from_github(script_name: str, temp_dir: Optional[str] = None) -> str:
     """
     Download a script from GitHub using the Contents API with proper auth.
     Tries both Bearer and 'token' schemes and falls back to raw download.
@@ -234,7 +281,7 @@ def _download_from_github(script_name: str) -> str:
             )
 
     suffix = ".py" if script_name.lower().endswith(".py") else ""
-    fd, tmp_path = tempfile.mkstemp(prefix="runbook_", suffix=suffix)
+    fd, tmp_path = tempfile.mkstemp(prefix="runbook_", suffix=suffix, dir=temp_dir)
     with os.fdopen(fd, "wb") as f:
         f.write(content_bytes)
 
@@ -258,7 +305,12 @@ def _clean_path(p: Optional[str]) -> Optional[str]:
     return s
 
 
-def _run_aks_login(resource_info: dict, payload: dict = None, env: dict = None) -> str:
+def _run_aks_login(
+    resource_info: dict,
+    payload: dict = None,
+    env: dict = None,
+    temp_dir: Optional[str] = None,
+) -> str:
     """
     Runs the local AKS login script:
       src/core/worker/utils/aks-login.sh <rg> <name> <namespace>
@@ -295,7 +347,9 @@ def _run_aks_login(resource_info: dict, payload: dict = None, env: dict = None) 
             f"[{payload.get('exec_id')}] AKS login script not found: {script_path}"
         )
 
-    with tempfile.NamedTemporaryFile(prefix="kube-", delete=False) as tmp_file:
+    with tempfile.NamedTemporaryFile(
+        prefix="kube-", delete=False, dir=temp_dir
+    ) as tmp_file:
         kubeconfig_path = tmp_file.name
 
     cmd = (
@@ -351,6 +405,7 @@ def _run_script(
     payload: Optional[dict] = None,
     kubeconfig_path: Optional[str] = None,
     env: Optional[dict] = None,
+    temp_dir: Optional[str] = None,
 ) -> Optional[CompletedProcess[str]]:
     """Run the requested script fetching it from Blob Storage, falling back to the local folder, then GitHub."""
     tmp_path: Optional[str] = None
@@ -420,11 +475,14 @@ def _run_script(
 
     # If we have inline script content, use it directly (dev/test feature)
     if script_content:
-        script_path = _create_inline_script_temp_file(script_content, script_type)
+        tmp_path = _create_inline_script_temp_file(
+            script_content, script_type, temp_dir=temp_dir
+        )
+        script_path = tmp_path
     # GitHub if not found locally
     elif script_path is None:
         try:
-            github_tmp_path = _download_from_github(script_name)
+            github_tmp_path = _download_from_github(script_name, temp_dir=temp_dir)
             logging.debug("Downloaded script from GitHub: %s", github_tmp_path)
             script_path = github_tmp_path
         except Exception as e:
@@ -460,6 +518,8 @@ def _run_script(
         if kubeconfig_path:
             script_env["KUBECONFIG"] = kubeconfig_path
 
+        execution_cwd = temp_dir or os.path.dirname(script_path) or None
+
         logging.info("Running script: %s", cmd)
         # STREAMING
         proc = subprocess.Popen(
@@ -470,6 +530,7 @@ def _run_script(
             bufsize=0,
             close_fds=True,
             env=script_env,
+            cwd=execution_cwd,
         )
 
         # Record the process to be stopped
@@ -603,6 +664,7 @@ def process_runbook(msg: func.QueueMessage) -> None:
 
     # Local environment to avoid race conditions in multithreading
     env = os.environ.copy()
+    execution_temp_dir = tempfile.mkdtemp(prefix=f"cloudo-{exec_id}-")
 
     try:
         info_raw = payload.get("resource_info")
@@ -623,7 +685,9 @@ def process_runbook(msg: func.QueueMessage) -> None:
         kubeconfig_path = None
         if info and has_valid_ns:
             try:
-                kubeconfig_path = _run_aks_login(info, payload, env=env)
+                kubeconfig_path = _run_aks_login(
+                    info, payload, env=env, temp_dir=execution_temp_dir
+                )
                 logging.info(f"[{exec_id}] AKS login completed successfully")
             except Exception as e:
                 # Report error and stop processing
@@ -645,6 +709,7 @@ def process_runbook(msg: func.QueueMessage) -> None:
             payload=payload,
             kubeconfig_path=kubeconfig_path,
             env=env,
+            temp_dir=execution_temp_dir,
         )
         stopped = False
         try:
@@ -656,7 +721,7 @@ def process_runbook(msg: func.QueueMessage) -> None:
         if not stopped:
             log_msg = f"{result.stdout.strip() if result else 'No output'}"
             q_client.send_message(
-                _post_status(payload, status="completed", log_message=log_msg)
+                _post_status(payload, status="succeeded", log_message=log_msg)
             )
 
     except subprocess.CalledProcessError as e:
@@ -682,6 +747,14 @@ def process_runbook(msg: func.QueueMessage) -> None:
         finally:
             logging.error(f"[{exec_id}] Unexpected error: %s", err_msg)
     finally:
+        try:
+            if os.path.isdir(execution_temp_dir):
+                shutil.rmtree(execution_temp_dir, ignore_errors=True)
+        except Exception as e:
+            logging.warning(
+                f"[{exec_id}] failed to cleanup temp dir {execution_temp_dir}: {e}"
+            )
+
         # Remove from the registry: no longer "in progress"
         logging.info(
             "[%s] Job complete (requested at %s)",

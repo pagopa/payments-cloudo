@@ -31,6 +31,9 @@ NOTIFICATION_QUEUE_NAME = os.environ.get(
 )
 STORAGE_CONNECTION = "AzureWebJobsStorage"
 MAX_TABLE_CHARS = int(os.getenv("MAX_TABLE_LOG_CHARS", "32000"))
+MAX_TABLE_ENTITY_BODY_BYTES = int(os.getenv("MAX_TABLE_ENTITY_BODY_BYTES", "62000"))
+LOGS_BLOB_CONTAINER = os.getenv("LOGS_BLOB_CONTAINER", "runbook-logs")
+LOGS_REF_PREFIX = "blobref://"
 APPROVAL_TTL_MIN = int(os.getenv("APPROVAL_TTL_MIN", "60"))
 APPROVAL_SECRET = (os.getenv("APPROVAL_SECRET") or "").strip()
 SESSION_SECRET = (os.getenv("SESSION_SECRET") or "").strip()
@@ -386,6 +389,116 @@ def _encode_logs(text: str) -> bytes:
     """Encode log text in base64 UTF-8."""
     raw = (text or "").encode("utf-8", errors="replace")
     return base64.b64encode(raw)
+
+
+def _make_log_blob_name(partition_key: str, exec_id: str, status: str) -> str:
+    safe_exec_id = (exec_id or "unknown").strip() or "unknown"
+    safe_status_raw = (status or "UNKNOWN").strip().upper() or "UNKNOWN"
+    safe_status = "".join(ch if ch.isalnum() else "_" for ch in safe_status_raw).strip(
+        "_"
+    )
+    safe_status = safe_status or "UNKNOWN"
+    return f"{partition_key}/{safe_exec_id}/{safe_status}_{safe_exec_id}.log"
+
+
+def _blob_ref(blob_name: str) -> str:
+    return f"{LOGS_REF_PREFIX}{LOGS_BLOB_CONTAINER}/{blob_name}"
+
+
+def _parse_blob_ref(log_value: Optional[str]) -> Optional[tuple[str, str]]:
+    if not isinstance(log_value, str) or not log_value.startswith(LOGS_REF_PREFIX):
+        return None
+    prefix_len = len(LOGS_REF_PREFIX)
+    ref = log_value[prefix_len:]
+    if "/" not in ref:
+        return None
+    container, blob_name = ref.split("/", 1)
+    container = container.strip()
+    blob_name = blob_name.strip()
+    if not container or not blob_name:
+        return None
+    return container, blob_name
+
+
+def _upload_log_to_blob(
+    partition_key: str, exec_id: str, status: str, logs_raw: str
+) -> str:
+    from azure.storage.blob import BlobServiceClient
+
+    blob_name = _make_log_blob_name(partition_key, exec_id, status)
+    conn_str = os.environ.get(STORAGE_CONN)
+    service = BlobServiceClient.from_connection_string(conn_str)
+    container = service.get_container_client(LOGS_BLOB_CONTAINER)
+    try:
+        container.create_container()
+    except Exception:
+        pass
+    blob = container.get_blob_client(blob_name)
+    blob.upload_blob((logs_raw or "").encode("utf-8", errors="replace"), overwrite=True)
+    return _blob_ref(blob_name)
+
+
+def _download_log_from_blob_ref(log_value: Optional[str]) -> Optional[str]:
+    parsed = _parse_blob_ref(log_value)
+    if not parsed:
+        return None
+    container, blob_name = parsed
+    from azure.storage.blob import BlobServiceClient
+
+    conn_str = os.environ.get(STORAGE_CONN)
+    service = BlobServiceClient.from_connection_string(conn_str)
+    blob = service.get_blob_client(container=container, blob=blob_name)
+    content = blob.download_blob().readall()
+    return content.decode("utf-8", errors="replace")
+
+
+def _hydrate_log_field(entity: dict[str, Any]) -> dict[str, Any]:
+    current_log = entity.get("Log")
+    resolved_log = _download_log_from_blob_ref(current_log)
+    if resolved_log is None:
+        return entity
+    hydrated = dict(entity)
+    hydrated["Log"] = resolved_log
+    hydrated["LogRef"] = current_log
+    return hydrated
+
+
+def _ensure_log_entity_size_for_table(entity: dict[str, Any]) -> dict[str, Any]:
+    serialized = json.dumps(entity, ensure_ascii=False)
+    if len(serialized.encode("utf-8")) <= MAX_TABLE_ENTITY_BODY_BYTES:
+        return entity
+
+    adjusted = dict(entity)
+    shrink_plan = [
+        ("ResourceInfo", 4000),
+        ("Run_Args", 4000),
+        ("MonitorCondition", 2000),
+        ("Runbook", 2000),
+        ("Log", MAX_TABLE_CHARS),
+    ]
+
+    for field, limit in shrink_plan:
+        value = adjusted.get(field)
+        if isinstance(value, str) and value:
+            adjusted[field] = value[:limit]
+            serialized = json.dumps(adjusted, ensure_ascii=False)
+            if len(serialized.encode("utf-8")) <= MAX_TABLE_ENTITY_BODY_BYTES:
+                return adjusted
+
+    if isinstance(adjusted.get("Log"), str) and adjusted.get("Log"):
+        adjusted["Log"] = (
+            "[omitted due to Azure Table request size limit; see worker output/blob logs]"
+        )
+
+    serialized = json.dumps(adjusted, ensure_ascii=False)
+    if len(serialized.encode("utf-8")) <= MAX_TABLE_ENTITY_BODY_BYTES:
+        return adjusted
+
+    for field in ("ResourceInfo", "Run_Args", "MonitorCondition", "Runbook"):
+        if adjusted.get(field):
+            adjusted[field] = None
+
+    return adjusted
 
 
 def get_header(
@@ -2077,11 +2190,31 @@ def Receiver(msg: func.QueueMessage, log_table: func.Out[str]) -> None:
     row_key = str(uuid.uuid4())
     status_label = resolve_status(body.get("status"))
 
+    provided_log_ref = body.get("log_ref") or ""
     logs_raw = ""
     try:
         logs_raw = decode_base64(body.get("logs_b64") or "")
     except Exception:
         logs_raw = ""
+    log_value: Optional[str] = None
+    if isinstance(provided_log_ref, str) and _parse_blob_ref(provided_log_ref):
+        log_value = provided_log_ref
+    elif logs_raw:
+        try:
+            log_value = _upload_log_to_blob(
+                partition_key=partition_key,
+                exec_id=body.get("exec_id") or "",
+                status=status_label,
+                logs_raw=logs_raw,
+            )
+        except Exception as e:
+            logging.warning(
+                f"[{body.get('exec_id')}] blob upload failed, falling back to table log: {type(e).__name__}: {e}"
+            )
+            log_value = utils._truncate_for_table(logs_raw, MAX_TABLE_CHARS)
+    else:
+        log_value = ""
+
     log_entity = build_log_entry(
         status=status_label,
         partition_key=partition_key,
@@ -2094,13 +2227,14 @@ def Receiver(msg: func.QueueMessage, log_table: func.Out[str]) -> None:
         run_args=body.get("run_args"),
         worker=body.get("worker"),
         group=body.get("group"),
-        log_msg=utils._truncate_for_table(logs_raw, MAX_TABLE_CHARS),
+        log_msg=log_value,
         oncall=body.get("oncall"),
         initiator=body.get("initiator"),
         resource_info=body.get("resource_info"),
         monitor_condition=body.get("monitor_condition"),
         severity=body.get("severity"),
     )
+    log_entity = _ensure_log_entity_size_for_table(log_entity)
     log_table.set(json.dumps(log_entity, ensure_ascii=False))
 
     resource_info = body.get("resource_info") or {}
@@ -2653,6 +2787,16 @@ def get_log(req: func.HttpRequest, log_entity: str) -> func.HttpResponse:
             mimetype="application/json",
         )
 
+    try:
+        parsed = json.loads(log_entity)
+        if isinstance(parsed, list):
+            parsed = parsed[0] if parsed else None
+        if isinstance(parsed, dict):
+            parsed = _hydrate_log_field(parsed)
+            log_entity = json.dumps(parsed, ensure_ascii=False)
+    except Exception as e:
+        logging.warning(f"Failed to hydrate get_log entity: {e}")
+
     # log_entity is a JSON string of the complete entity
     return func.HttpResponse(
         log_entity,
@@ -2796,7 +2940,15 @@ def logs_query(req: func.HttpRequest) -> func.HttpResponse:
         if len(filtered) > limit:
             filtered = filtered[:limit]
 
-        body = json.dumps({"items": filtered}, ensure_ascii=False)
+        hydrated_items = []
+        for item in filtered:
+            try:
+                hydrated_items.append(_hydrate_log_field(item))
+            except Exception as e:
+                logging.warning(f"Failed to hydrate log item {item.get('RowKey')}: {e}")
+                hydrated_items.append(item)
+
+        body = json.dumps({"items": hydrated_items}, ensure_ascii=False)
         return func.HttpResponse(
             body,
             status_code=200,
@@ -4554,6 +4706,7 @@ def scheduler_engine(schedulerTimer: func.TimerRequest) -> None:
                     "runbook": s.get("runbook"),
                     "run_args": s.get("run_args"),
                     "worker": worker_pool,
+                    "group": "default",
                     "exec_id": exec_id,
                     "id": s.get("RowKey"),
                     "name": s.get("name"),
@@ -4578,6 +4731,7 @@ def scheduler_engine(schedulerTimer: func.TimerRequest) -> None:
                         runbook=s.get("runbook"),
                         run_args=s.get("run_args"),
                         worker=worker_pool,
+                        group="default",
                         oncall=s.get("oncall"),
                         log_msg=json.dumps(
                             {
