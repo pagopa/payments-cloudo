@@ -31,6 +31,7 @@ export function SchemaForm({
     id: initialData?.id || "",
     name: initialData?.name || "",
     description: initialData?.description || "",
+    group: initialData?.group || "default",
     runbook: initialData?.runbook || "",
     run_args: initialData?.run_args || "",
     worker: initialData?.worker || "",
@@ -100,8 +101,8 @@ export function SchemaForm({
   const isDisabled = mode === "view";
 
   return (
-    <form onSubmit={submit} className="p-8 grid grid-cols-2 gap-x-8 gap-y-6">
-      <div className="space-y-2">
+    <form onSubmit={submit} className="p-5 grid grid-cols-2 gap-x-5 gap-y-4">
+      <div className="space-y-1.5">
         <LabelWithTooltip tooltip="Unique identifier for the schema. Cannot be changed after creation.">
           SCHEMA_ID // ALERT_ID *
         </LabelWithTooltip>
@@ -115,7 +116,7 @@ export function SchemaForm({
           placeholder="e.g. aks-pod-restart"
         />
       </div>
-      <div className="space-y-2">
+      <div className="space-y-1.5">
         <LabelWithTooltip tooltip="Human-readable name for this schema.">
           Schema Name *
         </LabelWithTooltip>
@@ -130,13 +131,13 @@ export function SchemaForm({
         />
       </div>
 
-      <div className="space-y-2 col-span-2">
+      <div className="space-y-1.5 col-span-2">
         <LabelWithTooltip tooltip="Detailed explanation of what this automation does.">
           Purpose Description
         </LabelWithTooltip>
         <textarea
           disabled={isDisabled}
-          className="input min-h-[100px] py-4 resize-none w-full"
+          className="input min-h-[84px] py-2.5 resize-none w-full"
           value={formData.description}
           onChange={(e) =>
             setFormData({ ...formData, description: e.target.value })
@@ -145,7 +146,21 @@ export function SchemaForm({
         />
       </div>
 
-      <div className="space-y-2">
+      <div className="space-y-1.5 col-span-2">
+        <LabelWithTooltip tooltip="Schema grouping bucket used avoid runbook that can not run in parallel.">
+          Group
+        </LabelWithTooltip>
+        <input
+          type="text"
+          disabled={isDisabled}
+          className="input w-full"
+          value={formData.group}
+          onChange={(e) => setFormData({ ...formData, group: e.target.value })}
+          placeholder="default"
+        />
+      </div>
+
+      <div className="space-y-1.5">
         <LabelWithTooltip tooltip="Path to the script or executable in the runbook repository.">
           Runbook Path *
         </LabelWithTooltip>
@@ -172,7 +187,7 @@ export function SchemaForm({
           </datalist>
         </div>
       </div>
-      <div className="space-y-2">
+      <div className="space-y-1.5">
         <LabelWithTooltip tooltip="The required worker capability to execute this schema.">
           Worker Capability *
         </LabelWithTooltip>
@@ -224,7 +239,7 @@ export function SchemaForm({
         </div>
       </div>
 
-      <div className="space-y-2 col-span-2">
+      <div className="space-y-1.5 col-span-2">
         <LabelWithTooltip tooltip="Optional arguments passed to the script during execution.">
           Run Arguments
         </LabelWithTooltip>
@@ -245,12 +260,12 @@ export function SchemaForm({
         </div>
       </div>
 
-      <div className="space-y-2 col-span-2">
+      <div className="space-y-1.5 col-span-2">
         <LabelWithTooltip tooltip="Metadata tags for categorization.">
           Tags (comma separated)
         </LabelWithTooltip>
         <div className="flex gap-2">
-          <div className="h-10 px-4 bg-cloudo-accent/10 border border-cloudo-accent/30 text-cloudo-accent text-[11px] font-black flex items-center uppercase tracking-widest">
+          <div className="h-9 px-3 bg-cloudo-accent/10 border border-cloudo-accent/30 text-cloudo-accent text-[11px] font-black flex items-center uppercase tracking-widest">
             ui
           </div>
           <input
@@ -265,7 +280,7 @@ export function SchemaForm({
       </div>
 
       <div
-        className={`flex items-center justify-between p-4 bg-cloudo-accent/10 border border-cloudo-border group hover:border-cloudo-accent/40 transition-all ${
+        className={`flex items-center justify-between p-3 bg-cloudo-accent/10 border border-cloudo-border group hover:border-cloudo-accent/40 transition-all ${
           isDisabled ? "cursor-default" : "cursor-pointer"
         }`}
         onClick={() =>
@@ -276,7 +291,7 @@ export function SchemaForm({
           })
         }
       >
-        <div className="space-y-1">
+        <div className="space-y-0.5">
           <p className="text-[11px] font-black text-cloudo-text uppercase tracking-widest">
             Approval Gate
           </p>
@@ -296,7 +311,7 @@ export function SchemaForm({
       </div>
 
       <div
-        className={`flex items-center justify-between p-4 bg-cloudo-accent/10 border border-cloudo-border group hover:border-cloudo-accent/40 transition-all ${
+        className={`flex items-center justify-between p-3 bg-cloudo-accent/10 border border-cloudo-border group hover:border-cloudo-accent/40 transition-all ${
           isDisabled ? "cursor-default" : "cursor-pointer"
         }`}
         onClick={() =>
@@ -307,7 +322,7 @@ export function SchemaForm({
           })
         }
       >
-        <div className="space-y-1">
+        <div className="space-y-0.5">
           <p className="text-[11px] font-black text-cloudo-text uppercase tracking-widest">
             On-Call Flow
           </p>
@@ -326,11 +341,11 @@ export function SchemaForm({
         </div>
       </div>
 
-      <div className="flex gap-4 pt-6 border-t border-cloudo-border col-span-2">
+      <div className="flex gap-3 pt-4 border-t border-cloudo-border col-span-2">
         <button
           type="button"
           onClick={onCancel}
-          className="btn btn-ghost px-8 h-12"
+          className="btn btn-ghost px-6 h-10"
         >
           {isDisabled ? "Close" : "Cancel"}
         </button>
@@ -338,7 +353,7 @@ export function SchemaForm({
           <button
             type="submit"
             disabled={submitting}
-            className="btn btn-primary flex-1 h-12"
+            className="btn btn-primary flex-1 h-10"
           >
             {submitting ? "Saving..." : "Save Schema"}
           </button>

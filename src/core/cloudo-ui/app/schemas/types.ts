@@ -5,6 +5,7 @@ export interface Schema {
   RowKey: string;
   id: string;
   name: string;
+  group?: string;
   description: string;
   runbook: string;
   run_args: string;

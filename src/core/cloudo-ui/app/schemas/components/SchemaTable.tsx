@@ -129,6 +129,14 @@ export function SchemaTable({
                   Worker {getSortIcon("worker")}
                 </div>
               </th>
+              <th
+                className="px-6 py-4 text-[10px] font-black uppercase tracking-[0.2em] text-cloudo-muted cursor-pointer hover:text-cloudo-text transition-colors"
+                onClick={() => requestSort("group")}
+              >
+                <div className="flex items-center gap-2">
+                  Group {getSortIcon("group")}
+                </div>
+              </th>
               <th className="px-6 py-4 text-[10px] font-black uppercase tracking-[0.2em] text-cloudo-muted">
                 Run_Args
               </th>
@@ -243,6 +251,14 @@ export function SchemaTable({
                       <HiOutlineChip className="text-cloudo-accent/60 w-3.5 h-3.5" />
                       <span className="text-[11px] font-mono text-cloudo-text/70 uppercase">
                         {schema.worker}
+                      </span>
+                    </div>
+                  </td>
+                  <td className="px-6 py-4">
+                    <div className="flex items-center gap-2">
+                      <HiOutlineUserGroup className="text-cloudo-accent/60 w-3.5 h-3.5" />
+                      <span className="text-[11px] font-mono text-cloudo-text/70 uppercase">
+                        {schema.group || "default"}
                       </span>
                     </div>
                   </td>

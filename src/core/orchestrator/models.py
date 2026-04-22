@@ -14,6 +14,7 @@ class Schema:
     runbook: Optional[str] = None
     run_args: Optional[str] = None
     worker: Optional[str] = None
+    group: Optional[str] = "default"
     oncall: Optional[str] = "false"
     monitor_condition: Optional[str] = None
     severity: Optional[str] = None
@@ -36,6 +37,7 @@ class Schema:
         self.runbook = (e.get("runbook") or "").strip() or None
         self.run_args = (e.get("run_args") or "").strip() or ""
         self.worker = (e.get("worker") or "").strip() or ""
+        self.group = (e.get("group") or "default").strip() or ""
         self.oncall = (
             str(e.get("oncall", e.get("oncall", "false"))).strip().lower() or "false"
         )

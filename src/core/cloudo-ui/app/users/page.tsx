@@ -526,9 +526,9 @@ function UserForm({
   };
 
   return (
-    <form onSubmit={handleSubmit} className="p-8 space-y-6">
-      <div className="space-y-4">
-        <div className="space-y-2">
+    <form onSubmit={handleSubmit} className="p-5 space-y-4">
+      <div className="space-y-3">
+        <div className="space-y-1.5">
           <label className="text-[11px] font-black uppercase tracking-widest text-cloudo-muted ml-1 block">
             Username
           </label>
@@ -550,7 +550,7 @@ function UserForm({
           </div>
         </div>
 
-        <div className="space-y-2">
+        <div className="space-y-1.5">
           <label className="text-[11px] font-black uppercase tracking-widest text-cloudo-muted ml-1 block">
             Email Endpoint
           </label>
@@ -581,7 +581,7 @@ function UserForm({
           )}
         </div>
 
-        <div className="space-y-2">
+        <div className="space-y-1.5">
           <label className="text-[11px] font-black uppercase tracking-widest text-cloudo-muted ml-1 block">
             {mode === "create"
               ? "Initial Password"
@@ -614,7 +614,7 @@ function UserForm({
           )}
         </div>
 
-        <div className="space-y-2">
+        <div className="space-y-1.5">
           <label className="text-[11px] font-black uppercase tracking-widest text-cloudo-muted ml-1 block">
             System Privilege
           </label>
@@ -630,18 +630,18 @@ function UserForm({
         </div>
       </div>
 
-      <div className="flex gap-4 pt-6 border-t border-cloudo-border">
+      <div className="flex gap-3 pt-4 border-t border-cloudo-border">
         <button
           type="button"
           onClick={onCancel}
-          className="btn btn-ghost flex-1 h-12"
+          className="btn btn-ghost flex-1 h-10"
         >
           Cancel
         </button>
         <button
           type="submit"
           disabled={submitting}
-          className="btn btn-primary flex-1 h-12"
+          className="btn btn-primary flex-1 h-10"
         >
           {submitting
             ? "Committing..."

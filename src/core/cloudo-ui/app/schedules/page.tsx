@@ -715,9 +715,9 @@ function ScheduleForm({
   };
 
   return (
-    <form onSubmit={handleSubmit} className="p-8 space-y-6">
-      <div className="grid grid-cols-2 gap-6">
-        <div className="space-y-2">
+    <form onSubmit={handleSubmit} className="p-5 space-y-4">
+      <div className="grid grid-cols-2 gap-5">
+        <div className="space-y-1.5">
           <label className="text-[11px] font-black uppercase tracking-widest text-cloudo-muted ml-1 block">
             Task Name
           </label>
@@ -730,7 +730,7 @@ function ScheduleForm({
             placeholder="NIGHTLY_CLEANUP"
           />
         </div>
-        <div className="space-y-2">
+        <div className="space-y-1.5">
           <label className="text-[11px] font-black uppercase tracking-widest text-cloudo-muted ml-1 block">
             Cron Expression (Azure Format)
           </label>
@@ -745,8 +745,8 @@ function ScheduleForm({
         </div>
       </div>
 
-      <div className="grid grid-cols-2 gap-6">
-        <div className="space-y-2">
+      <div className="grid grid-cols-2 gap-5">
+        <div className="space-y-1.5">
           <label className="text-[11px] font-black uppercase tracking-widest text-cloudo-muted ml-1 block">
             Runbook Path
           </label>
@@ -772,7 +772,7 @@ function ScheduleForm({
             </datalist>
           </div>
         </div>
-        <div className="space-y-2">
+        <div className="space-y-1.5">
           <label className="text-[11px] font-black uppercase tracking-widest text-cloudo-muted ml-1 block">
             Runtime Arguments
           </label>
@@ -788,7 +788,7 @@ function ScheduleForm({
         </div>
       </div>
 
-      <div className="space-y-2">
+      <div className="space-y-1.5">
         Worker Capability *
         <div className="relative group">
           <div className="absolute inset-y-0 left-0 w-10 flex items-center justify-center border-r border-cloudo-border/30 group-focus-within:border-cloudo-accent/50 bg-cloudo-accent/5">
@@ -838,10 +838,10 @@ function ScheduleForm({
       </div>
 
       <div
-        className="flex items-center justify-between p-4 bg-cloudo-accent/10 border border-cloudo-border group hover:border-cloudo-accent/40 transition-all cursor-pointer"
+        className="flex items-center justify-between p-3 bg-cloudo-accent/10 border border-cloudo-border group hover:border-cloudo-accent/40 transition-all cursor-pointer"
         onClick={() => setFormData({ ...formData, enabled: !formData.enabled })}
       >
-        <div className="space-y-1">
+        <div className="space-y-0.5">
           <p className="text-sm font-black text-cloudo-text uppercase tracking-widest">
             Enabled
           </p>
@@ -865,10 +865,10 @@ function ScheduleForm({
         </div>
       </div>
       <div
-        className="flex items-center justify-between p-4 bg-cloudo-accent/10 border border-cloudo-border group hover:border-cloudo-accent/40 transition-all cursor-pointer"
+        className="flex items-center justify-between p-3 bg-cloudo-accent/10 border border-cloudo-border group hover:border-cloudo-accent/40 transition-all cursor-pointer"
         onClick={() => setFormData({ ...formData, oncall: !formData.oncall })}
       >
-        <div className="space-y-1">
+        <div className="space-y-0.5">
           <p className="text-sm font-black text-cloudo-text uppercase tracking-widest">
             On Call
           </p>
@@ -892,18 +892,18 @@ function ScheduleForm({
         </div>
       </div>
 
-      <div className="flex gap-4 pt-6 border-t border-cloudo-border">
+      <div className="flex gap-3 pt-4 border-t border-cloudo-border">
         <button
           type="button"
           onClick={onCancel}
-          className="btn btn-ghost flex-1 h-12"
+          className="btn btn-ghost flex-1 h-10"
         >
           Abort
         </button>
         <button
           type="submit"
           disabled={submitting}
-          className="btn btn-primary flex-1 h-12"
+          className="btn btn-primary flex-1 h-10"
         >
           {submitting ? "Saving..." : "Save Schedule"}
         </button>
