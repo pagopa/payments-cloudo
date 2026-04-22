@@ -59,6 +59,7 @@ def _build_status_headers(payload: dict, status: str, log_message: str) -> dict:
         "Name": payload.get("name"),
         "ExecId": payload.get("exec_id"),
         "Worker": payload.get("worker"),
+        "Group": payload.get("group"),
         "Content-Type": "application/json",
         "Status": status,
         "OnCall": payload.get("oncall"),
@@ -86,6 +87,7 @@ def _post_status(payload: dict, status: str, log_message: str) -> str:
         "runbook": headers.get("runbook"),
         "run_args": headers.get("run_args"),
         "worker": headers.get("Worker"),
+        "group": headers.get("Group"),
         "status": headers.get("Status"),
         "oncall": headers.get("OnCall"),
         "monitor_condition": headers.get("MonitorCondition"),
@@ -528,17 +530,27 @@ def _run_script(
             )
 
 
-def _inspect_duplicate_runs(items: list[Any], payload: Any):
+def _inspect_duplicate_runs(items: list[Any], payload: Any) -> Optional[str]:
+    payload_group = str(payload.get("group") or "default").strip().lower()
+
     for item in items:
+        item_group = str(item.get("group") or "default").strip().lower()
+
+        # Non-default groups are mutually exclusive: only one run at a time.
+        if payload_group != "default" and item_group == payload_group:
+            return f"group '{payload_group}' is already running"
+
+        # Keep duplicate run protection for identical requests.
         if (
-            item["name"] == payload.get("name")
-            and item["runbook"] == payload.get("runbook")
-            and item["run_args"] == payload.get("run_args")
-            and item["resource_info"] == payload.get("resource_info")
+            item.get("name") == payload.get("name")
+            and item.get("runbook") == payload.get("runbook")
+            and item.get("run_args") == payload.get("run_args")
+            and item.get("resource_info") == payload.get("resource_info")
+            and item_group == payload_group
         ):
-            return True
-        else:
-            return False
+            return "an identical execution is already in progress"
+
+    return None
 
 
 @app.queue_trigger(arg_name="msg", queue_name=QUEUE_NAME, connection=STORAGE_CONNECTION)
@@ -560,8 +572,9 @@ def process_runbook(msg: func.QueueMessage) -> None:
     # Check if this execution is already running
     with _ACTIVE_LOCK:
         items = list(_ACTIVE_RUNS.values())
-        if _inspect_duplicate_runs(items, payload):
-            log_msg = f"Execution {exec_id} already in progress, skipping"
+        skip_reason = _inspect_duplicate_runs(items, payload)
+        if skip_reason:
+            log_msg = f"Execution {exec_id} skipped: {skip_reason}"
             logging.info(f"[{payload.get('exec_id')}] {log_msg}")
             q_client.send_message(
                 _post_status(payload, status="skipped", log_message=log_msg)
@@ -577,6 +590,7 @@ def process_runbook(msg: func.QueueMessage) -> None:
             "runbook": payload.get("runbook"),
             "run_args": payload.get("run_args"),
             "worker": payload.get("worker"),
+            "group": payload.get("group"),
             "requestedAt": payload.get("requestedAt"),
             "startedAt": started_at,
             "resource_info": payload.get("resource_info") or {},
@@ -841,6 +855,7 @@ def stop_process(
                 "name": run_info.get("name"),
                 "exec_id": run_info.get("exec_id"),
                 "worker": run_info.get("worker"),
+                "group": run_info.get("group"),
                 "oncall": None,
                 "monitor_condition": None,
                 "severity": None,
@@ -861,92 +876,6 @@ def stop_process(
         status_code=code,
         mimetype="application/json",
     )
-
-
-# =========================
-# DEV: Test runbook
-# =========================
-
-
-@app.route(route="dev/runScript", auth_level=AUTH)
-def dev_run_script(req: func.HttpRequest) -> func.HttpResponse:
-    """
-    Development endpoint to test _run_script.
-    Optionally enabled via LOCAL_DEV=true.
-    Parameters:
-      - name (or 'script') query string, or 'runbook' header with the file name.
-    Response: JSON with stdout/stderr/returncode.
-    """
-    # Feature flag for test and develop of runbooks
-    if os.getenv("LOCAL_DEV", "false").lower() != "true":
-        return func.HttpResponse("Not found", status_code=404)
-    elif os.getenv("DEV_SCRIPT_PATH"):
-        script_path = os.getenv("DEV_SCRIPT_PATH", "/work/runbooks/")
-    else:
-        script_path = None
-
-    logging.info(f"Running _run_script on {script_path}")
-    script_name = (
-        req.params.get("name")
-        or req.params.get("script")
-        or req.headers.get("runbook")
-        or ""
-    ).strip()
-    run_args = req.headers.get("run_args") or None
-    if not script_name:
-        return func.HttpResponse(
-            json.dumps(
-                {"error": "missing script name (use ?name= or header runbook)"},
-                ensure_ascii=False,
-            ),
-            status_code=400,
-            mimetype="application/json",
-        )
-
-    try:
-        result = _run_script(
-            script_name=script_name,
-            script_path=script_path,
-            run_args=run_args,
-            resource_info={},
-            monitor_condition="",
-            payload={},
-        )
-        body = json.dumps(
-            {
-                "status": "ok",
-                "script": script_name,
-                "run_args": run_args,
-                "returncode": result.returncode,
-                "stdout": (result.stdout or "").strip(),
-                "stderr": (result.stderr or "").strip(),
-            },
-            ensure_ascii=False,
-        )
-        return func.HttpResponse(body, status_code=200, mimetype="application/json")
-    except subprocess.CalledProcessError as e:
-        body = json.dumps(
-            {
-                "status": "failed",
-                "script": script_name,
-                "run_args": run_args,
-                "returncode": e.returncode,
-                "stdout": (e.stdout or "").strip(),
-                "stderr": (e.stderr or "").strip(),
-            },
-            ensure_ascii=False,
-        )
-        return func.HttpResponse(body, status_code=500, mimetype="application/json")
-    except Exception as e:
-        body = json.dumps(
-            {
-                "status": "error",
-                "script": script_name,
-                "error": f"{type(e).__name__}: {str(e)}",
-            },
-            ensure_ascii=False,
-        )
-        return func.HttpResponse(body, status_code=500, mimetype="application/json")
 
 
 @app.schedule(

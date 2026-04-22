@@ -453,6 +453,7 @@ def build_headers(
         "MonitorCondition": monitor_condition,
         "Severity": severity,
         "Worker": schema.worker,
+        "Group": schema.group,
         "x-cloudo-key": os.environ.get("CLOUDO_SECRET_KEY", ""),
     }
     if resource_info is not None:
@@ -501,6 +502,7 @@ def build_response_body(
                 "runbook": schema.runbook,
                 "run_args": schema.run_args,
                 "worker": schema.worker,
+                "group": schema.group,
                 "monitor_condition": schema.monitor_condition,
                 "severity": schema.severity,
             },
@@ -533,6 +535,7 @@ def build_log_entry(
     runbook: Optional[str],
     run_args: Optional[str],
     worker: Optional[str],
+    group: Optional[str],
     log_msg: Optional[str],
     oncall: Optional[str],
     monitor_condition: Optional[str],
@@ -555,6 +558,7 @@ def build_log_entry(
         "Runbook": runbook,
         "Run_Args": run_args,
         "Worker": worker,
+        "Group": group,
         "Log": log_msg,
         "OnCall": oncall,
         "Initiator": initiator,
@@ -631,26 +635,31 @@ def _post_status(payload: dict, status: str, log_message: str) -> str:
     table_name=TABLE_WORKERS_SCHEMAS,
     connection=STORAGE_CONN,
 )
-@app.queue_output(
-    arg_name="cloudo_notification_q",
-    queue_name=NOTIFICATION_QUEUE_NAME,
-    connection=STORAGE_CONNECTION,
-)
 def Trigger(
     req: func.HttpRequest,
     log_table: func.Out[str],
     entities: str,
     workers: str,
-    cloudo_notification_q: func.Out[str],
 ) -> func.HttpResponse:
     import detection
     import utils
+    from azure.storage.queue import QueueClient, TextBase64EncodePolicy
     from escalation import (
         format_opsgenie_description,
         send_opsgenie_alert,
         send_slack_execution,
     )
     from worker_routing import worker_routing
+
+    try:
+        q_client = QueueClient.from_connection_string(
+            conn_str=os.environ.get(STORAGE_CONNECTION),
+            queue_name=NOTIFICATION_QUEUE_NAME,
+            message_encode_policy=TextBase64EncodePolicy(),
+        )
+    except Exception as e:
+        logging.error(f"Failed to initialize queue client: {e}")
+        return func.HttpResponse("Failed to initialize queue client", status_code=500)
 
     if req.method == "OPTIONS":
         return create_cors_response()
@@ -815,13 +824,14 @@ def Trigger(
                 "runbook": "alarm routed",
                 "run_args": "NaN",
                 "worker": "NaN",
+                "group": "default",
                 "oncall": "NaN",
                 "monitor_condition": monitor_condition or "",
                 "severity": severity or "",
                 "resource_info": resource_info if "resource_info" in locals() else {},
                 "routing_info": routing_info if "routing_info" in locals() else {},
             }
-            cloudo_notification_q.set(
+            q_client.send_message(
                 _post_status(payload_for_status, status="routed", log_message=log_msg)
             )
             return func.HttpResponse(
@@ -874,13 +884,14 @@ def Trigger(
             "runbook": schema.runbook or "alarm routed",
             "run_args": schema.run_args,
             "worker": schema.worker,
+            "group": schema.group,
             "oncall": schema.oncall,
             "monitor_condition": monitor_condition or "",
             "severity": severity or "",
             "resource_info": resource_info if "resource_info" in locals() else {},
             "routing_info": routing_info if "routing_info" in locals() else {},
         }
-        cloudo_notification_q.set(
+        q_client.send_message(
             _post_status(payload_for_status, status="routed", log_message=log_msg)
         )
         return func.HttpResponse(
@@ -923,6 +934,7 @@ def Trigger(
                 "monitorCondition": monitor_condition,
                 "severity": severity,
                 "worker": schema.worker,
+                "group": schema.group,
             }
             payload_b64 = _b64url_encode(
                 json.dumps(payload, ensure_ascii=False).encode("utf-8")
@@ -950,6 +962,7 @@ def Trigger(
                 runbook=schema.runbook,
                 run_args=schema.run_args,
                 worker=schema.worker,
+                group=schema.group,
                 log_msg=json.dumps(
                     {
                         "message": "Awaiting approval",
@@ -1053,6 +1066,10 @@ def Trigger(
                                     {
                                         "type": "mrkdwn",
                                         "text": f"*Worker:* `{schema.worker or 'unknown'}`",
+                                    },
+                                    {
+                                        "type": "mrkdwn",
+                                        "text": f"*Group:* `{schema.group}`",
                                     },
                                     {
                                         "type": "mrkdwn",
@@ -1160,6 +1177,7 @@ def Trigger(
                     "monitor_condition": monitor_condition,
                     "severity": severity,
                     "worker": schema.worker,
+                    "group": schema.group,
                     "resource_info": resource_info or {},
                     "routing_info": routing_info or {},
                 }
@@ -1216,6 +1234,7 @@ def Trigger(
             runbook=schema.runbook,
             run_args=schema.run_args,
             worker=schema.worker,
+            group=schema.group,
             log_msg=api_body,
             oncall=schema.oncall,
             monitor_condition=monitor_condition,
@@ -1266,6 +1285,10 @@ def Trigger(
                                     {
                                         "type": "mrkdwn",
                                         "text": f"*Id:*\n{schema.id or ''}",
+                                    },
+                                    {
+                                        "type": "mrkdwn",
+                                        "text": f"*Group:*\n{schema.group}",
                                     },
                                     {
                                         "type": "mrkdwn",
@@ -1348,6 +1371,7 @@ def Trigger(
                             "Status": status_label,
                             "Runbook": schema.runbook,
                             "Run_Args": schema.run_args,
+                            "Group": schema.group,
                             "OnCall": schema.oncall,
                             "MonitorCondition": monitor_condition,
                             "Severity": severity,
@@ -1414,6 +1438,7 @@ def Trigger(
             runbook=schema.runbook,
             run_args=schema.run_args,
             worker=schema.worker,
+            group=schema.group,
             log_msg=str(e),
             oncall=schema.oncall,
             monitor_condition=monitor_condition,
@@ -1612,6 +1637,7 @@ def approve(
                     "monitor_condition": monitor_condition,
                     "severity": severity,
                     "worker": schema.worker,
+                    "group": schema.group,
                     "resource_info": resource_info or {},
                     "routing_info": routing_info or {},
                 }
@@ -1656,6 +1682,7 @@ def approve(
             runbook=schema.runbook,
             run_args=schema.run_args,
             worker=schema.worker,
+            group=schema.group,
             log_msg=json.dumps(
                 {
                     "message": f"Approved and executed by {approver}",
@@ -1745,6 +1772,7 @@ def approve(
             runbook=schema.runbook,
             run_args=schema.run_args,
             worker=schema.worker,
+            group=schema.group,
             log_msg=f"Approve failed: {str(e)}",
             oncall=schema.oncall,
             monitor_condition=None,
@@ -1922,6 +1950,7 @@ def reject(
         runbook=schema.runbook,
         run_args=schema.run_args,
         worker=schema.worker,
+        group=schema.group,
         log_msg=json.dumps(
             {"message": f"Rejected by approver: {approver}"}, ensure_ascii=False
         ),
@@ -2064,6 +2093,7 @@ def Receiver(msg: func.QueueMessage, log_table: func.Out[str]) -> None:
         runbook=body.get("runbook"),
         run_args=body.get("run_args"),
         worker=body.get("worker"),
+        group=body.get("group"),
         log_msg=utils._truncate_for_table(logs_raw, MAX_TABLE_CHARS),
         oncall=body.get("oncall"),
         initiator=body.get("initiator"),
@@ -2191,6 +2221,10 @@ def Receiver(msg: func.QueueMessage, log_table: func.Out[str]) -> None:
                             },
                             {
                                 "type": "mrkdwn",
+                                "text": f"*Group:* `{body.get('group') or 'default'}`",
+                            },
+                            {
+                                "type": "mrkdwn",
                                 "text": f"*Runbook:* `{body.get('runbook') or '-'}`",
                             },
                             {
@@ -2268,6 +2302,7 @@ def Receiver(msg: func.QueueMessage, log_table: func.Out[str]) -> None:
                     "Runbook": body.get("runbook"),
                     "Run_Args": body.get("run_args"),
                     "Worker": body.get("worker"),
+                    "Group": body.get("group"),
                     "OnCall": body.get("oncall"),
                     "MonitorCondition": body.get("monitor_condition"),
                     "Severity": body.get("severity"),
@@ -2313,16 +2348,8 @@ def Receiver(msg: func.QueueMessage, log_table: func.Out[str]) -> None:
     table_name=TABLE_WORKERS_SCHEMAS,
     connection=STORAGE_CONN,
 )
-@app.queue_output(
-    arg_name="cloudo_notification_q",
-    queue_name=NOTIFICATION_QUEUE_NAME,
-    connection=STORAGE_CONNECTION,
-)
 def dev_test_run(
-    req: func.HttpRequest,
-    log_table: func.Out[str],
-    workers: str,
-    cloudo_notification_q: func.Out[str],
+    req: func.HttpRequest, log_table: func.Out[str], workers: str
 ) -> func.HttpResponse:
     """
     Development endpoint to test runbook execution with feature flag.
@@ -2463,6 +2490,7 @@ def dev_test_run(
             "monitor_condition": "Fired",
             "severity": severity or "Sev4",
             "worker": capability,
+            "group": "default",
             "resource_info": resource_info or {},
             "routing_info": {},
         }
@@ -2503,6 +2531,7 @@ def dev_test_run(
             runbook=script_name,
             run_args=run_args,
             worker=schema.worker,
+            group="default",
             log_msg=api_body,
             oncall="false",
             monitor_condition=monitor_condition or "Fired",

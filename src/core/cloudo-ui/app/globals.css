@@ -47,6 +47,22 @@ body {
   @apply bg-cloudo-dark text-cloudo-text font-mono;
 }
 
+button,
+[role="button"],
+input[type="button"],
+input[type="submit"],
+input[type="reset"] {
+  cursor: var(--cursor-cloudo-pointer), pointer;
+}
+
+button:disabled,
+[role="button"][aria-disabled="true"],
+input[type="button"]:disabled,
+input[type="submit"]:disabled,
+input[type="reset"]:disabled {
+  cursor: not-allowed;
+}
+
 /* Custom Components - Solid Technical Style */
 .card {
   @apply bg-cloudo-panel border border-cloudo-border rounded-none shadow-none overflow-hidden;

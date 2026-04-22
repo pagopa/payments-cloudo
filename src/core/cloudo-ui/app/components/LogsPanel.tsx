@@ -54,6 +54,7 @@ interface LogEntry {
   OnCall?: boolean | string;
   Initiator?: string;
   Worker?: string;
+  Group?: string;
   ResourceInfo?: string;
 }
 
@@ -999,6 +1000,11 @@ function LogsPanelContent() {
                     label="Node"
                     value={selectedLog.Worker || "DYNAMIC"}
                     icon={<HiOutlineDatabase />}
+                  />
+                  <DetailItem
+                    label="Group"
+                    value={selectedLog.Group || "default"}
+                    icon={<HiOutlineTag />}
                   />
                   <DetailItem
                     label="Requested At"
