@@ -28,9 +28,7 @@ import { SchemaForm } from "./components/SchemaForm";
 import { SchemaCard } from "./components/SchemaCard";
 import { SchemaTable } from "./components/SchemaTable";
 import { SchemaFilters } from "./components/SchemaFilters";
-import { SiTerraform } from "react-icons/si";
-import { GiJupiter } from "react-icons/gi";
-import { HiCodeBracket, HiMiniComputerDesktop } from "react-icons/hi2";
+import { HiMiniComputerDesktop } from "react-icons/hi2";
 
 export default function SchemasPage() {
   const [schemas, setSchemas] = useState<Schema[]>([]);

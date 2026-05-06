@@ -493,10 +493,10 @@ export default function StudioPage() {
               </h2>
             </div>
             <div className="space-y-4">
-              <TipItem text="Usa sempre stderr per i log di sistema per non inquinare l'output dei dati." />
               <TipItem text="Gestisci esplicitamente gli exit code per permettere al Worker di capire l'esito." />
               <TipItem text="I parametri vengono passati sia via CLOUDO_PAYLOAD che variabili d'ambiente singole." />
-              <TipItem text="In caso di allarmi inerenti ad AKS ClouDO si loggerà nel cluster con la proprio SA staccando un token valido per 10 minuti, nel contesto del namespace coinvolto." />
+              <TipItem text="In caso di allarmi inerenti ad AKS ClouDO si loggerà nel cluster nel namespace conivolto con la proprio SA staccando un token valido per 10 minuti." />
+              <TipItem text="Assegna schemi allo stesso gruppo per evitare che runbook che creerebero conflitti in un esecuzione parallela possano girare insieme." />
             </div>
           </div>
         </div>

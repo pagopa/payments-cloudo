@@ -166,7 +166,7 @@ export function SchemaCard({
                 Group
               </span>
               <span className="text-xs text-cloudo-text/80 font-bold uppercase truncate">
-                {schema.group || "default"}
+                {schema.group || "-"}
               </span>
             </div>
           </div>

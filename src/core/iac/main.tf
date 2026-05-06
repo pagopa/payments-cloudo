@@ -210,15 +210,21 @@ module "storage_account" {
   tags = var.tags
 }
 
+resource "azurerm_storage_container" "runbook_logs" {
+  name                  = "runbook-logs"
+  storage_account_id    = module.storage_account.id
+  container_access_type = "private"
+}
+
 resource "azurerm_storage_queue" "this" {
-  for_each             = var.workers_config.workers
-  name                 = "${var.prefix}-${each.key}-queue"
-  storage_account_name = module.storage_account.name
+  for_each           = var.workers_config.workers
+  name               = "${var.prefix}-${each.key}-queue"
+  storage_account_id = module.storage_account.id
 }
 
 resource "azurerm_storage_queue" "notification" {
-  name                 = "cloudo-notification"
-  storage_account_name = module.storage_account.name
+  name               = "cloudo-notification"
+  storage_account_id = module.storage_account.id
 }
 
 resource "azurerm_storage_table" "runbook_logger" {
@@ -276,7 +282,8 @@ resource "azurerm_storage_table_entity" "schemas" {
   entity = merge(
     each.value.entity,
     {
-      tags = lookup(each.value.entity, "tags", null) == null ? "terraform" : contains(split(",", each.value.entity.tags), "terraform") ? each.value.entity.tags : "${each.value.entity.tags},terraform"
+      group = lookup(each.value.entity, "group", null) == null ? "-" : each.value.entity.group
+      tags  = lookup(each.value.entity, "tags", null) == null ? "terraform" : contains(split(",", each.value.entity.tags), "terraform") ? each.value.entity.tags : "${each.value.entity.tags},terraform"
     }
   )
 }
