@@ -39,4 +39,16 @@ module "apim_api_cloudo_api_v1" {
 
   # Subscription Configuration
   subscription_required = var.api_subscription_required
+
+  # Version Set
+  version_set_id = azurerm_api_management_api_version_set.api_cloudo.id
+}
+
+# API Version Set
+resource "azurerm_api_management_api_version_set" "api_cloudo" {
+  name                = "${var.prefix}-cloudo-api-version-set"
+  resource_group_name = var.api_management_rg
+  api_management_name = var.api_management_name
+  display_name        = "Cloudo API"
+  versioning_scheme   = "Segment"
 }
