@@ -16,7 +16,7 @@
   "paths": {
     "/Trigger": {
       "post": {
-        "summary": "Forward Azure Monitor alert to Cloudo orchestrator",
+        "summary": "Trigger to Cloudo orchestrator",
         "operationId": "triggerAlert",
         "parameters": [
           {
