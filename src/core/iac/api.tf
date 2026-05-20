@@ -22,7 +22,7 @@ module "apim_api_cloudo_api_v1" {
   protocols = ["https"]
 
   # Backend base URL (es. https://...azurewebsites.net/api)
-  service_url = var.service_url
+  service_url = "https://${module.cloudo_orchestrator.default_hostname}/api"
 
   # API Definition Format
   content_format = "openapi"
