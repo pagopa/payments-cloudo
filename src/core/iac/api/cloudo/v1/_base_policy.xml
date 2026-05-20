@@ -1,0 +1,34 @@
+<policies>
+  <inbound>
+    <base />
+    <set-backend-service base-url="${backend_base_url}" />
+    <set-header name="x-functions-key" exists-action="override">
+      <value>${backend_function_key}</value>
+    </set-header>
+
+    <choose>
+      <when condition="@(string.IsNullOrEmpty(context.Request.Headers.GetValueOrDefault(&quot;x-cloudo-key&quot;, &quot;&quot;)))">
+        <return-response>
+          <set-status code="401" reason="Missing x-cloudo-key" />
+          <set-header name="Content-Type" exists-action="override">
+            <value>application/json</value>
+          </set-header>
+          <set-body>{"error":"missing x-cloudo-key"}</set-body>
+        </return-response>
+      </when>
+    </choose>
+  </inbound>
+
+  <backend>
+    <!-- Forward request to backend service -->
+    <forward-request timeout="30" />
+  </backend>
+
+  <outbound>
+    <base />
+  </outbound>
+
+  <on-error>
+    <base />
+  </on-error>
+</policies>

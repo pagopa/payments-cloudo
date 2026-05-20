@@ -731,7 +731,7 @@ def _post_status(payload: dict, status: str, log_message: str) -> str:
 @app.route(
     route="Trigger/{team?}",
     methods=[func.HttpMethod.POST, func.HttpMethod.OPTIONS],
-    auth_level=AUTH,
+    auth_level=func.AuthLevel.ANONYMOUS,
 )
 @app.table_output(
     arg_name="log_table",
