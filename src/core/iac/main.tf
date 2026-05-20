@@ -8,7 +8,7 @@ resource "random_password" "internal_auth_token" {
 
 # Orchestrator Function
 module "cloudo_orchestrator" {
-  source                                   = "git::https://github.com/pagopa/terraform-azurerm-v4//IDH/app_service_function?ref=28d56d27f9e6a58d01f501ef9fe4d1a9b785e2e6" #v9.10.3
+  source                                   = "git::https://github.com/pagopa/terraform-azurerm-v4//IDH/app_service_function?ref=3063d95b6d1836d006da8d0f198285f122ea8510" #v10.12.0
   env                                      = var.env
   idh_resource_tier                        = var.cloudo_function_tier
   location                                 = var.location
@@ -16,6 +16,7 @@ module "cloudo_orchestrator" {
   product_name                             = var.product_name
   resource_group_name                      = var.resource_group_name
   application_insights_instrumentation_key = data.azurerm_application_insights.this.instrumentation_key
+  minimum_tls_version                      = "1.2"
 
   default_storage_enable     = false
   storage_account_name       = module.storage_account.name
