@@ -33,8 +33,7 @@ module "apim_api_cloudo_api_v1" {
 
   # API Policies
   xml_content = templatefile("${path.module}/api/cloudo/v1/_base_policy.xml", {
-    backend_base_url     = var.service_url
-    backend_function_key = var.api_backend_function_key
+    backend_base_url = "https://${module.cloudo_orchestrator.default_hostname}/api"
   })
 
   # Subscription Configuration

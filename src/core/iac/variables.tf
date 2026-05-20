@@ -331,12 +331,6 @@ variable "api_path" {
   default     = "cloudo"
 }
 
-variable "service_url" {
-  type        = string
-  description = "The backend base URL (e.g., https://...azurewebsites.net/api)"
-  default     = "https://pagopa-d-cloudo-orchestrator.azurewebsites.net/api"
-}
-
 variable "api_product_ids" {
   type        = list(string)
   description = "List of product IDs to associate with the API"

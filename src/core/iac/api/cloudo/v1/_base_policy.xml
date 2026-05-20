@@ -2,9 +2,6 @@
   <inbound>
     <base />
     <set-backend-service base-url="${backend_base_url}" />
-    <set-header name="x-functions-key" exists-action="override">
-      <value>${backend_function_key}</value>
-    </set-header>
 
     <choose>
       <when condition="@(string.IsNullOrEmpty(context.Request.Headers.GetValueOrDefault(&quot;x-cloudo-key&quot;, &quot;&quot;)))">
@@ -30,5 +27,18 @@
 
   <on-error>
     <base />
+    <choose>
+      <when condition="@(context.Response.StatusCode == 500)">
+        <set-body>@{
+          return new {
+            statusCode = context.Response.StatusCode,
+            message = context.Response.Reason,
+            activityId = context.RequestId,
+            backendUrl = context.Api.ServiceUrl,
+            error = context.Last.Exception?.Message
+          } as dynamic;
+        }</set-body>
+      </when>
+    </choose>
   </on-error>
 </policies>
