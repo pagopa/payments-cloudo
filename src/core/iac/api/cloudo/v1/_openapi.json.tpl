@@ -28,7 +28,7 @@
             }
           },
           {
-            "name": "runbook_id",
+            "name": "id",
             "in": "query",
             "required": false,
             "schema": {
