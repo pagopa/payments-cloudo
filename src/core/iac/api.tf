@@ -17,11 +17,11 @@ module "apim_api_cloudo_api_v1" {
   display_name = "Cloudo API"
   description  = "REST API for Cloudo Orchestrator - Payments cloud runbook engine"
 
-  # API Path on APIM (es. https://{host}/cloudo/...)
+  # API Path on APIM
   path      = var.api_path
   protocols = ["https"]
 
-  # Backend base URL (es. https://...azurewebsites.net/api)
+  # Backend base URL
   service_url = "https://${module.cloudo_orchestrator.default_hostname}/api"
 
   # API Definition Format
