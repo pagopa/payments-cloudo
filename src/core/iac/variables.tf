@@ -305,3 +305,47 @@ variable "tags" {
   type        = map(string)
   default     = {}
 }
+
+# API Management Configuration
+variable "api_management_name" {
+  type        = string
+  description = "The name of the API Management instance"
+  default     = ""
+}
+
+variable "api_management_rg" {
+  type        = string
+  description = "The resource group name where API Management is deployed"
+  default     = ""
+}
+
+variable "api_manager_hostname" {
+  type        = string
+  description = "The hostname of the API Manager (e.g., api.pagopa.it)"
+  default     = ""
+}
+
+variable "api_path" {
+  type        = string
+  description = "The APIM base path for the API (e.g., cloudo)"
+  default     = "cloudo"
+}
+
+variable "api_product_ids" {
+  type        = list(string)
+  description = "List of product IDs to associate with the API"
+  default     = []
+}
+
+variable "api_subscription_required" {
+  type        = bool
+  description = "Whether subscription is required for the API"
+  default     = false
+}
+
+variable "api_backend_function_key" {
+  type        = string
+  description = "Function key injected by APIM when forwarding to backend"
+  default     = ""
+  sensitive   = true
+}
