@@ -10,6 +10,7 @@ azure-mgmt-resource
 azure-keyvault-secrets
 azure-mgmt-subscription
 azure-storage-blob
+azure-storage-queue
 azure-cli
 azure-identity
 azure-monitor-query
