@@ -3,6 +3,7 @@ import logging
 import os
 
 import azure.functions as func
+import history
 import utils
 from analyzer import analyze
 from jsm_notes import add_jsm_alert_note, format_triage_note
@@ -75,8 +76,46 @@ def analyze_failed_runbook_payload(raw_payload) -> dict:
         alert.alias,
     )
 
-    result = analyze(alert)
-    note = format_triage_note(result.to_dict())
+    # Recurring-failure short-circuit: once the same runbook has failed with
+    # the same (normalized) error AGENT_HISTORY_REGEN_THRESHOLD times.
+    signature = history.compute_signature(alert.runbook, alert.logs)
+    prior = history.get_history(signature)
+    threshold = history.regen_threshold()
+    reused = False
+    analysis_dict = None
+    result_error = None
+    result_confidence = "low"
+
+    if prior and int(prior.get("occurrence_count", 0) or 0) >= threshold:
+        analysis_dict = history.build_reused_analysis(
+            prior, int(prior.get("occurrence_count", 0)) + 1
+        )
+        reused = analysis_dict is not None
+
+    if reused:
+        result_confidence = analysis_dict.get("confidence", "low")
+        logging.info(
+            "[%s] Agent: reusing cached analysis for recurring failure "
+            "(runbook=%s, signature=%s, occurrence_count=%s, threshold=%s)",
+            alert.exec_id,
+            alert.runbook,
+            signature,
+            analysis_dict.get("occurrence_count"),
+            threshold,
+        )
+    else:
+        result = analyze(alert)
+        analysis_dict = result.to_dict()
+        result_error = result.error
+        result_confidence = result.confidence
+
+    occurrence_count = history.record_occurrence(
+        signature, alert.runbook, analysis_dict, alert.exec_id, reused=reused
+    )
+    if occurrence_count and "occurrence_count" not in analysis_dict:
+        analysis_dict["occurrence_count"] = occurrence_count
+
+    note = format_triage_note(analysis_dict)
 
     # "error" only for a total LLM failure (no usable text at all); a
     # response that failed strict JSON parsing but still has some text is
@@ -84,9 +123,11 @@ def analyze_failed_runbook_payload(raw_payload) -> dict:
     # carrying the parse warning for transparency.
     utils.write_analysis_result(
         exec_id=alert.exec_id,
-        status="error" if result.summary == "AI analysis unavailable." else "completed",
-        analysis=result.to_dict(),
-        error=result.error,
+        status="error"
+        if analysis_dict.get("summary") == "AI analysis unavailable."
+        else "completed",
+        analysis=analysis_dict,
+        error=result_error,
     )
 
     api_key = utils.get_setting("JSM_API_KEY_DEFAULT", JSM_API_KEY_DEFAULT) or (
@@ -100,15 +141,17 @@ def analyze_failed_runbook_payload(raw_payload) -> dict:
     posted = add_jsm_alert_note(api_key=api_key, alias=alert.alias, note=note)
 
     logging.info(
-        "[%s] AI triage completed (confidence=%s, jsm_note_posted=%s)",
+        "[%s] AI triage completed (confidence=%s, jsm_note_posted=%s, reused=%s)",
         alert.exec_id,
-        result.confidence,
+        result_confidence,
         posted,
+        reused,
     )
     return {
         "exec_id": alert.exec_id,
-        "analysis": result.to_dict(),
+        "analysis": analysis_dict,
         "jsm_note_posted": posted,
+        "reused_from_history": reused,
     }
 
 

@@ -2,8 +2,8 @@
   "version": "2.0",
   "logging": {
     "logLevel": {
-      "Default": "Warning",
-      "Function": "Warning",
+      "Default": "Information",
+      "Function": "Information",
       "Function.AnalyzeFailedRunbook": "Warning",
       "Function.Analyze": "Warning",
       "Function.Healthz": "Warning",

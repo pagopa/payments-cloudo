@@ -11,6 +11,7 @@ declare -a TABLE_NAME=(
   "CloudoSettings"
   "CloudoUsers"
   "CloudoAiAnalysis"
+  "CloudoRunbookHistory"
 )
 declare -a QUEUE_NAME=(
   "local"

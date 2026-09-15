@@ -15,6 +15,11 @@ JSM_NOTE_AUTHOR = "cloudo-ai-agent"
 
 def format_triage_note(analysis: dict) -> str:
     lines = ["AI triage (ClouDO Agent)"]
+    if analysis.get("recurring"):
+        lines.append(
+            f"⚠ Recurring failure (seen {analysis.get('occurrence_count', '?')}x"
+            f", first seen {analysis.get('first_seen') or 'n/a'})"
+        )
     if analysis.get("summary"):
         lines.append(f"Summary: {analysis['summary']}")
     if analysis.get("probable_root_cause"):
