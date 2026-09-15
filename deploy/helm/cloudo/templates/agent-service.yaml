@@ -1,0 +1,18 @@
+{{- if .Values.agent.enabled }}
+apiVersion: v1
+kind: Service
+metadata:
+  name: agent
+  namespace: {{ include "cloudo.namespace" . }}
+  labels:
+    {{- include "cloudo.labels" . | nindent 4 }}
+    app.kubernetes.io/component: agent
+spec:
+  type: ClusterIP
+  selector:
+    app: agent
+  ports:
+    - name: http
+      port: 80
+      targetPort: http
+{{- end }}

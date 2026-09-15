@@ -1,0 +1,118 @@
+{{- if .Values.agent.enabled }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: agent
+  namespace: {{ include "cloudo.namespace" . }}
+  labels:
+    {{- include "cloudo.labels" . | nindent 4 }}
+    app.kubernetes.io/component: agent
+spec:
+  replicas: {{ .Values.agent.replicas }}
+  selector:
+    matchLabels:
+      app: agent
+  template:
+    metadata:
+      labels:
+        app: agent
+        {{- include "cloudo.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: agent
+      {{- with .Values.agent.podAnnotations }}
+      annotations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+    spec:
+      serviceAccountName: {{ include "cloudo.serviceAccountName" . }}
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.agent.podSecurityContext }}
+      securityContext:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.agent.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.agent.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.agent.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      containers:
+        - name: agent
+          image: {{ include "cloudo.agentImage" . }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          {{- with .Values.agent.securityContext }}
+          securityContext:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          ports:
+            - containerPort: 80
+              name: http
+          env:
+            - name: AzureWebJobsStorage
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "cloudo.secretName" . }}
+                  key: AzureWebJobsStorage
+            - name: JSM_API_KEY_DEFAULT
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "cloudo.secretName" . }}
+                  key: JSM_API_KEY_DEFAULT
+            - name: OPENAI_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "cloudo.secretName" . }}
+                  key: AGENT_LLM_API_KEY
+            - name: AZURE_OPENAI_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "cloudo.secretName" . }}
+                  key: AGENT_LLM_API_KEY
+            - name: API_PREFIX
+              valueFrom:
+                configMapKeyRef:
+                  name: cloudo-config
+                  key: API_PREFIX
+            - name: AI_ANALYSIS_QUEUE_NAME
+              valueFrom:
+                configMapKeyRef:
+                  name: cloudo-agent-config
+                  key: AI_ANALYSIS_QUEUE_NAME
+            - name: AGENT_LLM_PROVIDER
+              valueFrom:
+                configMapKeyRef:
+                  name: cloudo-agent-config
+                  key: AGENT_LLM_PROVIDER
+            - name: AGENT_LLM_MODEL
+              valueFrom:
+                configMapKeyRef:
+                  name: cloudo-agent-config
+                  key: AGENT_LLM_MODEL
+            - name: AZURE_OPENAI_ENDPOINT
+              valueFrom:
+                configMapKeyRef:
+                  name: cloudo-agent-config
+                  key: AZURE_OPENAI_ENDPOINT
+          readinessProbe:
+            httpGet:
+              path: /api/healthz
+              port: http
+            initialDelaySeconds: 10
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /api/healthz
+              port: http
+            initialDelaySeconds: 20
+            periodSeconds: 20
+          resources:
+            {{- toYaml .Values.agent.resources | nindent 12 }}
+{{- end }}
