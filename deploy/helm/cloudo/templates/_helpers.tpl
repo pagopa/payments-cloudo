@@ -97,3 +97,10 @@ UI image
 {{- define "cloudo.uiImage" -}}
 {{ .Values.image.registry }}/cloudo-ui:{{ .Values.image.tag }}
 {{- end }}
+
+{{/*
+Agent image
+*/}}
+{{- define "cloudo.agentImage" -}}
+{{ .Values.image.registry }}/cloudo-agent:{{ .Values.image.tag }}
+{{- end }}

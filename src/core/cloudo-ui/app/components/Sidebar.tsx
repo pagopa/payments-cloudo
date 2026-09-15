@@ -22,6 +22,7 @@ import {
   HiOutlineSun,
   HiOutlineMoon,
   HiOutlineUser,
+  HiBriefcase,
 } from "react-icons/hi";
 import { MdOutlineRouter } from "react-icons/md";
 
@@ -58,6 +59,12 @@ const navigation: NavItem[] = [
     name: "Smart Routing",
     href: "/smart-routing",
     icon: <MdOutlineRouter />,
+    adminOnly: true,
+  },
+  {
+    name: "AI Agent",
+    href: "/ai-agent",
+    icon: <HiBriefcase />,
     adminOnly: true,
   },
   {

@@ -71,6 +71,8 @@ jobs:
       worker_changed: ${{ steps.set-outputs.outputs.worker_changed }}
       ui_version: ${{ steps.set-outputs.outputs.ui_version }}
       ui_changed: ${{ steps.set-outputs.outputs.ui_changed }}
+      agent_version: ${{ steps.set-outputs.outputs.agent_version }}
+      agent_changed: ${{ steps.set-outputs.outputs.agent_changed }}
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -107,6 +109,16 @@ jobs:
           minor_pattern: "feat"
           tag_prefix: "v"
 
+      - name: Agent Version
+        id: agent-ver
+        uses: paulhatch/semantic-version@v5.4.0
+        with:
+          change_path: "src/core/agent"
+          namespace: agent
+          major_pattern: "BREAKING CHANGE"
+          minor_pattern: "feat"
+          tag_prefix: "v"
+
       - name: Set composite outputs
         id: set-outputs
         run: |
@@ -117,6 +129,8 @@ jobs:
           echo "worker_changed=${{ steps.worker-ver.outputs.changed }}" >> "$GITHUB_OUTPUT"
           echo "ui_version=${{ steps.ui-ver.outputs.version }}" >> "$GITHUB_OUTPUT"
           echo "ui_changed=${{ steps.ui-ver.outputs.changed }}" >> "$GITHUB_OUTPUT"
+          echo "agent_version=${{ steps.agent-ver.outputs.version }}" >> "$GITHUB_OUTPUT"
+          echo "agent_changed=${{ steps.agent-ver.outputs.changed }}" >> "$GITHUB_OUTPUT"
 
       - name: Create and push orchestrator tag (main only)
         if: github.event_name == 'push' && github.ref == 'refs/heads/main' && steps.orchestrator-ver.outputs.changed == 'true'
@@ -155,6 +169,21 @@ jobs:
         run: |
           # Create and push vX.Y.Z-ui tag if it doesn't already exist
           TAG="v${VERSION}-ui"
+          if git rev-parse "$TAG" >/dev/null 2>&1; then
+            echo "Tag already exists: $TAG"; exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git tag -a "$TAG" -m "Release $TAG"
+          git push origin "$TAG"
+
+      - name: Create and push agent tag (main only)
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main' && steps.agent-ver.outputs.changed == 'true'
+        env:
+          VERSION: ${{ steps.agent-ver.outputs.version }}
+        run: |
+          # Create and push vX.Y.Z-agent tag if it doesn't already exist
+          TAG="v${VERSION}-agent"
           if git rev-parse "$TAG" >/dev/null 2>&1; then
             echo "Tag already exists: $TAG"; exit 0
           fi
@@ -205,6 +234,17 @@ jobs:
           generate_release_notes: false
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Create GitHub Release for agent
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main' && steps.agent-ver.outputs.changed == 'true'
+        uses: softprops/action-gh-release@97d42c1b50f585f357413698aa1b779307aa0d52
+        with:
+          tag_name: v${{ steps.agent-ver.outputs.version }}-agent
+          name: Agent v${{ steps.agent-ver.outputs.version }}
+          body: ${{ steps.relnotes.outputs.body || 'Automated semantic release for Agent.' }}
+          generate_release_notes: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
   docker:
     name: Build & Push via Makefile
     needs: [versioning]
@@ -223,6 +263,8 @@ jobs:
       WORKER_CHANGED: ${{ needs.versioning.outputs.worker_changed }}
       UI_VER: ${{ needs.versioning.outputs.ui_version }}
       UI_CHANGED: ${{ needs.versioning.outputs.ui_changed }}
+      AGENT_VER: ${{ needs.versioning.outputs.agent_version }}
+      AGENT_CHANGED: ${{ needs.versioning.outputs.agent_changed }}
     steps:
       - name: Checkout
         uses: actions/checkout@v5
@@ -243,6 +285,8 @@ jobs:
           echo "WORKER_VER='${WORKER_VER}'"
           echo "UI_CHANGED=${UI_CHANGED}"
           echo "UI_VER='${UI_VER}'"
+          echo "AGENT_CHANGED=${AGENT_CHANGED}"
+          echo "AGENT_VER='${AGENT_VER}'"
 
       - name: Build & Push orchestrator (SHA + semver)
         if: env.ORCHESTRATOR_CHANGED == 'true'
@@ -275,4 +319,15 @@ jobs:
             make build-fe DOCKER=docker REGISTRY="${REGISTRY}" IMAGE_PREFIX="${IMAGE_PREFIX}" PLATFORM="linux/amd64" VERSION="${UI_VER}"
             make push-fe DOCKER=docker REGISTRY="${REGISTRY}" IMAGE_PREFIX="${IMAGE_PREFIX}" PLATFORM="linux/amd64" VERSION="${SHA_VERSION}"
             make push-fe DOCKER=docker REGISTRY="${REGISTRY}" IMAGE_PREFIX="${IMAGE_PREFIX}" PLATFORM="linux/amd64" VERSION="${UI_VER}"
+          fi
+
+      - name: Build & Push agent (SHA + semver)
+        if: env.AGENT_CHANGED == 'true'
+        run: |
+          make build-agent DOCKER=docker REGISTRY="${REGISTRY}" IMAGE_PREFIX="${IMAGE_PREFIX}" PLATFORM="linux/amd64" VERSION="${SHA_VERSION}"
+          if [ "${IS_MAIN_PUSH}" = "true" ]; then
+            [ -n "${AGENT_VER}" ] || (echo "AGENT_VER is empty" && exit 1)
+            make build-agent DOCKER=docker REGISTRY="${REGISTRY}" IMAGE_PREFIX="${IMAGE_PREFIX}" PLATFORM="linux/amd64" VERSION="${AGENT_VER}"
+            make push-agent DOCKER=docker REGISTRY="${REGISTRY}" IMAGE_PREFIX="${IMAGE_PREFIX}" PLATFORM="linux/amd64" VERSION="${SHA_VERSION}"
+            make push-agent DOCKER=docker REGISTRY="${REGISTRY}" IMAGE_PREFIX="${IMAGE_PREFIX}" PLATFORM="linux/amd64" VERSION="${AGENT_VER}"
           fi

@@ -35,6 +35,9 @@ _SAFE_TEAM_RE = re.compile(r"^[A-Za-z0-9_-]{1,64}$")
 _SAFE_CHANNEL_RE = re.compile(r"^#[A-Za-z0-9._-]{1,80}$")
 _SAFE_STATUS_RE = re.compile(r"^[A-Za-z0-9_-]{1,32}$")
 _SAFE_ENV_KEY_RE = re.compile(r"^[A-Z0-9_]{1,96}$")
+_INVISIBLE_WHITESPACE_RE = re.compile(
+    "[\u00a0\u1680\u2000-\u200b\u202f\u205f\u2028\u2029\u3000\ufeff]"
+)
 ROUTING_CONFIG_CACHE_TTL_SECONDS = int(
     os.getenv("ROUTING_CONFIG_CACHE_TTL_SECONDS", "60")
 )
@@ -384,20 +387,32 @@ def _get_setting(key: str) -> Optional[str]:
                 )
                 val = entity.get("value")
                 if val:
-                    resolved = str(val).strip().strip('"').strip("'")
+                    resolved = _INVISIBLE_WHITESPACE_RE.sub(
+                        " ", str(val).strip().strip('"').strip("'")
+                    ).strip()
     except Exception:
         pass
 
     if resolved is None:
         val = os.environ.get(key)
         if val:
-            resolved = str(val).strip().strip('"').strip("'")
+            resolved = _INVISIBLE_WHITESPACE_RE.sub(
+                " ", str(val).strip().strip('"').strip("'")
+            ).strip()
 
     _setting_cache[key] = (
         resolved,
         now + ROUTING_SETTINGS_CACHE_TTL_SECONDS,
     )
     return resolved
+
+
+def get_setting(key: str) -> Optional[str]:
+    """Public wrapper around _get_setting for callers outside this module
+    (e.g. function_app.py) that need a Table Storage-backed, env-fallback
+    configuration value, such as feature flags configurable from the admin UI.
+    """
+    return _get_setting(key)
 
 
 def resolve_jsm_apikey(team: Optional[str]) -> Optional[str]:

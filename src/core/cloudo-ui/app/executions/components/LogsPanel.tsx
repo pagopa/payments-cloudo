@@ -29,6 +29,8 @@ import {
   HiOutlineInbox,
   HiOutlineCheckCircle,
   HiOutlineInformationCircle,
+  HiOutlineSparkles,
+  HiOutlineLightBulb,
 } from "react-icons/hi";
 import {
   parseDate,
@@ -121,6 +123,7 @@ function LogsPanelContent() {
   const [copied, setCopied] = useState(false);
   const [linkCopied, setLinkCopied] = useState(false);
   const [isRawExpanded, setIsRawExpanded] = useState(false);
+  const [showAiModal, setShowAiModal] = useState(false);
 
   const setTodayDate = () => {
     const t = today(getLocalTimeZone());
@@ -627,6 +630,7 @@ function LogsPanelContent() {
                     onClick={() => {
                       setSelectedLog(log);
                       setIsRawExpanded(false);
+                      setShowAiModal(false);
                     }}
                     className={`group cursor-pointer transition-all duration-200 border-l-2 hover:z-20 hover:shadow-xl ${
                       selectedLog?.ExecId === log.ExecId
@@ -734,6 +738,7 @@ function LogsPanelContent() {
                   onClick={() => {
                     setSelectedLog(log);
                     setIsRawExpanded(false);
+                    setShowAiModal(false);
                   }}
                   className={`p-4 sm:p-5 flex flex-col gap-3 transition-all duration-200 border-l-4 ${
                     selectedLog?.ExecId === log.ExecId
@@ -968,6 +973,17 @@ function LogsPanelContent() {
                     {copied ? "ID COPIED" : "COPY EXEC ID"}
                   </button>
                 </div>
+
+                {(selectedLog.Status?.toLowerCase() === "failed" ||
+                  selectedLog.Status?.toLowerCase() === "error") && (
+                  <button
+                    onClick={() => setShowAiModal(true)}
+                    className="w-full flex items-center justify-center gap-2 px-3 py-2.5 border border-cloudo-accent/30 bg-cloudo-accent/10 text-cloudo-accent text-[10px] font-black uppercase tracking-widest hover:bg-cloudo-accent hover:text-cloudo-dark transition-colors"
+                  >
+                    <HiOutlineSparkles className="w-3.5 h-3.5" />
+                    AI Triage Analysis
+                  </button>
+                )}
               </div>
 
               <div className="border border-cloudo-border bg-cloudo-dark/40 p-4">
@@ -1143,6 +1159,13 @@ function LogsPanelContent() {
               </div>
             </div>
           </div>
+
+          {showAiModal && (
+            <AiAnalysisModal
+              execId={selectedLog.ExecId}
+              onClose={() => setShowAiModal(false)}
+            />
+          )}
         </>
       )}
     </div>
@@ -1282,6 +1305,219 @@ function ExecutionTimeline({
             </div>
           );
         })}
+      </div>
+    </div>
+  );
+}
+
+interface AiAnalysisResponse {
+  status: "processing" | "completed" | "error" | "not_found";
+  analysis: {
+    summary?: string;
+    probable_root_cause?: string;
+    recommended_actions?: string[];
+    confidence?: string;
+  } | null;
+  error: string | null;
+  updated_at: string | null;
+}
+
+const AI_ANALYSIS_POLL_MS = 4000;
+const AI_ANALYSIS_MAX_POLLS = 30; // ~2 minutes before giving up on auto-refresh
+
+function AiAnalysisModal({
+  execId,
+  onClose,
+}: {
+  execId: string;
+  onClose: () => void;
+}) {
+  const [data, setData] = useState<AiAnalysisResponse | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [failedToLoad, setFailedToLoad] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    let attempts = 0;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+
+    const fetchAnalysis = async () => {
+      try {
+        const res = await cloudoFetch(
+          `/ai-analysis/${encodeURIComponent(execId)}`,
+        );
+        if (cancelled) return;
+        if (!res.ok) {
+          setFailedToLoad(true);
+          setLoading(false);
+          return;
+        }
+        const body: AiAnalysisResponse = await res.json();
+        setData(body);
+        setFailedToLoad(false);
+        setLoading(false);
+
+        attempts += 1;
+        if (body.status === "processing" && attempts < AI_ANALYSIS_MAX_POLLS) {
+          timer = setTimeout(fetchAnalysis, AI_ANALYSIS_POLL_MS);
+        }
+      } catch {
+        if (!cancelled) {
+          setFailedToLoad(true);
+          setLoading(false);
+        }
+      }
+    };
+
+    fetchAnalysis();
+
+    return () => {
+      cancelled = true;
+      if (timer) clearTimeout(timer);
+    };
+  }, [execId]);
+
+  const confidenceTone = (confidence?: string) => {
+    const c = (confidence || "").toLowerCase();
+    if (c === "high")
+      return "text-cloudo-ok border-cloudo-ok/40 bg-cloudo-ok/10";
+    if (c === "medium")
+      return "text-yellow-400 border-yellow-500/40 bg-yellow-500/10";
+    return "text-cloudo-muted border-cloudo-border bg-cloudo-dark/40";
+  };
+
+  return (
+    <div className="fixed inset-0 z-70 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-in fade-in duration-200">
+      <div className="w-full max-w-xl max-h-[85vh] overflow-auto custom-scrollbar bg-cloudo-panel border border-cloudo-border shadow-2xl animate-in zoom-in-95 duration-200">
+        <div className="flex items-center justify-between gap-4 px-5 py-4 border-b border-cloudo-border bg-linear-to-r from-cloudo-panel-2 to-cloudo-panel">
+          <div className="flex items-center gap-3">
+            <div className="p-2 bg-cloudo-accent/10 border border-cloudo-accent/20">
+              <HiOutlineSparkles className="w-4 h-4 text-cloudo-accent" />
+            </div>
+            <div>
+              <h3 className="text-xs font-black text-cloudo-text uppercase tracking-[0.2em]">
+                AI Triage Analysis
+              </h3>
+              <code className="text-[10px] text-cloudo-muted font-mono">
+                {execId}
+              </code>
+            </div>
+          </div>
+          <button
+            onClick={onClose}
+            className="p-2 text-cloudo-muted hover:text-cloudo-text border border-cloudo-border transition-colors"
+          >
+            <HiOutlineX className="w-4 h-4" />
+          </button>
+        </div>
+
+        <div className="p-5 space-y-4">
+          {loading && !data && (
+            <div className="flex items-center gap-3 text-[11px] font-bold uppercase tracking-widest text-cloudo-muted py-6 justify-center">
+              <HiOutlineRefresh className="w-4 h-4 animate-spin" />
+              Loading...
+            </div>
+          )}
+
+          {!loading && failedToLoad && !data && (
+            <div className="flex items-center gap-3 text-[11px] font-bold uppercase tracking-widest text-cloudo-err py-6 justify-center">
+              <HiOutlineExclamationCircle className="w-4 h-4" />
+              Failed to load AI analysis
+            </div>
+          )}
+
+          {data && data.status === "not_found" && (
+            <div className="flex flex-col items-center gap-2 text-center py-6">
+              <HiOutlineInformationCircle className="w-6 h-6 text-cloudo-muted" />
+              <p className="text-[11px] font-bold uppercase tracking-widest text-cloudo-muted">
+                No AI analysis available for this execution
+              </p>
+              <p className="text-[10px] text-cloudo-muted/70 uppercase tracking-tight max-w-sm">
+                AI Agent triage may be disabled, or this execution was not
+                forwarded for analysis.
+              </p>
+            </div>
+          )}
+
+          {data && data.status === "processing" && (
+            <div className="flex flex-col items-center gap-3 text-center py-6">
+              <HiOutlineRefresh className="w-6 h-6 text-cloudo-accent animate-spin" />
+              <p className="text-[11px] font-bold uppercase tracking-widest text-cloudo-accent">
+                Processing...
+              </p>
+              <p className="text-[10px] text-cloudo-muted/70 uppercase tracking-tight max-w-sm">
+                The AI Agent is analyzing this execution. This panel refreshes
+                automatically.
+              </p>
+            </div>
+          )}
+
+          {data && (data.status === "completed" || data.status === "error") && (
+            <div className="space-y-4">
+              {data.analysis?.confidence && (
+                <div className="flex items-center justify-between">
+                  <span className="text-[10px] font-black uppercase tracking-[0.2em] text-cloudo-muted">
+                    Confidence
+                  </span>
+                  <span
+                    className={`text-[10px] font-black uppercase tracking-widest px-2 py-0.5 border ${confidenceTone(
+                      data.analysis.confidence,
+                    )}`}
+                  >
+                    {data.analysis.confidence}
+                  </span>
+                </div>
+              )}
+
+              {data.analysis?.summary && (
+                <div className="space-y-1.5">
+                  <div className="text-[10px] font-black uppercase tracking-[0.2em] text-cloudo-muted">
+                    Summary
+                  </div>
+                  <p className="text-[12px] text-cloudo-text leading-relaxed whitespace-pre-wrap">
+                    {data.analysis.summary}
+                  </p>
+                </div>
+              )}
+
+              {data.analysis?.probable_root_cause && (
+                <div className="space-y-1.5">
+                  <div className="text-[10px] font-black uppercase tracking-[0.2em] text-cloudo-muted">
+                    Probable Root Cause
+                  </div>
+                  <p className="text-[12px] text-cloudo-text leading-relaxed whitespace-pre-wrap">
+                    {data.analysis.probable_root_cause}
+                  </p>
+                </div>
+              )}
+
+              {!!data.analysis?.recommended_actions?.length && (
+                <div className="space-y-1.5">
+                  <div className="text-[10px] font-black uppercase tracking-[0.2em] text-cloudo-muted">
+                    Recommended Actions
+                  </div>
+                  <ul className="space-y-1.5">
+                    {data.analysis.recommended_actions.map((action, i) => (
+                      <li
+                        key={i}
+                        className="flex items-start gap-2 text-[12px] text-cloudo-text leading-relaxed"
+                      >
+                        <HiOutlineLightBulb className="w-3.5 h-3.5 text-cloudo-accent shrink-0 mt-0.5" />
+                        <span>{action}</span>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+
+              {data.status === "error" && (
+                <div className="border border-cloudo-err/30 bg-cloudo-err/10 px-4 py-3 text-[11px] text-cloudo-err">
+                  {data.error || "AI analysis failed."}
+                </div>
+              )}
+            </div>
+          )}
+        </div>
       </div>
     </div>
   );

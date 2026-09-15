@@ -26,10 +26,12 @@ TABLE_USERS = "CloudoUsers"
 TABLE_SETTINGS = "CloudoSettings"
 TABLE_AUDIT = "CloudoAuditLogs"
 TABLE_SCHEDULES = "CloudoSchedules"
+TABLE_AI_ANALYSIS = "CloudoAiAnalysis"
 STORAGE_CONN = "AzureWebJobsStorage"
 NOTIFICATION_QUEUE_NAME = os.environ.get(
     "NOTIFICATION_QUEUE_NAME", "cloudo-notification"
 )
+AI_ANALYSIS_QUEUE_NAME = os.environ.get("AI_ANALYSIS_QUEUE_NAME", "cloudo-ai-analysis")
 STORAGE_CONNECTION = "AzureWebJobsStorage"
 MAX_TABLE_CHARS = int(os.getenv("MAX_TABLE_LOG_CHARS", "32000"))
 MAX_TABLE_ENTITY_BODY_BYTES = int(os.getenv("MAX_TABLE_ENTITY_BODY_BYTES", "62000"))
@@ -98,7 +100,11 @@ def _get_table_client(table_name: str, conn_env: str = STORAGE_CONN):
 
 
 def _get_queue_client(queue_name: str, conn_env: str = STORAGE_CONN):
-    from azure.storage.queue import QueueClient, TextBase64EncodePolicy
+    from azure.storage.queue import (
+        QueueClient,
+        TextBase64DecodePolicy,
+        TextBase64EncodePolicy,
+    )
 
     conn_str = _require_connection_string(conn_env)
     key = (conn_str, queue_name)
@@ -108,6 +114,7 @@ def _get_queue_client(queue_name: str, conn_env: str = STORAGE_CONN):
             conn_str=conn_str,
             queue_name=queue_name,
             message_encode_policy=TextBase64EncodePolicy(),
+            message_decode_policy=TextBase64DecodePolicy(),
         )
         _queue_clients[key] = client
     return client
@@ -2636,6 +2643,97 @@ def _process_receiver_body(body: dict, log_table: func.Out[str]) -> None:
     else:
         logging.warning("Routing module not available, keeping legacy notifications")
 
+    _enqueue_ai_agent_analysis(
+        body=body,
+        status_label=status_label,
+        resource_info=resource_info,
+        routing_info=routing_info,
+        logs_raw=logs_raw,
+    )
+
+
+def _enqueue_ai_agent_analysis(
+    body: dict,
+    status_label: str,
+    resource_info: dict,
+    routing_info: dict,
+    logs_raw: str,
+) -> None:
+    """Forward failed/errored executions to the ClouDO Agent (see
+    src/core/agent) for asynchronous AI triage. No-op unless
+    AI_AGENT_ENABLED=true, so this is fully backward compatible when the
+    agent service is not deployed.
+
+    The JSM alias sent here (`jsm_alias`) matches the alias used by the
+    smart-routing JSM alert above (body["id"], the schema id), so the
+    agent's triage note lands on the same alert.
+    """
+    try:
+        from smart_routing import get_setting
+
+        agent_enabled = (get_setting("AI_AGENT_ENABLED") or "false").strip().lower()
+    except Exception:
+        agent_enabled = os.getenv("AI_AGENT_ENABLED", "false").strip().lower()
+    if agent_enabled != "true":
+        return
+    if status_label not in ("failed", "error"):
+        return
+    import utils
+
+    try:
+        ai_queue = _get_queue_client(
+            AI_ANALYSIS_QUEUE_NAME, conn_env=STORAGE_CONNECTION
+        )
+        ai_payload = {
+            "exec_id": body.get("exec_id"),
+            "jsm_alias": body.get("id"),
+            "id": body.get("id"),
+            "name": body.get("name"),
+            "status": status_label,
+            "runbook": body.get("runbook"),
+            "run_args": body.get("run_args"),
+            "monitor_condition": body.get("monitor_condition"),
+            "severity": body.get("severity"),
+            "initiator": body.get("initiator"),
+            "resource_info": resource_info if isinstance(resource_info, dict) else {},
+            "routing_info": (
+                {"team": routing_info.get("team")}
+                if isinstance(routing_info, dict)
+                else {}
+            ),
+            "logs": utils._truncate_for_table(logs_raw, MAX_TABLE_CHARS)
+            if logs_raw
+            else "",
+        }
+        ai_queue.send_message(json.dumps(ai_payload, ensure_ascii=False))
+        _write_ai_analysis_placeholder(body.get("exec_id"))
+    except Exception as e:
+        logging.warning(
+            f"[{body.get('exec_id')}] Failed to enqueue AI agent analysis: {e}"
+        )
+
+
+def _write_ai_analysis_placeholder(exec_id: str) -> None:
+    """Upsert a 'processing' placeholder as soon as an execution is enqueued
+    for AI triage, so the UI can immediately show an in-progress state
+    instead of "not found" while the Agent service works through the queue.
+    The Agent overwrites this entity with the final result (see
+    agent/utils.py write_analysis_result)."""
+    if not exec_id:
+        return
+    try:
+        table_client = _get_table_client(TABLE_AI_ANALYSIS, conn_env=STORAGE_CONNECTION)
+        table_client.upsert_entity(
+            entity={
+                "PartitionKey": "AiAnalysis",
+                "RowKey": str(exec_id),
+                "status": "processing",
+                "updated_at": datetime.now(timezone.utc).isoformat(),
+            }
+        )
+    except Exception as e:
+        logging.warning(f"[{exec_id}] Failed to write AI analysis placeholder: {e}")
+
 
 # =========================
 # Queue Trigger: Receiver
@@ -3030,6 +3128,59 @@ def get_log(req: func.HttpRequest, log_entity: str) -> func.HttpResponse:
         log_entity,
         status_code=200,
         mimetype="application/json",
+    )
+
+
+@app.route(route="ai-analysis/{execId}", auth_level=AUTH)
+def get_ai_analysis(req: func.HttpRequest) -> func.HttpResponse:
+    """Returns the AI Agent's triage result for a given exec_id, if any."""
+    if req.method == "OPTIONS":
+        return create_cors_response()
+
+    session, error_res = _get_authenticated_user(req)
+    if error_res:
+        return error_res
+
+    exec_id = req.route_params.get("execId")
+    if not exec_id:
+        return func.HttpResponse(
+            json.dumps({"error": "Missing execId"}, ensure_ascii=False),
+            status_code=400,
+            mimetype="application/json",
+            headers={"Access-Control-Allow-Origin": "*"},
+        )
+
+    try:
+        table_client = _get_table_client(TABLE_AI_ANALYSIS, conn_env=STORAGE_CONNECTION)
+        entity = table_client.get_entity(
+            partition_key="AiAnalysis", row_key=str(exec_id)
+        )
+        analysis_raw = entity.get("analysis")
+        try:
+            analysis = json.loads(analysis_raw) if analysis_raw else None
+        except (TypeError, ValueError):
+            analysis = None
+        payload = {
+            "status": entity.get("status") or "processing",
+            "analysis": analysis,
+            "error": entity.get("error"),
+            "updated_at": entity.get("updated_at"),
+        }
+    except Exception:
+        # Entity not found (or table missing altogether): AI triage was
+        # never enqueued for this exec_id.
+        payload = {
+            "status": "not_found",
+            "analysis": None,
+            "error": None,
+            "updated_at": None,
+        }
+
+    return func.HttpResponse(
+        json.dumps(payload, ensure_ascii=False),
+        status_code=200,
+        mimetype="application/json",
+        headers={"Access-Control-Allow-Origin": "*"},
     )
 
 
