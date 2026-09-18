@@ -182,15 +182,22 @@ variable "ui_image" {
   })
 }
 
+variable "cloudo_agent_enabled" {
+  type        = bool
+  description = "Enable Cloudo AI Agent"
+  default     = false
+}
+
 variable "agent_image" {
-  description = "Docker image configuration for the Cloudo AI Agent (async runbook/alert triage via LLM)."
+  description = "Docker image configuration for the Cloudo AI Agent (async runbook/alert triage via LLM). Only required when cloudo_agent_enabled = true."
   type = object({
-    image_name        = string
-    image_tag         = string
-    registry_url      = string
+    image_name        = optional(string, "")
+    image_tag         = optional(string, "")
+    registry_url      = optional(string, "")
     registry_username = optional(string)
     registry_password = optional(string)
   })
+  default = {}
 }
 
 variable "cloudo_ui_tier" {

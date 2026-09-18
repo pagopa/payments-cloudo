@@ -85,6 +85,8 @@ module "cloudo_orchestrator" {
 
 # AI Agent Function (async runbook/alert triage via LLM)
 module "cloudo_agent" {
+  count = var.cloudo_agent_enabled ? 1 : 0
+
   source                                   = "git::https://github.com/pagopa/terraform-azurerm-v4//IDH/app_service_function?ref=3063d95b6d1836d006da8d0f198285f122ea8510" #v10.12.0
   env                                      = var.env
   idh_resource_tier                        = var.cloudo_function_tier
@@ -102,7 +104,7 @@ module "cloudo_agent" {
   export_keys                = true
 
   app_settings = {
-    "AI_ANALYSIS_QUEUE_NAME"              = azurerm_storage_queue.ai_analysis.name
+    "AI_ANALYSIS_QUEUE_NAME"              = azurerm_storage_queue.ai_analysis[0].name
     "JSM_API_KEY_DEFAULT"                 = var.jsm_api_key
     "WEBSITES_ENABLE_APP_SERVICE_STORAGE" = false
     "WEBSITES_PORT"                       = "80"
@@ -304,6 +306,7 @@ resource "azurerm_storage_queue" "notification" {
 }
 
 resource "azurerm_storage_queue" "ai_analysis" {
+  count              = var.cloudo_agent_enabled ? 1 : 0
   name               = "cloudo-ai-analysis"
   storage_account_id = module.storage_account.id
 }
@@ -344,12 +347,16 @@ resource "azurerm_storage_table" "cloudo_users" {
 }
 
 resource "azurerm_storage_table" "cloudo_ai_analysis" {
+  count = var.cloudo_agent_enabled ? 1 : 0
+
   name                 = "CloudoAiAnalysis"
   storage_account_name = module.storage_account.name
 }
 
 resource "azurerm_storage_table" "cloudo_runbook_history" {
-  name                 = "CloudoRunbookHistory"
+  count = var.cloudo_agent_enabled ? 1 : 0
+
+  name                 = "CloudoAIRunbookStory"
   storage_account_name = module.storage_account.name
 }
 

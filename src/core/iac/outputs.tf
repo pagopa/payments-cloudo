@@ -20,12 +20,12 @@ output "cloudo_workers_hostnames" {
 }
 
 output "cloudo_agent_url" {
-  value       = "https://${module.cloudo_agent.default_hostname}"
+  value       = length(module.cloudo_agent) > 0 ? "https://${module.cloudo_agent[0].default_hostname}" : null
   description = "The URL of the Cloudo AI Agent"
 }
 
 output "cloudo_agent_key" {
-  value       = module.cloudo_agent.default_key
+  value       = length(module.cloudo_agent) > 0 ? module.cloudo_agent[0].default_key : null
   description = "The default key for the Cloudo AI Agent"
   sensitive   = true
 }
@@ -45,7 +45,7 @@ output "storage_queues" {
   value = {
     workers      = { for k, v in azurerm_storage_queue.this : k => v.name }
     notification = azurerm_storage_queue.notification.name
-    ai_analysis  = azurerm_storage_queue.ai_analysis.name
+    ai_analysis  = length(azurerm_storage_queue.ai_analysis) > 0 ? azurerm_storage_queue.ai_analysis[0].name : null
   }
   description = "The names of the storage queues"
 }
@@ -59,8 +59,8 @@ output "storage_tables" {
     cloudo_schedules = azurerm_storage_table.cloudo_schedules.name
     cloudo_settings  = azurerm_storage_table.cloudo_settings.name
     cloudo_users     = azurerm_storage_table.cloudo_users.name
-    ai_analysis      = azurerm_storage_table.cloudo_ai_analysis.name
-    runbook_history  = azurerm_storage_table.cloudo_runbook_history.name
+    ai_analysis      = length(azurerm_storage_table.cloudo_ai_analysis) > 0 ? azurerm_storage_table.cloudo_ai_analysis[0].name : null
+    runbook_history  = length(azurerm_storage_table.cloudo_runbook_history) > 0 ? azurerm_storage_table.cloudo_runbook_history[0].name : null
   }
   description = "The names of the storage tables"
 }

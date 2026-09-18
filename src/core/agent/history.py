@@ -12,7 +12,7 @@ import utils
 # Runbook resolution history
 # =========================
 #
-HISTORY_TABLE_NAME = "CloudoRunbookHistory"
+HISTORY_TABLE_NAME = "CloudoAIRunbookStory"
 HISTORY_PARTITION_KEY = "RunbookHistory"
 DEFAULT_REGEN_THRESHOLD = int(os.getenv("AGENT_HISTORY_REGEN_THRESHOLD", "6"))
 SIGNATURE_LOG_CHARS = 1500
