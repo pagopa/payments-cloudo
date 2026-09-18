@@ -8,10 +8,10 @@ import utils
 from analyzer import analyze
 from jsm_notes import add_jsm_alert_note, format_triage_note
 from models import FailedRunbookAlert
-from utils import STORAGE_CONNECTION
-from utils import (  # noqa: F401  (used by fastapi_app poller)
-    get_queue_client as _get_queue_client,
+from utils import (
+    STORAGE_CONNECTION,
 )
+from utils import get_queue_client as _get_queue_client  # noqa: F401  (used by fastapi_app poller)
 
 # =========================
 # Constants and Utilities
