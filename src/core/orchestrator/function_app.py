@@ -2395,6 +2395,23 @@ def _process_receiver_body(body: dict, log_table: func.Out[str]) -> None:
     else:
         log_value = ""
 
+    # Normalize resource_info/routing_info to dicts *before*
+    # building the log entity
+    resource_info = body.get("resource_info") or {}
+    routing_info = body.get("routing_info") or {}
+    if isinstance(resource_info, str):
+        try:
+            parsed = json.loads(resource_info)
+            resource_info = parsed if isinstance(parsed, dict) else {}
+        except Exception:
+            resource_info = {}
+    if isinstance(routing_info, str):
+        try:
+            parsed = json.loads(routing_info)
+            routing_info = parsed if isinstance(parsed, dict) else {}
+        except Exception:
+            routing_info = {}
+
     log_entity = build_log_entry(
         status=status_label,
         partition_key=partition_key,
@@ -2410,27 +2427,12 @@ def _process_receiver_body(body: dict, log_table: func.Out[str]) -> None:
         log_msg=log_value,
         oncall=body.get("oncall"),
         initiator=body.get("initiator"),
-        resource_info=body.get("resource_info"),
+        resource_info=resource_info,
         monitor_condition=body.get("monitor_condition"),
         severity=body.get("severity"),
     )
     log_entity = _ensure_log_entity_size_for_table(log_entity)
     log_table.set(json.dumps(log_entity, ensure_ascii=False))
-
-    resource_info = body.get("resource_info") or {}
-    routing_info = body.get("routing_info") or {}
-    if isinstance(resource_info, str):
-        try:
-            parsed = json.loads(resource_info)
-            resource_info = parsed if isinstance(parsed, dict) else {}
-        except Exception:
-            resource_info = {}
-    if isinstance(routing_info, str):
-        try:
-            parsed = json.loads(routing_info)
-            routing_info = parsed if isinstance(parsed, dict) else {}
-        except Exception:
-            routing_info = {}
 
     resource_id = (body.get("resource_id") or "") or (
         resource_info.get("resource_id") or ""
@@ -2678,6 +2680,19 @@ def _enqueue_ai_agent_analysis(
         return
     if status_label not in ("failed", "error"):
         return
+
+    # Manual "Dev Test Run" executions launched from Studio.
+    is_dev_test_run = str(body.get("name") or "").strip().lower() == "dev test run" or (
+        isinstance(resource_info, dict)
+        and str(resource_info.get("team") or "").strip().lower() == "dev-test"
+    )
+    if is_dev_test_run:
+        logging.info(
+            "[%s] Agent: skipping AI triage for Dev Test Run execution",
+            body.get("exec_id"),
+        )
+        return
+
     import utils
 
     try:
@@ -2740,6 +2755,27 @@ def _write_ai_analysis_placeholder(exec_id: str) -> None:
 # =========================
 
 
+def _decode_queue_message_text(raw: str) -> dict:
+    """Parse a queue message body as JSON.
+
+    The Storage Queue trigger is configured (host.json: extensions.queues.
+    messageEncoding = "base64") to auto base64-decode message content before
+    handing it to the function, matching the TextBase64EncodePolicy used when
+    messages are sent. If that host-side decode is ever bypassed (e.g. bundle
+    resolution differences), we still get handed the raw base64 text here, so
+    fall back to decoding it manually before giving up.
+    """
+    text = raw or ""
+    try:
+        return json.loads(text)
+    except json.JSONDecodeError:
+        try:
+            decoded = base64.b64decode(text).decode("utf-8")
+        except Exception:
+            raise
+        return json.loads(decoded)
+
+
 @app.queue_trigger(
     arg_name="msg", queue_name=NOTIFICATION_QUEUE_NAME, connection=STORAGE_CONNECTION
 )
@@ -2751,7 +2787,7 @@ def _write_ai_analysis_placeholder(exec_id: str) -> None:
 def Receiver(msg: func.QueueMessage, log_table: func.Out[str]) -> None:
     """Queue trigger endpoint for receiving execution status from workers."""
     try:
-        body = json.loads(msg.get_body().decode("utf-8"))
+        body = _decode_queue_message_text(msg.get_body().decode("utf-8"))
         _process_receiver_body(body, log_table)
     except Exception as e:
         logging.error(f"[Receiver] Failed to process queue message: {e}")

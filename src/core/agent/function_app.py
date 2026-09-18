@@ -86,11 +86,27 @@ def analyze_failed_runbook_payload(raw_payload) -> dict:
     result_error = None
     result_confidence = "low"
 
-    if prior and int(prior.get("occurrence_count", 0) or 0) >= threshold:
-        analysis_dict = history.build_reused_analysis(
-            prior, int(prior.get("occurrence_count", 0)) + 1
-        )
+    prior_count = int(prior.get("occurrence_count", 0) or 0) if prior else 0
+    logging.info(
+        "[%s] Agent: history lookup (signature=%s, prior_occurrence_count=%s, "
+        "regen_threshold=%s, will_reuse=%s)",
+        alert.exec_id,
+        signature,
+        prior_count,
+        threshold,
+        prior_count >= threshold,
+    )
+
+    if prior and prior_count >= threshold:
+        analysis_dict = history.build_reused_analysis(prior, prior_count + 1)
         reused = analysis_dict is not None
+        if not reused:
+            logging.info(
+                "[%s] Agent: history threshold met but no reusable analysis "
+                "found (signature=%s), falling back to a fresh LLM call",
+                alert.exec_id,
+                signature,
+            )
 
     if reused:
         result_confidence = analysis_dict.get("confidence", "low")
@@ -104,6 +120,12 @@ def analyze_failed_runbook_payload(raw_payload) -> dict:
             threshold,
         )
     else:
+        logging.info(
+            "[%s] Agent: calling LLM for fresh analysis (runbook=%s, signature=%s)",
+            alert.exec_id,
+            alert.runbook,
+            signature,
+        )
         result = analyze(alert)
         analysis_dict = result.to_dict()
         result_error = result.error
@@ -130,9 +152,7 @@ def analyze_failed_runbook_payload(raw_payload) -> dict:
         error=result_error,
     )
 
-    api_key = utils.get_setting("JSM_API_KEY_DEFAULT", JSM_API_KEY_DEFAULT) or (
-        str(payload.get("jsm_api_key") or "") if isinstance(payload, dict) else ""
-    )
+    api_key = utils.get_setting("JSM_API_KEY_DEFAULT", JSM_API_KEY_DEFAULT)
     logging.debug(
         "[%s] Agent: posting JSM note (api_key_configured=%s)",
         alert.exec_id,

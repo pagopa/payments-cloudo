@@ -182,6 +182,17 @@ variable "ui_image" {
   })
 }
 
+variable "agent_image" {
+  description = "Docker image configuration for the Cloudo AI Agent (async runbook/alert triage via LLM)."
+  type = object({
+    image_name        = string
+    image_tag         = string
+    registry_url      = string
+    registry_username = optional(string)
+    registry_password = optional(string)
+  })
+}
+
 variable "cloudo_ui_tier" {
   type    = string
   default = "basic"
@@ -257,6 +268,24 @@ variable "worker_fastapi_queue_visibility_timeout" {
   type        = number
   description = "Visibility timeout in seconds for worker queue messages."
   default     = 3600
+}
+
+variable "agent_fastapi_queue_batch_size" {
+  type        = number
+  description = "Max batch size per AI agent analysis queue poll."
+  default     = 4
+}
+
+variable "agent_fastapi_queue_poll_seconds" {
+  type        = number
+  description = "Polling interval in seconds for the AI agent analysis queue."
+  default     = 5
+}
+
+variable "agent_fastapi_queue_visibility_timeout" {
+  type        = number
+  description = "Visibility timeout in seconds for AI agent analysis queue messages."
+  default     = 300
 }
 
 variable "autoscale_max_capacity" {

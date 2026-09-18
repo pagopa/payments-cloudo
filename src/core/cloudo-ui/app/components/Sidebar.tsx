@@ -22,9 +22,9 @@ import {
   HiOutlineSun,
   HiOutlineMoon,
   HiOutlineUser,
-  HiBriefcase,
 } from "react-icons/hi";
 import { MdOutlineRouter } from "react-icons/md";
+import { LuBrain } from "react-icons/lu";
 
 interface NavItem {
   name: string;
@@ -64,7 +64,7 @@ const navigation: NavItem[] = [
   {
     name: "AI Agent",
     href: "/ai-agent",
-    icon: <HiBriefcase />,
+    icon: <LuBrain />,
     adminOnly: true,
   },
   {

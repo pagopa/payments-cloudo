@@ -83,6 +83,67 @@ module "cloudo_orchestrator" {
 }
 
 
+# AI Agent Function (async runbook/alert triage via LLM)
+module "cloudo_agent" {
+  source                                   = "git::https://github.com/pagopa/terraform-azurerm-v4//IDH/app_service_function?ref=3063d95b6d1836d006da8d0f198285f122ea8510" #v10.12.0
+  env                                      = var.env
+  idh_resource_tier                        = var.cloudo_function_tier
+  location                                 = var.location
+  name                                     = "${var.prefix}-cloudo-agent"
+  product_name                             = var.product_name
+  resource_group_name                      = var.resource_group_name
+  application_insights_instrumentation_key = data.azurerm_application_insights.this.instrumentation_key
+  minimum_tls_version                      = "1.2"
+
+  default_storage_enable     = false
+  storage_account_name       = module.storage_account.name
+  storage_account_access_key = module.storage_account.primary_access_key
+  app_service_plan_name      = "${var.prefix}-cloudo-agent-service-plan"
+  export_keys                = true
+
+  app_settings = {
+    "AI_ANALYSIS_QUEUE_NAME"              = azurerm_storage_queue.ai_analysis.name
+    "JSM_API_KEY_DEFAULT"                 = var.jsm_api_key
+    "WEBSITES_ENABLE_APP_SERVICE_STORAGE" = false
+    "WEBSITES_PORT"                       = "80"
+    "API_PREFIX"                          = var.fastapi_api_prefix
+    "FASTAPI_QUEUE_BATCH_SIZE"            = tostring(var.agent_fastapi_queue_batch_size)
+    "FASTAPI_QUEUE_POLL_SECONDS"          = tostring(var.agent_fastapi_queue_poll_seconds)
+    "FASTAPI_QUEUE_VISIBILITY_TIMEOUT"    = tostring(var.agent_fastapi_queue_visibility_timeout)
+    "CLOUDO_ENVIRONMENT"                  = var.env
+    "CLOUDO_ENVIRONMENT_SHORT"            = substr(var.env, 0, 1)
+    "FEATURE_DEV"                         = var.env == "dev" ? "true" : "false"
+  }
+
+  docker_image             = var.agent_image.image_name
+  docker_image_tag         = var.agent_image.image_tag
+  docker_registry_url      = var.agent_image.registry_url
+  docker_registry_password = var.agent_image.registry_password
+  docker_registry_username = var.agent_image.registry_username
+  tags                     = var.tags
+
+  # which subnet is allowed to reach this app service
+  allowed_subnet_ids           = [var.vpn_subnet_id]
+  private_endpoint_dns_zone_id = data.azurerm_private_dns_zone.this.id
+
+  embedded_subnet = {
+    enabled      = true
+    vnet_name    = var.vnet_name
+    vnet_rg_name = var.vnet_rg
+  }
+
+  autoscale_settings = {
+    max_capacity                  = 1
+    scale_up_requests_threshold   = 250
+    scale_down_requests_threshold = 150
+  }
+
+  user_identity_ids = [azurerm_user_assigned_identity.identity.id]
+
+  always_on = true
+}
+
+
 # UI App Service
 module "cloudo_ui" {
   count               = var.enable_ui ? 1 : 0
@@ -242,6 +303,11 @@ resource "azurerm_storage_queue" "notification" {
   storage_account_id = module.storage_account.id
 }
 
+resource "azurerm_storage_queue" "ai_analysis" {
+  name               = "cloudo-ai-analysis"
+  storage_account_id = module.storage_account.id
+}
+
 resource "azurerm_storage_table" "runbook_logger" {
   name                 = "RunbookLogs"
   storage_account_name = module.storage_account.name
@@ -274,6 +340,16 @@ resource "azurerm_storage_table" "cloudo_settings" {
 
 resource "azurerm_storage_table" "cloudo_users" {
   name                 = "CloudoUsers"
+  storage_account_name = module.storage_account.name
+}
+
+resource "azurerm_storage_table" "cloudo_ai_analysis" {
+  name                 = "CloudoAiAnalysis"
+  storage_account_name = module.storage_account.name
+}
+
+resource "azurerm_storage_table" "cloudo_runbook_history" {
+  name                 = "CloudoRunbookHistory"
   storage_account_name = module.storage_account.name
 }
 

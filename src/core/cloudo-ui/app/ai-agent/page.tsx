@@ -28,7 +28,6 @@ interface AgentSettings {
   AZURE_OPENAI_API_VERSION: string;
   COPILOT_GITHUB_TOKEN: string;
   COPILOT_MODEL: string;
-  JSM_API_KEY_DEFAULT: string;
 }
 
 const DEFAULT_SETTINGS: AgentSettings = {
@@ -43,7 +42,6 @@ const DEFAULT_SETTINGS: AgentSettings = {
   AZURE_OPENAI_API_VERSION: "2024-08-01-preview",
   COPILOT_GITHUB_TOKEN: "",
   COPILOT_MODEL: "",
-  JSM_API_KEY_DEFAULT: "",
 };
 
 interface Notification {
@@ -287,31 +285,6 @@ export default function AiAgentSettingsPage() {
                   </select>
                 </div>
 
-                <div className="space-y-2">
-                  <label className="text-[11px] font-black uppercase tracking-widest text-cloudo-muted ml-1 block">
-                    Model / Deployment Name
-                  </label>
-                  <input
-                    type="text"
-                    className="input h-11 w-full"
-                    placeholder="gpt-4o-mini"
-                    value={settings.AGENT_LLM_MODEL}
-                    onChange={(e) =>
-                      setSettings({
-                        ...settings,
-                        AGENT_LLM_MODEL: e.target.value,
-                      })
-                    }
-                    disabled={isCopilot}
-                  />
-                  {isCopilot && (
-                    <p className="text-[10px] text-cloudo-muted/70 uppercase tracking-tight ml-1">
-                      Not used by GitHub Copilot — set the Copilot Model field
-                      below instead
-                    </p>
-                  )}
-                </div>
-
                 <div className="grid grid-cols-2 gap-4">
                   <div className="space-y-2">
                     <label className="text-[11px] font-black uppercase tracking-widest text-cloudo-muted ml-1 block">
@@ -349,37 +322,56 @@ export default function AiAgentSettingsPage() {
               </div>
             </div>
 
-            {/* Credentials Section */}
+            {/* Provider Configuration Section */}
             <div className="space-y-6">
               <div className="flex items-center gap-3">
                 <div className="w-1.5 h-4 bg-cloudo-warn" />
                 <h2 className="text-sm font-black uppercase tracking-[0.4em] text-cloudo-text">
-                  Credentials
+                  Provider Configuration
                 </h2>
               </div>
 
               <div className="bg-cloudo-panel border border-cloudo-border p-6 space-y-6">
                 {!isAzure && !isCopilot && (
-                  <div className="space-y-2">
-                    <div className="flex items-center gap-2 mb-1">
-                      <HiOutlineKey className="text-cloudo-warn w-4 h-4" />
-                      <label className="text-[11px] font-black uppercase tracking-widest text-cloudo-muted block">
-                        OpenAI API Key
-                      </label>
+                  <>
+                    <div className="space-y-2">
+                      <div className="flex items-center gap-2 mb-1">
+                        <HiOutlineKey className="text-cloudo-warn w-4 h-4" />
+                        <label className="text-[11px] font-black uppercase tracking-widest text-cloudo-muted block">
+                          OpenAI API Key
+                        </label>
+                      </div>
+                      <input
+                        type="password"
+                        className="input h-11 text-sm w-full"
+                        placeholder="OPENAI_API_KEY"
+                        value={settings.OPENAI_API_KEY}
+                        onChange={(e) =>
+                          setSettings({
+                            ...settings,
+                            OPENAI_API_KEY: e.target.value,
+                          })
+                        }
+                      />
                     </div>
-                    <input
-                      type="password"
-                      className="input h-11 text-sm w-full"
-                      placeholder="OPENAI_API_KEY"
-                      value={settings.OPENAI_API_KEY}
-                      onChange={(e) =>
-                        setSettings({
-                          ...settings,
-                          OPENAI_API_KEY: e.target.value,
-                        })
-                      }
-                    />
-                  </div>
+                    <div className="space-y-2">
+                      <label className="text-[11px] font-black uppercase tracking-widest text-cloudo-muted ml-1 block">
+                        Model
+                      </label>
+                      <input
+                        type="text"
+                        className="input h-11 w-full"
+                        placeholder="gpt-4o-mini"
+                        value={settings.AGENT_LLM_MODEL}
+                        onChange={(e) =>
+                          setSettings({
+                            ...settings,
+                            AGENT_LLM_MODEL: e.target.value,
+                          })
+                        }
+                      />
+                    </div>
+                  </>
                 )}
 
                 {isAzure && (
@@ -438,6 +430,23 @@ export default function AiAgentSettingsPage() {
                         }
                       />
                     </div>
+                    <div className="space-y-2">
+                      <label className="text-[11px] font-black uppercase tracking-widest text-cloudo-muted ml-1 block">
+                        Model / Deployment Name
+                      </label>
+                      <input
+                        type="text"
+                        className="input h-11 w-full"
+                        placeholder="gpt-4o-mini"
+                        value={settings.AGENT_LLM_MODEL}
+                        onChange={(e) =>
+                          setSettings({
+                            ...settings,
+                            AGENT_LLM_MODEL: e.target.value,
+                          })
+                        }
+                      />
+                    </div>
                   </>
                 )}
 
@@ -488,28 +497,12 @@ export default function AiAgentSettingsPage() {
                   </>
                 )}
 
-                <div className="space-y-2">
-                  <div className="flex items-center gap-2 mb-1">
-                    <HiOutlineKey className="text-cloudo-accent w-4 h-4" />
-                    <label className="text-[11px] font-black uppercase tracking-widest text-cloudo-muted block">
-                      JSM API Key (Default)
-                    </label>
-                  </div>
-                  <input
-                    type="password"
-                    className="input h-11 text-sm w-full"
-                    placeholder="JSM_API_KEY_DEFAULT"
-                    value={settings.JSM_API_KEY_DEFAULT}
-                    onChange={(e) =>
-                      setSettings({
-                        ...settings,
-                        JSM_API_KEY_DEFAULT: e.target.value,
-                      })
-                    }
-                  />
-                  <p className="text-[10px] text-cloudo-muted/70 uppercase tracking-tight ml-1">
-                    Shared with Smart Routing defaults — used to post triage
-                    notes on JSM Ops alerts
+                <div className="p-4 bg-cloudo-dark/40 border border-cloudo-border flex items-start gap-3">
+                  <HiOutlineInformationCircle className="text-cloudo-muted w-4 h-4 shrink-0 mt-0.5" />
+                  <p className="text-[10px] text-cloudo-muted/70 uppercase tracking-tight">
+                    JSM API Key is configured in Smart Routing settings — the
+                    Agent reuses the same default key to post triage notes on
+                    JSM Ops alerts.
                   </p>
                 </div>
               </div>

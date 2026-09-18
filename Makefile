@@ -41,6 +41,10 @@ help:
 	@echo "  make test-env-start                - Start local dev test environment"
 	@echo "  make test-env-stop                 - Stop local dev test environment"
 	@echo "  make test-env-restart              - Restart local dev test environment"
+	@echo "  make test                          - Run unit tests for orchestrator, worker and agent"
+	@echo "  make test-orchestrator             - Run orchestrator unit tests only"
+	@echo "  make test-worker                   - Run worker unit tests only"
+	@echo "  make test-agent                    - Run agent unit tests only"
 	@echo ""
 	@echo "Overridable variables:"
 	@echo "  VERSION=<tag>                      (default: latest)"
@@ -158,3 +162,27 @@ test-env-stop:
 
 .PHONY: test-env-restart
 test-env-restart: test-env-stop test-env-start
+
+.PHONY: test
+test: test-orchestrator test-worker test-agent
+
+.PHONY: test-orchestrator
+test-orchestrator:
+	@echo "Running orchestrator unit tests..."
+	cd $(ORCH_PATH) && \
+	  ( [ -x .venv/bin/pytest ] || (python3 -m venv .venv && .venv/bin/pip install -q -r requirements.txt pytest) ) && \
+	  .venv/bin/python -m pytest -q
+
+.PHONY: test-worker
+test-worker:
+	@echo "Running worker unit tests..."
+	cd $(WORKER_PATH) && \
+	  ( [ -x .venv/bin/pytest ] || (python3 -m venv .venv && .venv/bin/pip install -q -r requirements.txt pytest) ) && \
+	  .venv/bin/python -m pytest -q
+
+.PHONY: test-agent
+test-agent:
+	@echo "Running agent unit tests..."
+	cd $(AGENT_PATH) && \
+	  ( [ -x .venv/bin/pytest ] || (python3 -m venv .venv && .venv/bin/pip install -q -r requirements.txt pytest) ) && \
+	  .venv/bin/python -m pytest -q

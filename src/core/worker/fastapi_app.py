@@ -25,7 +25,27 @@ _BACKGROUND_THREADS: list[threading.Thread] = []
 _QUEUE_CLIENTS: dict[tuple[str, str], Any] = {}
 
 
+_LOG_FORMAT = "%(asctime)s | %(levelname)-8s | worker       | %(name)s | %(message)s"
+_LOG_DATEFMT = "%Y-%m-%dT%H:%M:%S%z"
+# Third-party SDKs are chatty at INFO (full HTTP request/response dumps);
+# keep them quiet so application logs aren't drowned out.
+_NOISY_LOGGERS = ("azure", "urllib3", "openai", "httpx", "httpcore")
+
+
 def _configure_runtime_logging() -> None:
+    """Configure structured, leveled logging for the worker service."""
+    level_name = os.getenv("WORKER_LOG_LEVEL", os.getenv("LOG_LEVEL", "INFO")).upper()
+    level = getattr(logging, level_name, logging.INFO)
+    logging.basicConfig(
+        level=level,
+        format=_LOG_FORMAT,
+        datefmt=_LOG_DATEFMT,
+        force=True,
+    )
+
+    for noisy_logger in _NOISY_LOGGERS:
+        logging.getLogger(noisy_logger).setLevel(logging.WARNING)
+
     # Disable per-request access logs (GET/POST lines) to reduce noise.
     access_logger = logging.getLogger("uvicorn.access")
     access_logger.handlers.clear()

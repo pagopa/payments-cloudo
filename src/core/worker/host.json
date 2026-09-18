@@ -32,7 +32,8 @@
     "queues": {
       "batchSize": 16,
       "newBatchThreshold": 8,
-      "maxDequeueCount": 1
+      "maxDequeueCount": 1,
+      "messageEncoding": "base64"
     }
   },
   "aggregator": {
