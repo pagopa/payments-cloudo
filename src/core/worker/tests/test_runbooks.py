@@ -20,7 +20,6 @@ def make_queue_message(payload: dict) -> func.QueueMessage:
 
 
 def test_process_runbook_happy_path(monkeypatch):
-    os.environ["FEATURE_DEV"] = "true"
     worker = importlib.import_module("function_app")
 
     payload = {
@@ -36,14 +35,14 @@ def test_process_runbook_happy_path(monkeypatch):
         "resource_info": json.dumps({"aks_namespace": "", "resource_name": "r1"}),
     }
 
-    # Patch _post_status to record calls instead of doing HTTP
+    # Patch _send_status_to_receiver (the actual delivery function invoked by
+    # _dispatch_status) to record calls instead of doing real HTTP/queue I/O.
     status_calls = []
 
-    def fake_post_status(d, status, log_message):
-        status_calls.append((status, log_message))
-        mock_resp = MagicMock()
-        mock_resp.status_code = 200
-        return mock_resp
+    def fake_send_status_to_receiver(message_json, _payload):
+        message = json.loads(message_json)
+        status_calls.append((message["status"], message))
+        return True
 
     # Patch _run_script to simulate success
     fake_completed = MagicMock()
@@ -51,7 +50,9 @@ def test_process_runbook_happy_path(monkeypatch):
     fake_completed.stdout = "all good\n"
     fake_completed.stderr = ""
 
-    with patch.object(worker, "_post_status", side_effect=fake_post_status):
+    with patch.object(
+        worker, "_send_status_to_receiver", side_effect=fake_send_status_to_receiver
+    ):
         with patch.object(worker, "_run_script", return_value=fake_completed):
             # Ensure internal registries are clean
             worker._ACTIVE_RUNS.clear()
@@ -60,40 +61,49 @@ def test_process_runbook_happy_path(monkeypatch):
             msg = make_queue_message(payload)
             worker.process_runbook(msg)
 
-            # Verify status transitions: running -> completed
+            # Verify status transitions: running -> succeeded
             assert status_calls[0][0] == "running"
-            assert status_calls[-1][0] in ("completed",)  # final success
+            assert status_calls[-1][0] == "succeeded"
 
             # Ensure the run is no longer tracked
             assert payload["exec_id"] not in worker._ACTIVE_RUNS
 
 
 def test_process_runbook_skips_if_already_running(monkeypatch):
-    os.environ["FEATURE_DEV"] = "true"
     worker = importlib.import_module("function_app")
 
     payload = {
         "requestedAt": "2025-01-01 10:00:00",
-        "id": "schema-dup",  # same id triggers skip logic
+        "id": "schema-dup",
         "name": "MyRule",
         "runbook": "script.py",
         "run_args": "--ok 1",
+        "resource_info": None,
         "exec_id": "exec-1",
     }
 
-    # Pre-populate ACTIVE_RUNS with same id to trigger skip branch
+    # _inspect_duplicate_runs matches on name+runbook+run_args+resource_info+group
+    # (not on "id"), so pre-populate an in-progress run with identical fields
+    # to trigger the "identical execution already in progress" skip branch.
     worker._ACTIVE_RUNS.clear()
-    worker._ACTIVE_RUNS["some-other-exec"] = {"id": "schema-dup"}
+    worker._ACTIVE_RUNS["some-other-exec"] = {
+        "id": "schema-dup",
+        "name": "MyRule",
+        "runbook": "script.py",
+        "run_args": "--ok 1",
+        "resource_info": None,
+        "group": "-",
+    }
 
     status_calls = []
 
-    def fake_post_status(d, status, log_message):
-        status_calls.append(status)
-        mock_resp = MagicMock()
-        mock_resp.status_code = 200
-        return mock_resp
+    def fake_send_status_to_receiver(message_json, _payload):
+        status_calls.append(json.loads(message_json)["status"])
+        return True
 
-    with patch.object(worker, "_post_status", side_effect=fake_post_status):
+    with patch.object(
+        worker, "_send_status_to_receiver", side_effect=fake_send_status_to_receiver
+    ):
         msg = make_queue_message(payload)
         worker.process_runbook(msg)
 
