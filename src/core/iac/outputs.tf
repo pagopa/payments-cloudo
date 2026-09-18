@@ -24,12 +24,6 @@ output "cloudo_agent_url" {
   description = "The URL of the Cloudo AI Agent"
 }
 
-output "cloudo_agent_key" {
-  value       = length(module.cloudo_agent) > 0 ? module.cloudo_agent[0].default_key : null
-  description = "The default key for the Cloudo AI Agent"
-  sensitive   = true
-}
-
 output "storage_account_name" {
   value       = module.storage_account.name
   description = "The name of the storage account"
