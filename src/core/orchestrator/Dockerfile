@@ -1,5 +1,5 @@
 # Official base image for Azure Functions Python (Functions v4, Python 3.11)
-FROM mcr.microsoft.com/azure-functions/python:4-python3.11
+FROM mcr.microsoft.com/azure-functions/python:4-python3.11@sha256:877bba190bc0d9a4cc8f9a32bafde2aeafbbd27d4b5f6cb717b8efa2c2cecc50
 
 # Build-time app path (set this when building)
 # Example:
