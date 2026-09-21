@@ -24,6 +24,7 @@ import {
   HiOutlineUser,
 } from "react-icons/hi";
 import { MdOutlineRouter } from "react-icons/md";
+import { LuBrain } from "react-icons/lu";
 
 interface NavItem {
   name: string;
@@ -58,6 +59,12 @@ const navigation: NavItem[] = [
     name: "Smart Routing",
     href: "/smart-routing",
     icon: <MdOutlineRouter />,
+    adminOnly: true,
+  },
+  {
+    name: "AI Agent",
+    href: "/ai-agent",
+    icon: <LuBrain />,
     adminOnly: true,
   },
   {

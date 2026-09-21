@@ -10,10 +10,13 @@ declare -a TABLE_NAME=(
   "CloudoSchedules"
   "CloudoSettings"
   "CloudoUsers"
+  "CloudoAiAnalysis"
+  "CloudoAIRunbookStory"
 )
 declare -a QUEUE_NAME=(
   "local"
   "alert"
+  "cloudo-ai-analysis"
 )
 WORKER="${1:-worker}"
 

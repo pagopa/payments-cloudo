@@ -9,16 +9,19 @@ PLATFORM ?= linux/amd64
 ORCH_PATH := src/core/orchestrator
 WORKER_PATH := src/core/worker
 FE_PATH := src/core/cloudo-ui
+AGENT_PATH := src/core/agent
 
 # Dockerfile paths
 ORCH_DOCKERFILE := $(ORCH_PATH)/Dockerfile
 WORKER_DOCKERFILE := $(WORKER_PATH)/Dockerfile
 FE_DOCKERFILE := $(FE_PATH)/Dockerfile
+AGENT_DOCKERFILE := $(AGENT_PATH)/Dockerfile
 
 # Image tags (can be overridden if needed)
 ORCH_IMAGE ?= $(strip $(REGISTRY))$(if $(strip $(REGISTRY)),/,)$(strip $(IMAGE_PREFIX))-orchestrator:$(VERSION)
 WORKER_IMAGE ?= $(strip $(REGISTRY))$(if $(strip $(REGISTRY)),/,)$(strip $(IMAGE_PREFIX))-worker:$(VERSION)
 FE_IMAGE ?= $(strip $(REGISTRY))$(if $(strip $(REGISTRY)),/,)$(strip $(IMAGE_PREFIX))-ui:$(VERSION)
+AGENT_IMAGE ?= $(strip $(REGISTRY))$(if $(strip $(REGISTRY)),/,)$(strip $(IMAGE_PREFIX))-agent:$(VERSION)
 
 # Common build args
 COMMON_BUILD_ARGS := --build-arg APP_PATH
@@ -29,13 +32,19 @@ help:
 	@echo "  make build                         - Build both images"
 	@echo "  make build-orchestrator            - Build the orchestrator image"
 	@echo "  make build-worker                  - Build the worker image"
+	@echo "  make build-agent                   - Build the agent image"
 	@echo "  make push                          - Push both images"
 	@echo "  make push-orchestrator             - Push the orchestrator image"
 	@echo "  make push-worker                   - Push the worker image"
+	@echo "  make push-agent                    - Push the agent image"
 	@echo "  make clean                         - Remove local images (matching tags only)"
 	@echo "  make test-env-start                - Start local dev test environment"
 	@echo "  make test-env-stop                 - Stop local dev test environment"
 	@echo "  make test-env-restart              - Restart local dev test environment"
+	@echo "  make test                          - Run unit tests for orchestrator, worker and agent"
+	@echo "  make test-orchestrator             - Run orchestrator unit tests only"
+	@echo "  make test-worker                   - Run worker unit tests only"
+	@echo "  make test-agent                    - Run agent unit tests only"
 	@echo ""
 	@echo "Overridable variables:"
 	@echo "  VERSION=<tag>                      (default: latest)"
@@ -48,7 +57,7 @@ help:
 	@echo "  make push REGISTRY=ghcr.io/your-org IMAGE_PREFIX=payments VERSION=1.0.0"
 
 .PHONY: build
-build: build-orchestrator build-worker build-fe
+build: build-orchestrator build-worker build-fe build-agent
 
 .PHONY: build-orchestrator
 build-orchestrator:
@@ -77,9 +86,18 @@ build-fe:
 		-t $(FE_IMAGE) \
 		$(FE_PATH)
 
+.PHONY: build-agent
+build-agent:
+	$(DOCKER) buildx build \
+    --platform=$(PLATFORM) \
+		-f $(AGENT_DOCKERFILE) \
+		$(COMMON_BUILD_ARGS)=. \
+		-t $(AGENT_IMAGE) \
+		$(AGENT_PATH)
+
 
 .PHONY: push
-push: push-orchestrator push-worker push-fe
+push: push-orchestrator push-worker push-fe push-agent
 
 .PHONY: push-orchestrator
 push-orchestrator:
@@ -102,11 +120,19 @@ push-fe:
 	fi
 	$(DOCKER) push $(FE_IMAGE)
 
+.PHONY: push-agent
+push-agent:
+	@if [ -z "$(REGISTRY)" ] && echo "$(AGENT_IMAGE)" | grep -q '^[^/]\+:'; then \
+		echo "WARNING: no REGISTRY set. Push may fail."; \
+	fi
+	$(DOCKER) push $(AGENT_IMAGE)
+
 .PHONY: clean
 clean:
 	$(DOCKER) rmi $(ORCH_IMAGE) || true
 	$(DOCKER) rmi $(WORKER_IMAGE) || true
 	$(DOCKER) rmi $(FE_IMAGE) || true
+	$(DOCKER) rmi $(AGENT_IMAGE) || true
 
 .PHONY: dev
 dev:
@@ -136,3 +162,27 @@ test-env-stop:
 
 .PHONY: test-env-restart
 test-env-restart: test-env-stop test-env-start
+
+.PHONY: test
+test: test-orchestrator test-worker test-agent
+
+.PHONY: test-orchestrator
+test-orchestrator:
+	@echo "Running orchestrator unit tests..."
+	cd $(ORCH_PATH) && \
+	  ( [ -x .venv/bin/pytest ] || (python3 -m venv .venv && .venv/bin/pip install -q -r requirements.txt pytest) ) && \
+	  .venv/bin/python -m pytest -q
+
+.PHONY: test-worker
+test-worker:
+	@echo "Running worker unit tests..."
+	cd $(WORKER_PATH) && \
+	  ( [ -x .venv/bin/pytest ] || (python3 -m venv .venv && .venv/bin/pip install -q -r requirements.txt pytest) ) && \
+	  .venv/bin/python -m pytest -q
+
+.PHONY: test-agent
+test-agent:
+	@echo "Running agent unit tests..."
+	cd $(AGENT_PATH) && \
+	  ( [ -x .venv/bin/pytest ] || (python3 -m venv .venv && .venv/bin/pip install -q -r requirements.txt pytest) ) && \
+	  .venv/bin/python -m pytest -q

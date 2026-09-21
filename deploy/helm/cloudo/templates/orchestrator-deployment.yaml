@@ -157,6 +157,16 @@ spec:
                 configMapKeyRef:
                   name: cloudo-config
                   key: FASTAPI_NOTIFICATION_VISIBILITY_TIMEOUT
+            - name: AI_AGENT_ENABLED
+              valueFrom:
+                configMapKeyRef:
+                  name: cloudo-config
+                  key: AI_AGENT_ENABLED
+            - name: AI_ANALYSIS_QUEUE_NAME
+              valueFrom:
+                configMapKeyRef:
+                  name: cloudo-config
+                  key: AI_ANALYSIS_QUEUE_NAME
           readinessProbe:
             httpGet:
               path: /api/healthz

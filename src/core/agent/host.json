@@ -4,16 +4,15 @@
     "logLevel": {
       "Default": "Warning",
       "Function": "Warning",
-      "Function.list_processes": "Warning",
-      "Function.heartbeat_trigger": "Warning",
-      "Function.process_runbook": "Warning",
+      "Function.AnalyzeFailedRunbook": "Information",
+      "Function.Analyze": "Information",
+      "Function.Healthz": "Information",
       "Host": "Error",
       "Host.Results": "Error",
       "Microsoft": "Error",
       "Azure": "Error",
       "Azure.Core": "Error",
-      "Azure.Storage": "Error",
-      "Azure.Storage.Blobs": "Error"
+      "Azure.Storage": "Error"
     },
     "applicationInsights": {
       "samplingSettings": {
@@ -30,17 +29,12 @@
       "dynamicThrottlesEnabled": true
     },
     "queues": {
-      "batchSize": 16,
-      "newBatchThreshold": 8,
-      "maxDequeueCount": 1,
+      "batchSize": 4,
+      "newBatchThreshold": 2,
+      "maxDequeueCount": 3,
       "messageEncoding": "base64"
     }
   },
-  "aggregator": {
-    "batchSize": 100,
-    "flushTimeout": "00:00:30"
-  },
-
   "extensionBundle": {
     "id": "Microsoft.Azure.Functions.ExtensionBundle",
     "version": "[4.*, 5.0.0)"
