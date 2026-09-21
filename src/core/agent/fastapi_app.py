@@ -99,15 +99,10 @@ def _poll_analysis_queue() -> None:
                 continue
 
             for msg in messages:
-                try:
-                    content = msg.content or ""
-                    if isinstance(content, bytes):
-                        content = content.decode("utf-8", errors="replace")
-                    legacy.analyze_failed_runbook_payload(content)
                 except Exception as exc:
                     logging.warning("Agent: AI analysis message failed: %s", exc)
-                finally:
-                    queue.delete_message(msg.id, msg.pop_receipt)
+                    continue
+                queue.delete_message(msg.id, msg.pop_receipt)
         except Exception as exc:
             logging.warning("Agent: AI analysis queue poll failed: %s", exc)
             _STOP_EVENT.wait(max(POLL_SECONDS, 5.0))
