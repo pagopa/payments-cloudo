@@ -28,7 +28,7 @@ It follows the same dual Azure Functions / FastAPI structure used by the
 ## How it fits in ClouDO
 
 1. The orchestrator's `Trigger`/`Receiver` flow already creates a JSM Ops
-   alert (alias = `exec_id`) when a runbook execution fails.
+   alert (alias = the runbook schema id) when a runbook execution fails.
 2. When `AI_AGENT_ENABLED=true`, the orchestrator additionally enqueues the
    same execution payload onto `AI_ANALYSIS_QUEUE_NAME` (default
    `cloudo-ai-analysis`).
