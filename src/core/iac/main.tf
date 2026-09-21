@@ -48,7 +48,11 @@ module "cloudo_orchestrator" {
       "FEATURE_DEV"                             = var.env == "dev" ? "true" : "false"
       "CLOUDO_ENVIRONMENT"                      = var.env
       "CLOUDO_ENVIRONMENT_SHORT"                = substr(var.env, 0, 1)
+      "AI_AGENT_ENABLED"                        = var.cloudo_agent_enabled ? "true" : "false"
     },
+    var.cloudo_agent_enabled ? {
+      "AI_ANALYSIS_QUEUE_NAME" = azurerm_storage_queue.ai_analysis[0].name
+    } : {},
     local.orchestrator_smart_routing_app_settings
   )
 

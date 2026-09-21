@@ -150,46 +150,92 @@ def record_occurrence(
                 exec_id,
             )
             return 0
+        from azure.core import MatchConditions
+        from azure.core.exceptions import (
+            ResourceExistsError,
+            ResourceModifiedError,
+            ResourceNotFoundError,
+        )
+        from azure.data.tables import UpdateMode
+
         with client:
-            try:
-                entity = client.get_entity(
-                    partition_key=HISTORY_PARTITION_KEY, row_key=signature
-                )
-            except Exception:
+            max_attempts = 10
+            for attempt in range(1, max_attempts + 1):
                 entity = None
+                etag = None
+                try:
+                    entity = client.get_entity(
+                        partition_key=HISTORY_PARTITION_KEY, row_key=signature
+                    )
+                    etag = entity.metadata.get("etag")
+                except ResourceNotFoundError:
+                    entity = None
+                except Exception:
+                    entity = None
 
-            now = datetime.now(timezone.utc).isoformat()
-            occurrence_count = (
-                int(entity.get("occurrence_count", 0)) + 1 if entity else 1
-            )
+                now = datetime.now(timezone.utc).isoformat()
+                occurrence_count = (
+                    int(entity.get("occurrence_count", 0)) + 1 if entity else 1
+                )
 
-            new_entity = {
-                "PartitionKey": HISTORY_PARTITION_KEY,
-                "RowKey": signature,
-                "runbook": runbook or (entity.get("runbook") if entity else ""),
-                "occurrence_count": occurrence_count,
-                "first_seen": (entity.get("first_seen") if entity else now) or now,
-                "last_seen": now,
-                "last_exec_id": exec_id,
-            }
+                new_entity = {
+                    "PartitionKey": HISTORY_PARTITION_KEY,
+                    "RowKey": signature,
+                    "runbook": runbook or (entity.get("runbook") if entity else ""),
+                    "occurrence_count": occurrence_count,
+                    "first_seen": (entity.get("first_seen") if entity else now) or now,
+                    "last_seen": now,
+                    "last_exec_id": exec_id,
+                }
 
-            if not reused and analysis:
-                new_entity["last_analysis"] = json.dumps(analysis, ensure_ascii=False)
-            elif entity and entity.get("last_analysis"):
-                new_entity["last_analysis"] = entity.get("last_analysis")
+                if not reused and analysis:
+                    new_entity["last_analysis"] = json.dumps(
+                        analysis, ensure_ascii=False
+                    )
+                elif entity and entity.get("last_analysis"):
+                    new_entity["last_analysis"] = entity.get("last_analysis")
 
-            client.upsert_entity(entity=new_entity)
-            logging.debug(
-                "History: recorded occurrence #%d for signature=%s "
-                "(runbook=%s, exec_id=%s, reused=%s, stored_last_analysis=%s)",
-                occurrence_count,
+                try:
+                    if entity is None:
+                        client.create_entity(entity=new_entity)
+                    else:
+                        client.update_entity(
+                            entity=new_entity,
+                            mode=UpdateMode.REPLACE,
+                            etag=etag,
+                            match_condition=MatchConditions.IfNotModified,
+                        )
+                    logging.debug(
+                        "History: recorded occurrence #%d for signature=%s "
+                        "(runbook=%s, exec_id=%s, reused=%s, "
+                        "stored_last_analysis=%s, attempt=%d)",
+                        occurrence_count,
+                        signature,
+                        runbook,
+                        exec_id,
+                        reused,
+                        "last_analysis" in new_entity,
+                        attempt,
+                    )
+                    return occurrence_count
+                except (ResourceExistsError, ResourceModifiedError):
+                    logging.debug(
+                        "History: concurrent write detected for signature=%s "
+                        "(attempt=%d/%d), retrying",
+                        signature,
+                        attempt,
+                        max_attempts,
+                    )
+                    continue
+
+            logging.warning(
+                "History: exhausted retries recording occurrence for "
+                "signature=%s (exec_id=%s) due to sustained concurrent "
+                "writes",
                 signature,
-                runbook,
                 exec_id,
-                reused,
-                "last_analysis" in new_entity,
             )
-            return occurrence_count
+            return 0
     except Exception as exc:
         logging.warning(
             "Failed to record runbook history for signature=%s: %s", signature, exc

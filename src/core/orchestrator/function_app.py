@@ -48,6 +48,13 @@ GITHUB_REPO = os.environ.get("GITHUB_REPO", "pagopa/payments-cloudo")
 GITHUB_BRANCH = os.environ.get("GITHUB_BRANCH", "main")
 GITHUB_PATH_PREFIX = os.environ.get("GITHUB_PATH_PREFIX", "")
 
+_SENSITIVE_SETTING_SUFFIXES = ("_KEY", "_TOKEN", "_SECRET", "_WEBHOOK", "_PASSWORD")
+
+
+def _is_sensitive_setting_key(key: str) -> bool:
+    return key.upper().endswith(_SENSITIVE_SETTING_SUFFIXES)
+
+
 if os.getenv("LOCAL_DEV", "false").lower() != "true":
     AUTH = func.AuthLevel.FUNCTION
 else:
@@ -2720,8 +2727,8 @@ def _enqueue_ai_agent_analysis(
             if logs_raw
             else "",
         }
-        ai_queue.send_message(json.dumps(ai_payload, ensure_ascii=False))
         _write_ai_analysis_placeholder(body.get("exec_id"))
+        ai_queue.send_message(json.dumps(ai_payload, ensure_ascii=False))
     except Exception as e:
         logging.warning(
             f"[{body.get('exec_id')}] Failed to enqueue AI agent analysis: {e}"
@@ -3187,10 +3194,27 @@ def get_ai_analysis(req: func.HttpRequest) -> func.HttpResponse:
         )
 
     try:
+        from azure.core.exceptions import ResourceNotFoundError
+
         table_client = _get_table_client(TABLE_AI_ANALYSIS, conn_env=STORAGE_CONNECTION)
-        entity = table_client.get_entity(
-            partition_key="AiAnalysis", row_key=str(exec_id)
-        )
+        try:
+            entity = table_client.get_entity(
+                partition_key="AiAnalysis", row_key=str(exec_id)
+            )
+        except ResourceNotFoundError:
+            payload = {
+                "status": "not_found",
+                "analysis": None,
+                "error": None,
+                "updated_at": None,
+            }
+            return func.HttpResponse(
+                json.dumps(payload, ensure_ascii=False),
+                status_code=200,
+                mimetype="application/json",
+                headers={"Access-Control-Allow-Origin": "*"},
+            )
+
         analysis_raw = entity.get("analysis")
         try:
             analysis = json.loads(analysis_raw) if analysis_raw else None
@@ -3202,15 +3226,14 @@ def get_ai_analysis(req: func.HttpRequest) -> func.HttpResponse:
             "error": entity.get("error"),
             "updated_at": entity.get("updated_at"),
         }
-    except Exception:
-        # Entity not found (or table missing altogether): AI triage was
-        # never enqueued for this exec_id.
-        payload = {
-            "status": "not_found",
-            "analysis": None,
-            "error": None,
-            "updated_at": None,
-        }
+    except Exception as e:
+        logging.error(f"[{exec_id}] Error fetching AI analysis: {e}")
+        return func.HttpResponse(
+            json.dumps({"error": "Failed to fetch AI analysis"}, ensure_ascii=False),
+            status_code=502,
+            mimetype="application/json",
+            headers={"Access-Control-Allow-Origin": "*"},
+        )
 
     return func.HttpResponse(
         json.dumps(payload, ensure_ascii=False),
@@ -4340,9 +4363,11 @@ def settings_management(req: func.HttpRequest) -> func.HttpResponse:
             headers={"Access-Control-Allow-Origin": "*"},
         )
 
-    if req.method == "POST" and session.get("role") == "VIEWER":
+    if req.method == "POST" and session.get("role") != "ADMIN":
         return func.HttpResponse(
-            json.dumps({"error": "Unauthorized: Viewer cannot modify settings"}),
+            json.dumps(
+                {"error": "Unauthorized: Admin role required to modify settings"}
+            ),
             status_code=403,
             mimetype="application/json",
             headers={"Access-Control-Allow-Origin": "*"},
@@ -4353,7 +4378,12 @@ def settings_management(req: func.HttpRequest) -> func.HttpResponse:
             entities = table_client.query_entities(
                 query_filter="PartitionKey eq 'GlobalConfig'"
             )
-            settings = {e["RowKey"]: e["value"] for e in entities}
+            is_admin = session.get("role") == "ADMIN"
+            settings = {
+                e["RowKey"]: e["value"]
+                for e in entities
+                if is_admin or not _is_sensitive_setting_key(e["RowKey"])
+            }
             return func.HttpResponse(
                 json.dumps(settings),
                 status_code=200,
