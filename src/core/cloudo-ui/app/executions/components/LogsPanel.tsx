@@ -600,32 +600,15 @@ function LogsPanelContent() {
           )}
           <div className="overflow-x-auto overflow-y-auto custom-scrollbar">
             {/* Desktop Table View */}
-            <table className="hidden md:table w-full text-xs border-separate border-spacing-0 min-w-190 xl:min-w-200">
+            <table className="hidden md:table w-full text-xs border-separate border-spacing-0">
               <thead className="bg-cloudo-panel-2/95 sticky top-0 z-10 border-b border-cloudo-border backdrop-blur-sm">
-                <tr className="text-[10px] font-black text-cloudo-muted uppercase tracking-[0.3em]">
-                  <th className="px-4 lg:px-5 py-3.5 text-left min-w-28">
-                    Timestamp
-                  </th>
-                  <th className="px-4 lg:px-5 py-3.5 text-center w-32">
-                    State
-                  </th>
-                  <th className="px-4 lg:px-5 py-3.5 text-left min-w-42">
-                    Process_Context
-                  </th>
-                  <th className="px-4 lg:px-5 py-3.5 text-left min-w-30">
-                    Asset_ID
-                  </th>
-                  <th className="hidden lg:table-cell px-4 lg:px-5 py-3.5 text-left min-w-45">
-                    Execution_Details
-                  </th>
-                  <th className="hidden xl:table-cell px-4 lg:px-5 py-3.5 text-left min-w-25">
-                    Worker
-                  </th>
-                  <th className="hidden xl:table-cell px-4 lg:px-5 py-3.5 text-left min-w-20">
-                    Team
-                  </th>
-                  <th className="hidden xl:table-cell px-4 lg:px-5 py-3.5 text-center w-16">
-                    On Call
+                <tr className="text-[10px] font-black text-cloudo-muted uppercase tracking-[0.2em]">
+                  <th className="px-3 py-2.5 text-left">Time</th>
+                  <th className="px-3 py-2.5 text-left">State</th>
+                  <th className="px-3 py-2.5 text-left">Process</th>
+                  <th className="px-3 py-2.5 text-left">Asset / Team</th>
+                  <th className="hidden lg:table-cell px-3 py-2.5 text-left">
+                    Runbook / Worker
                   </th>
                 </tr>
               </thead>
@@ -651,7 +634,7 @@ function LogsPanelContent() {
                           : "hover:border-cloudo-muted/30"
                     }`}
                   >
-                    <td className="px-4 lg:px-5 py-3.5 whitespace-nowrap">
+                    <td className="px-3 py-2 whitespace-nowrap">
                       <div className="text-cloudo-text font-bold text-[11px]">
                         {log.RequestedAt?.split("T")[1]?.slice(0, 8)}
                       </div>
@@ -659,9 +642,9 @@ function LogsPanelContent() {
                         {log.RequestedAt?.split("T")[0]}
                       </div>
                     </td>
-                    <td className="px-4 lg:px-5 py-3.5">
+                    <td className="px-3 py-2">
                       <div
-                        className={`inline-flex items-center justify-center gap-1.5 w-full rounded-sm border px-2 py-1 text-[9px] font-black uppercase tracking-wider ${getStatusBadgeClass(
+                        className={`inline-flex items-center gap-1 rounded-sm border px-1.5 py-0.5 text-[9px] font-black uppercase tracking-wider [&_svg]:w-3.5 [&_svg]:h-3.5 ${getStatusBadgeClass(
                           log.Status,
                         )}`}
                         title={log.Status}
@@ -670,26 +653,43 @@ function LogsPanelContent() {
                         <span>{log.Status || "unknown"}</span>
                       </div>
                     </td>
-                    <td className="px-4 lg:px-5 py-3.5">
-                      <div className="flex flex-col gap-1">
-                        <div className="flex items-center gap-2">
-                          <div className="text-cloudo-text font-bold uppercase tracking-widest">
+                    <td className="px-3 py-2 max-w-[260px]">
+                      <div className="flex flex-col gap-0.5">
+                        <div className="flex items-center gap-1.5 min-w-0">
+                          <span
+                            className="text-cloudo-text font-bold uppercase tracking-wider truncate"
+                            title={log.Name}
+                          >
                             {log.Name || "SYS_TASK"}
-                          </div>
+                          </span>
+                          {(log.OnCall === true || log.OnCall === "true") && (
+                            <span
+                              className="w-1.5 h-1.5 bg-cloudo-err animate-pulse shrink-0"
+                              title="On Call"
+                            />
+                          )}
                         </div>
-                        <div className="text-[10px] text-cloudo-muted/60 opacity-50 font-mono break-all">
+                        <div className="text-[10px] text-cloudo-muted/60 opacity-60 font-mono truncate">
                           {log.ExecId}
                         </div>
                       </div>
                     </td>
-                    <td className="px-4 lg:px-5 py-3.5">
-                      <div className="flex flex-col gap-0.5 group/cell">
-                        <div className="text-[11px] font-black text-cloudo-accent/80 truncate max-w-60 font-mono transition-all">
-                          {log.Id || "SYSTEM"}
+                    <td className="px-3 py-2">
+                      <div className="flex flex-col gap-0.5">
+                        <div className="flex items-center gap-1.5 min-w-0">
+                          <span
+                            className="text-[11px] font-black text-cloudo-accent/80 truncate max-w-48 font-mono"
+                            title={log.Id}
+                          >
+                            {log.Id || "SYSTEM"}
+                          </span>
+                          <span className="text-[9px] px-1 border border-cloudo-border text-cloudo-accent uppercase tracking-widest shrink-0">
+                            {log.team || "default"}
+                          </span>
                         </div>
                         {log.Severity && (
                           <div
-                            className={`text-[9px] font-black uppercase tracking-tighter px-1.5 py-0.5 rounded-sm border inline-flex items-center gap-1.5 w-fit ${
+                            className={`text-[9px] font-black uppercase tracking-tighter px-1 rounded-sm border inline-flex items-center gap-1 w-fit ${
                               getSeverityStyles(log.Severity).bg
                             } ${getSeverityStyles(log.Severity).border} ${
                               getSeverityStyles(log.Severity).text
@@ -705,34 +705,25 @@ function LogsPanelContent() {
                         )}
                       </div>
                     </td>
-                    <td className="hidden lg:table-cell px-4 lg:px-5 py-3.5">
+                    <td className="hidden lg:table-cell px-3 py-2 max-w-[260px]">
                       <div className="flex flex-col gap-0.5">
-                        <div className="text-[11px] font-mono text-cloudo-accent/70 uppercase tracking-widest">
+                        <div
+                          className="text-[11px] font-mono text-cloudo-accent/70 truncate"
+                          title={log.Runbook}
+                        >
                           {log.Runbook}
                         </div>
-                        {log.Run_Args && (
-                          <div className="text-[10px] text-cloudo-muted/60 font-mono mt-0.5 break-all">
-                            {log.Run_Args}
-                          </div>
-                        )}
-                      </div>
-                    </td>
-                    <td className="hidden xl:table-cell px-4 lg:px-5 py-3.5">
-                      <div>
-                        <div className="text-[10px] font-black text-cloudo-muted uppercase tracking-widest">
-                          {log.Worker || "N/A"}
+                        <div className="flex items-center gap-1.5 text-[10px] font-mono text-cloudo-muted/60 min-w-0">
+                          <span className="font-black uppercase tracking-widest shrink-0">
+                            {log.Worker || "N/A"}
+                          </span>
+                          {log.Run_Args && (
+                            <span className="truncate" title={log.Run_Args}>
+                              {log.Run_Args}
+                            </span>
+                          )}
                         </div>
                       </div>
-                    </td>
-                    <td className="hidden xl:table-cell px-4 lg:px-5 py-3.5 text-[10px] font-black text-cloudo-accent uppercase tracking-widest">
-                      {log.team || "default"}
-                    </td>
-                    <td className="hidden xl:table-cell px-4 lg:px-5 py-3.5 text-center">
-                      {(log.OnCall === true || log.OnCall === "true") && (
-                        <div className="flex justify-center">
-                          <div className="w-1.5 h-1.5 bg-cloudo-err animate-pulse" />
-                        </div>
-                      )}
                     </td>
                   </tr>
                 ))}
