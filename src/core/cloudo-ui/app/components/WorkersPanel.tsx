@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback } from "react";
 import { cloudoFetch } from "@/lib/api";
+import { formatRome } from "@/lib/time";
 import {
   HiOutlineRefresh,
   HiOutlinePlay,
@@ -62,7 +63,7 @@ export function WorkersPanel() {
   } | null>(null);
 
   const addNotification = (type: "success" | "error", message: string) => {
-    const id = Date.now().toString();
+    const id = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
     setNotifications((prev) => [...prev, { id, type, message }]);
     setTimeout(() => {
       setNotifications((prev) => prev.filter((n) => n.id !== id));
@@ -246,7 +247,7 @@ export function WorkersPanel() {
   const formatLastSeen = (value?: string) => {
     const parsed = parseLastSeen(value);
     if (!parsed) return value || "-";
-    return parsed.toLocaleString();
+    return formatRome(parsed);
   };
 
   const formatHeartbeatAge = (value?: string) => {
@@ -575,11 +576,7 @@ export function WorkersPanel() {
                             </span>
                           </td>
                           <td className="px-6 py-4 text-right text-cloudo-muted font-mono opacity-50">
-                            {
-                              (proc.startedAt || proc.requestedAt || "-")
-                                .replace("T", " ")
-                                .split(".")[0]
-                            }
+                            {formatRome(proc.startedAt || proc.requestedAt)}
                           </td>
                           <td className="px-6 py-4 text-right">
                             {proc.status.toLowerCase() === "running" &&

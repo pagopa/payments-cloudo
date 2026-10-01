@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useMemo } from "react";
 import { cloudoFetch } from "@/lib/api";
+import { formatRome, romeDate } from "@/lib/time";
 import { useRouter } from "next/navigation";
 import {
   HiOutlineClipboardList,
@@ -170,7 +171,7 @@ export default function AuditPage() {
         (actionTypeFilter === "mutation" && isMutation) ||
         (actionTypeFilter === "destruction" && isDestruction);
 
-      const logDate = log.timestamp?.split("T")[0];
+      const logDate = romeDate(log.timestamp);
       const matchesFrom = !fromDate || logDate >= fromDate;
       const matchesTo = !toDate || logDate <= toDate;
 
@@ -230,7 +231,7 @@ export default function AuditPage() {
           (log.operator === "api" || log.operator?.endsWith("-api"))) ||
         (activeFilter === "action" && log.operator === "azure-action");
 
-      const logDate = log.timestamp?.split("T")[0];
+      const logDate = romeDate(log.timestamp);
       const matchesFrom = !fromDate || logDate >= fromDate;
       const matchesTo = !toDate || logDate <= toDate;
 
@@ -551,9 +552,7 @@ export default function AuditPage() {
                       <td className="px-8 py-6 whitespace-nowrap">
                         <div className="flex items-center gap-2 text-cloudo-text/80 font-mono">
                           <HiOutlineClock className="w-4 h-4 opacity-60" />
-                          <span>
-                            {log.timestamp?.replace("T", " ").split(".")[0]}
-                          </span>
+                          <span>{formatRome(log.timestamp)}</span>
                         </div>
                       </td>
                       <td className="px-8 py-6">

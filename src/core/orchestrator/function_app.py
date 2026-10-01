@@ -3,6 +3,7 @@ import json
 import logging
 import os
 import time
+import types
 import uuid
 from datetime import datetime, timedelta, timezone
 from typing import Any, Optional, Union
@@ -975,6 +976,7 @@ def build_log_entry(
     approval_required: Optional[bool] = None,
     approval_expires_at: Optional[str] = None,
     approval_decision_by: Optional[str] = None,
+    notifications: Optional[str] = None,
 ) -> dict[str, Any]:
     # Normalized log entity for Azure Table Storage (with optional approval fields)
     return {
@@ -1001,7 +1003,22 @@ def build_log_entry(
         "ApprovalRequired": approval_required,
         "ApprovalExpiresAt": approval_expires_at,
         "ApprovalDecisionBy": approval_decision_by,
+        "Notifications": notifications,
     }
+
+
+def _notifications_json(decision: Any, results: Any) -> Optional[str]:
+    """Serialize where an execution was notified (routing decision + per-target outcome)."""
+    if not isinstance(results, list) or not results:
+        return None
+    return json.dumps(
+        {
+            "reason": getattr(decision, "reason", None),
+            "rule": getattr(decision, "matched_rule_index", None),
+            "targets": results,
+        },
+        ensure_ascii=False,
+    )
 
 
 def _post_status(payload: dict, status: str, log_message: str) -> str:
@@ -1394,6 +1411,8 @@ def Trigger(
                 schema.team, slack_token, slack_channel, jsm_token
             )
             notification_warnings: list[str] = []
+            approval_notifications: list[dict[str, Any]] = []
+            approval_team = _normalize_team(schema.team)
 
             # UI Base URL
             ui_base = (
@@ -1425,7 +1444,7 @@ def Trigger(
                     if len(args_truncated) > 800:
                         args_truncated = args_truncated[:800] + "\n... (truncated)"
 
-                    send_slack_execution(
+                    slack_sent = send_slack_execution(
                         token=slack_token,
                         channel=slack_channel,
                         message=f"[{exec_id}] ⚠️ APPROVAL REQUIRED: {schema.name}",
@@ -1530,7 +1549,24 @@ def Trigger(
                             },
                         ],
                     )
+                    approval_notifications.append(
+                        {
+                            "type": "slack",
+                            "team": approval_team,
+                            "channel": slack_channel,
+                            "status": "sent" if slack_sent else "failed",
+                        }
+                    )
                 except Exception as e:
+                    approval_notifications.append(
+                        {
+                            "type": "slack",
+                            "team": approval_team,
+                            "channel": slack_channel,
+                            "status": "failed",
+                            "error": str(e)[:200],
+                        }
+                    )
                     msg = f"Slack approval notify failed: {e}"
                     logging.debug(f"[{exec_id}] {msg}")
                     notification_warnings.append(msg)
@@ -1539,7 +1575,7 @@ def Trigger(
                 logging.debug(f"[{exec_id}] {msg}")
                 notification_warnings.append(msg)
 
-            if jsm_token:
+            if jsm_token and _as_bool(schema.oncall):
                 try:
                     jsm_message = f"[{exec_id}] ⚠️ APPROVAL REQUIRED: {schema.name}"
                     jsm_description = (
@@ -1555,7 +1591,7 @@ def Trigger(
                         f"On Call: {schema.oncall}\n\n"
                         f"Full Context: {ui_url}"
                     )
-                    send_jsm_alert(
+                    jsm_sent = send_jsm_alert(
                         api_key=jsm_token,
                         message=jsm_message,
                         description=jsm_description,
@@ -1570,10 +1606,27 @@ def Trigger(
                             "initiator": requester_username or "SYSTEM",
                         },
                     )
+                    approval_notifications.append(
+                        {
+                            "type": "jsm",
+                            "team": approval_team,
+                            "status": "sent" if jsm_sent else "failed",
+                        }
+                    )
                 except Exception as e:
+                    approval_notifications.append(
+                        {
+                            "type": "jsm",
+                            "team": approval_team,
+                            "status": "failed",
+                            "error": str(e)[:200],
+                        }
+                    )
                     msg = f"JSM approval notify failed: {e}"
                     logging.debug(f"[{exec_id}] {msg}")
                     notification_warnings.append(msg)
+            elif not _as_bool(schema.oncall):
+                logging.debug(f"[{exec_id}] JSM approval notify skipped: not on-call")
             else:
                 msg = "JSM approval notify skipped: missing token"
                 logging.debug(f"[{exec_id}] {msg}")
@@ -1604,6 +1657,12 @@ def Trigger(
                 team=schema.team,
                 approval_required=True,
                 approval_expires_at=expires_at,
+                notifications=_notifications_json(
+                    types.SimpleNamespace(
+                        reason="approval_request", matched_rule_index=None
+                    ),
+                    approval_notifications,
+                ),
             )
             log_table.set(json.dumps(pending_log, ensure_ascii=False))
 
@@ -1862,16 +1921,27 @@ def Trigger(
                     },
                 }
                 try:
-                    execute_actions(
-                        decision,
-                        payload,
-                        send_slack_fn=lambda token, channel, **kw: send_slack_execution(
-                            token=token, channel=channel, **kw
-                        ),
-                        send_jsm_fn=lambda api_key, **kw: send_jsm_alert(
-                            api_key=api_key, **kw
-                        ),
+                    trigger_results = (
+                        execute_actions(
+                            decision,
+                            payload,
+                            send_slack_fn=lambda token,
+                            channel,
+                            **kw: send_slack_execution(
+                                token=token, channel=channel, **kw
+                            ),
+                            send_jsm_fn=lambda api_key, **kw: send_jsm_alert(
+                                api_key=api_key, **kw
+                            ),
+                        )
+                        or []
                     )
+                    trigger_notifications = _notifications_json(
+                        decision, trigger_results
+                    )
+                    if trigger_notifications:
+                        start_log["Notifications"] = trigger_notifications
+                        log_table.set(json.dumps(start_log, ensure_ascii=False))
                 except Exception as e:
                     logging.error(f"{log_prefix} smart routing failed: {e}")
 
@@ -2662,6 +2732,8 @@ def _process_receiver_body(body: dict, log_table: func.Out[str]) -> None:
     resource_id = (body.get("resource_id") or "") or (
         resource_info.get("resource_id") or ""
     )
+    notification_results: list = []
+    notification_decision: Any = None
     resource_group = (body.get("resource_group") or "") or (
         resource_info.get("resource_rg") or ""
     )
@@ -2863,18 +2935,31 @@ def _process_receiver_body(body: dict, log_table: func.Out[str]) -> None:
             },
         }
         try:
-            execute_actions(
-                decision,
-                payload,
-                send_slack_fn=lambda token, channel, **kw: send_slack_execution(
-                    token=token, channel=channel, **kw
-                ),
-                send_jsm_fn=lambda api_key, **kw: send_jsm_alert(api_key=api_key, **kw),
+            notification_decision = decision
+            notification_results = (
+                execute_actions(
+                    decision,
+                    payload,
+                    send_slack_fn=lambda token, channel, **kw: send_slack_execution(
+                        token=token, channel=channel, **kw
+                    ),
+                    send_jsm_fn=lambda api_key, **kw: send_jsm_alert(
+                        api_key=api_key, **kw
+                    ),
+                )
+                or []
             )
         except Exception as e:
             logging.error(f"[{exec_id}] smart routing failed: {e}")
     else:
         logging.warning("Routing module not available, keeping legacy notifications")
+
+    notifications_value = _notifications_json(
+        notification_decision, notification_results
+    )
+    if notifications_value:
+        log_entity["Notifications"] = notifications_value
+        log_table.set(json.dumps(log_entity, ensure_ascii=False))
 
     _enqueue_ai_agent_analysis(
         body=body,
@@ -3608,6 +3693,7 @@ def logs_query(req: func.HttpRequest) -> func.HttpResponse:
             "MonitorCondition",
             "ResourceInfo",
             "team",
+            "Notifications",
         ]
         if include_log_content or q:
             selected_columns.append("Log")

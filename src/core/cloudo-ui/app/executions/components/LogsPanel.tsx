@@ -60,6 +60,7 @@ interface LogEntry {
   Group?: string;
   team?: string;
   ResourceInfo?: string;
+  Notifications?: string;
 }
 
 const statusPriority: Record<string, number> = {
@@ -1009,6 +1010,12 @@ function LogsPanelContent() {
                 />
               </div>
 
+              <ExecutionNotifications
+                execId={selectedLog.ExecId}
+                partitionKey={selectedLog.PartitionKey}
+                status={selectedLog.Status}
+              />
+
               <div className="border border-cloudo-border bg-cloudo-dark/40 p-4 space-y-3">
                 <div className="text-[10px] font-black uppercase tracking-[0.2em] text-cloudo-muted">
                   Process Identity
@@ -1327,6 +1334,160 @@ function ExecutionTimeline({
           );
         })}
       </div>
+    </div>
+  );
+}
+
+interface NotificationTarget {
+  type: string;
+  team?: string;
+  channel?: string;
+  status: string;
+  fallback?: boolean;
+  error?: string;
+}
+
+interface NotificationBatch {
+  key: string;
+  status: string;
+  requestedAt: string;
+  reason?: string | null;
+  targets: NotificationTarget[];
+}
+
+const notificationReasonLabel: Record<string, string> = {
+  matched: "Matched routing rule",
+  fallback_jsm: "No rule matched // JSM fallback",
+  approval_request: "Approval request",
+};
+
+function ExecutionNotifications({
+  execId,
+  partitionKey,
+  status,
+}: {
+  execId: string;
+  partitionKey: string;
+  status: string;
+}) {
+  const [batches, setBatches] = useState<NotificationBatch[]>([]);
+
+  useEffect(() => {
+    let cancelled = false;
+    const fetchNotifications = async () => {
+      try {
+        const params = new URLSearchParams();
+        params.set("partitionKey", partitionKey);
+        params.set("execId", execId);
+        params.set("limit", "100");
+        params.set("latestOnly", "false");
+        params.set("includeLogContent", "false");
+        const res = await cloudoFetch(`/logs/query?${params}`);
+        const data = await res.json();
+        const next: NotificationBatch[] = [];
+        ((data.items || []) as LogEntry[])
+          .sort((a, b) => a.RequestedAt.localeCompare(b.RequestedAt))
+          .forEach((row) => {
+            if (!row.Notifications) return;
+            try {
+              const parsed = JSON.parse(row.Notifications);
+              if (Array.isArray(parsed?.targets) && parsed.targets.length > 0) {
+                next.push({
+                  key: row.RowKey,
+                  status: row.Status,
+                  requestedAt: row.RequestedAt,
+                  reason: parsed.reason,
+                  targets: parsed.targets,
+                });
+              }
+            } catch {
+              // ignore malformed notification metadata
+            }
+          });
+        if (!cancelled) setBatches(next);
+      } catch (error) {
+        console.error("Failed to fetch notifications:", error);
+      }
+    };
+    fetchNotifications();
+    return () => {
+      cancelled = true;
+    };
+  }, [execId, partitionKey, status]);
+
+  return (
+    <div className="border border-cloudo-border bg-cloudo-dark/40 p-4 space-y-3">
+      <div className="text-[10px] font-black uppercase tracking-[0.2em] text-cloudo-muted">
+        Notifications
+      </div>
+      {batches.length === 0 ? (
+        <div className="text-[11px] text-cloudo-muted/70 uppercase tracking-widest">
+          No notification sent for this execution
+        </div>
+      ) : (
+        <div className="space-y-3">
+          {batches.map((batch) => (
+            <div key={batch.key} className="border border-cloudo-border">
+              <div className="px-3 py-2 bg-cloudo-panel-2/60 border-b border-cloudo-border flex flex-wrap items-center justify-between gap-2">
+                <span className="text-[10px] font-black uppercase tracking-widest text-cloudo-text">
+                  On {batch.status}
+                  {batch.reason
+                    ? ` // ${
+                        notificationReasonLabel[batch.reason] || batch.reason
+                      }`
+                    : ""}
+                </span>
+                <span className="text-[10px] font-mono text-cloudo-muted">
+                  {batch.requestedAt?.split("T")[1]?.slice(0, 8)}
+                </span>
+              </div>
+              <div className="divide-y divide-cloudo-border/40">
+                {batch.targets.map((target, index) => (
+                  <div
+                    key={`${batch.key}-${index}`}
+                    className="px-3 py-2 grid grid-cols-[5rem_1fr_auto] gap-3 items-center text-[11px]"
+                  >
+                    <span className="font-black uppercase tracking-widest text-cloudo-accent">
+                      {target.type === "jsm" ? "JSM" : "Slack"}
+                    </span>
+                    <div className="min-w-0 font-mono text-cloudo-text truncate">
+                      <span className="uppercase">
+                        {target.team || "default"}
+                      </span>
+                      {target.channel && (
+                        <span className="text-cloudo-muted">
+                          {" "}
+                          {target.channel}
+                        </span>
+                      )}
+                      {target.fallback && (
+                        <span className="text-cloudo-warn"> fallback</span>
+                      )}
+                      {target.error && (
+                        <div
+                          className="text-[10px] text-cloudo-err truncate"
+                          title={target.error}
+                        >
+                          {target.error}
+                        </div>
+                      )}
+                    </div>
+                    <span
+                      className={`px-2 py-0.5 border text-[10px] font-black uppercase tracking-widest ${
+                        target.status === "sent"
+                          ? "border-cloudo-ok/30 text-cloudo-ok bg-cloudo-ok/5"
+                          : "border-cloudo-err/30 text-cloudo-err bg-cloudo-err/5"
+                      }`}
+                    >
+                      {target.status}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   );
 }
