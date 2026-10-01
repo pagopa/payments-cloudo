@@ -3220,6 +3220,7 @@ def dev_test_run(
     if error_res:
         return error_res
     initiator = session.get("username") or "dev-user"
+    team = session.get("team") or "default"
 
     # Parse resource_info from the body using detection (same as Trigger endpoint)
     parsed_body = detection.parse_resource_fields(req_body.get("body"))
@@ -3234,7 +3235,7 @@ def dev_test_run(
         "aks_deployment": parsed_body.get("deployment"),
         "aks_job": parsed_body.get("job"),
         "aks_horizontalpodautoscaler": parsed_body.get("horizontalpodautoscaler"),
-        "team": session.get("team") or "default",
+        "team": team,
         "payload": parsed_body.get("payload"),
     }
 
@@ -3309,6 +3310,7 @@ def dev_test_run(
             "monitor_condition": parsed_body.get("monitor_condition") or "Fired",
             "severity": parsed_body.get("severity") or "Sev4",
             "worker": capability,
+            "team": team,
             "group": "-",
             "resource_info": resource_info or {},
             "routing_info": {},
@@ -3342,14 +3344,14 @@ def dev_test_run(
             schema_id=script_name,
             runbook=script_name,
             run_args=run_args,
-            worker=schema.worker,
+            worker=capability,
             group="-",
             log_msg=api_body,
             oncall="false",
             initiator=initiator,
             monitor_condition=parsed_body.get("monitor_condition", "Fired"),
             severity=parsed_body.get("severity", "Sev4"),
-            team=session.get("team") or "default",
+            team=team,
             resource_info=resource_info,
         )
         log_table.set(json.dumps(start_log, ensure_ascii=False))

@@ -1,0 +1,1216 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>ClouDO — Centralized runbook automation</title>
+    <meta
+      name="description"
+      content="ClouDO centralizes the definition, execution and governance of operational runbooks, for manual or event-driven runs, with team-aware access, approval gates and smart notification routing."
+    />
+    <link rel="icon" href="images/cloudo_logo.png" />
+    <style>
+      :root {
+        --bg: #0b0e14;
+        --panel: #121723;
+        --border: #222a3b;
+        --text: #e6eaf2;
+        --muted: #8d98b0;
+        --accent: #4299e1;
+        --ok: #48bb78;
+        --warn: #ecc94b;
+      }
+      * {
+        box-sizing: border-box;
+      }
+      html {
+        scroll-behavior: smooth;
+        scroll-padding-top: 80px;
+      }
+      body {
+        margin: 0;
+        background: var(--bg);
+        color: var(--text);
+        font-family:
+          ui-sans-serif,
+          system-ui,
+          -apple-system,
+          "Segoe UI",
+          Roboto,
+          sans-serif;
+        line-height: 1.65;
+      }
+      a {
+        color: var(--accent);
+        text-decoration: none;
+      }
+      a:hover {
+        text-decoration: underline;
+      }
+      code,
+      pre {
+        font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      }
+      code {
+        background: #0a0d13;
+        border: 1px solid var(--border);
+        padding: 1px 6px;
+        font-size: 0.88em;
+      }
+      pre code {
+        background: none;
+        border: 0;
+        padding: 0;
+        font-size: inherit;
+      }
+      .wrap {
+        max-width: 1180px;
+        margin: 0 auto;
+        padding: 0 24px;
+      }
+
+      header.nav {
+        position: sticky;
+        top: 0;
+        z-index: 10;
+        background: rgba(11, 14, 20, 0.92);
+        backdrop-filter: blur(8px);
+        border-bottom: 1px solid var(--border);
+      }
+      header.nav .wrap {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        height: 60px;
+      }
+      header.nav .brand {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        font-weight: 800;
+        letter-spacing: 0.08em;
+        color: var(--text);
+      }
+      header.nav .brand img {
+        height: 28px;
+      }
+      header.nav nav {
+        display: flex;
+        gap: 22px;
+        font-size: 14px;
+      }
+      header.nav nav a {
+        color: var(--muted);
+      }
+      header.nav nav a:hover {
+        color: var(--text);
+        text-decoration: none;
+      }
+
+      .hero {
+        padding: 80px 0 56px;
+        text-align: center;
+      }
+      .hero img {
+        max-width: 420px;
+        width: 70%;
+        margin-bottom: 28px;
+      }
+      .hero h1 {
+        font-size: clamp(30px, 5vw, 46px);
+        line-height: 1.15;
+        margin: 0 0 16px;
+      }
+      .hero p {
+        max-width: 740px;
+        margin: 0 auto 30px;
+        color: var(--muted);
+        font-size: 18px;
+      }
+      .btn {
+        display: inline-block;
+        padding: 12px 22px;
+        border: 1px solid var(--border);
+        color: var(--text);
+        font-weight: 600;
+        margin: 0 6px 10px;
+      }
+      .btn.primary {
+        background: var(--accent);
+        border-color: var(--accent);
+        color: #fff;
+      }
+      .btn:hover {
+        text-decoration: none;
+        border-color: var(--accent);
+      }
+
+      .layout {
+        display: grid;
+        grid-template-columns: 220px minmax(0, 1fr);
+        gap: 48px;
+        padding-bottom: 80px;
+      }
+      aside.toc {
+        position: sticky;
+        top: 84px;
+        align-self: start;
+        font-size: 14px;
+      }
+      aside.toc strong {
+        display: block;
+        color: var(--muted);
+        font-size: 11px;
+        letter-spacing: 0.14em;
+        text-transform: uppercase;
+        margin-bottom: 10px;
+      }
+      aside.toc a {
+        display: block;
+        color: var(--muted);
+        padding: 4px 0;
+      }
+      aside.toc a:hover {
+        color: var(--text);
+        text-decoration: none;
+      }
+      @media (max-width: 900px) {
+        .layout {
+          grid-template-columns: 1fr;
+        }
+        aside.toc {
+          display: none;
+        }
+        header.nav nav {
+          display: none;
+        }
+      }
+
+      article section {
+        padding: 44px 0 8px;
+        border-top: 1px solid var(--border);
+      }
+      article section:first-child {
+        border-top: 0;
+        padding-top: 8px;
+      }
+      article h2 {
+        font-size: 27px;
+        margin: 0 0 10px;
+      }
+      article h3 {
+        font-size: 18px;
+        margin: 28px 0 8px;
+      }
+      article p,
+      article li {
+        color: #c3cbdb;
+      }
+      article .lead {
+        color: var(--muted);
+        font-size: 17px;
+      }
+      ul,
+      ol {
+        padding-left: 22px;
+      }
+      li {
+        margin-bottom: 6px;
+      }
+
+      .grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+        gap: 16px;
+        margin: 20px 0;
+      }
+      .card {
+        background: var(--panel);
+        border: 1px solid var(--border);
+        padding: 20px;
+      }
+      .card h3 {
+        margin: 0 0 6px;
+        font-size: 16px;
+      }
+      .card p {
+        margin: 0;
+        color: var(--muted);
+        font-size: 14.5px;
+      }
+      .tag {
+        display: inline-block;
+        font-size: 11px;
+        font-weight: 700;
+        letter-spacing: 0.12em;
+        text-transform: uppercase;
+        color: var(--accent);
+        margin-bottom: 8px;
+      }
+
+      figure {
+        margin: 24px 0;
+        background: #0a0d13;
+        border: 1px solid var(--border);
+        padding: 16px;
+        overflow-x: auto;
+      }
+      figure img {
+        display: block;
+        margin: 0 auto;
+        max-width: 100%;
+        height: auto;
+      }
+      figcaption {
+        color: var(--muted);
+        font-size: 13px;
+        text-align: center;
+        margin-top: 10px;
+      }
+
+      pre {
+        background: #0a0d13;
+        border: 1px solid var(--border);
+        padding: 16px;
+        overflow-x: auto;
+        font-size: 13px;
+        color: #cfd8ea;
+        margin: 16px 0;
+      }
+      table {
+        width: 100%;
+        border-collapse: collapse;
+        font-size: 14px;
+        margin: 16px 0;
+      }
+      th,
+      td {
+        text-align: left;
+        padding: 10px 12px;
+        border-bottom: 1px solid var(--border);
+        vertical-align: top;
+      }
+      th {
+        color: var(--muted);
+        font-weight: 600;
+        text-transform: uppercase;
+        font-size: 12px;
+        letter-spacing: 0.08em;
+      }
+      td {
+        color: #c3cbdb;
+      }
+      .note {
+        border-left: 3px solid var(--accent);
+        background: var(--panel);
+        padding: 12px 16px;
+        margin: 18px 0;
+        color: #c3cbdb;
+        font-size: 14.5px;
+      }
+      .note.warn {
+        border-left-color: var(--warn);
+      }
+
+      footer {
+        border-top: 1px solid var(--border);
+        padding: 32px 0;
+        color: var(--muted);
+        font-size: 14px;
+        text-align: center;
+      }
+    </style>
+  </head>
+  <body>
+    <header class="nav">
+      <div class="wrap">
+        <a class="brand" href="#top"
+          ><img src="images/cloudo_logo.png" alt="" />ClouDO</a
+        >
+        <nav>
+          <a href="#overview">Overview</a>
+          <a href="#architecture">Architecture</a>
+          <a href="#lifecycle">How it works</a>
+          <a href="#routing">Routing</a>
+          <a href="#getting-started">Get started</a>
+          <a href="https://github.com/pagopa/payments-cloudo">GitHub</a>
+        </nav>
+      </div>
+    </header>
+
+    <main id="top">
+      <div class="hero wrap">
+        <img src="images/cloudo_logo.png" alt="ClouDO logo" />
+        <h1>
+          Centralized runbook automation for manual or event-driven execution
+        </h1>
+        <p>
+          ClouDO centralizes the definition, execution and governance of
+          operational runbooks, so incidents, maintenance tasks and routine
+          operations get a consistent, repeatable and auditable response.
+        </p>
+        <a class="btn primary" href="#getting-started">Get started</a>
+        <a class="btn" href="#lifecycle">How it works</a>
+        <a class="btn" href="https://github.com/pagopa/payments-cloudo"
+          >View on GitHub</a
+        >
+      </div>
+
+      <div class="wrap layout">
+        <aside class="toc">
+          <strong>Documentation</strong>
+          <a href="#overview">Overview</a>
+          <a href="#concepts">Core concepts</a>
+          <a href="#architecture">Architecture</a>
+          <a href="#lifecycle">Execution lifecycle</a>
+          <a href="#teams">Teams and roles</a>
+          <a href="#approvals">Approval gate</a>
+          <a href="#routing">Smart routing</a>
+          <a href="#jsm">Jira Service Management</a>
+          <a href="#triage">AI triage</a>
+          <a href="#schedules">Schedules</a>
+          <a href="#observability">Observability</a>
+          <a href="#runbooks">Writing runbooks</a>
+          <a href="#getting-started">Getting started</a>
+          <a href="#deploy">Deployment</a>
+          <a href="#config">Configuration</a>
+        </aside>
+
+        <article>
+          <section id="overview">
+            <h2>Overview</h2>
+            <p class="lead">
+              ClouDO is a control plane for operational runbooks. You describe
+              <em>what can be run</em>, <em>who can run it</em> and
+              <em>who is told when it runs</em>; ClouDO does the rest.
+            </p>
+            <div class="grid">
+              <div class="card">
+                <span class="tag">Execution</span>
+                <h3>Manual and event-driven runs</h3>
+                <p>
+                  Trigger a runbook from the UI, an API call, a schedule or an
+                  alert such as Azure Monitor. Runbooks are plain
+                  <code>bash</code> or <code>python</code> scripts.
+                </p>
+              </div>
+              <div class="card">
+                <span class="tag">Governance</span>
+                <h3>Approval gate</h3>
+                <p>
+                  Sensitive runbooks wait for an authorized person, with signed
+                  and expiring approve/reject links.
+                </p>
+              </div>
+              <div class="card">
+                <span class="tag">Multi-team</span>
+                <h3>Team-aware by design</h3>
+                <p>
+                  Every resource belongs to a team. People act on their own
+                  team's resources, administrators see everything.
+                </p>
+              </div>
+              <div class="card">
+                <span class="tag">Notifications</span>
+                <h3>Smart routing</h3>
+                <p>
+                  Rules decide where each execution is notified. Every matching
+                  rule applies, so one event can reach several teams.
+                </p>
+              </div>
+              <div class="card">
+                <span class="tag">On call</span>
+                <h3>JSM alerts for on-call runs</h3>
+                <p>
+                  Only executions flagged <em>on call</em> open Jira Service
+                  Management alerts.
+                </p>
+              </div>
+              <div class="card">
+                <span class="tag">Triage</span>
+                <h3>AI triage</h3>
+                <p>
+                  An optional agent analyzes failed runs and adds a summary, a
+                  probable root cause and recommended actions.
+                </p>
+              </div>
+            </div>
+          </section>
+
+          <section id="concepts">
+            <h2>Core concepts</h2>
+            <table>
+              <thead>
+                <tr>
+                  <th>Concept</th>
+                  <th>What it is</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td><strong>Runbook</strong></td>
+                  <td>
+                    A <code>bash</code> or <code>python</code> script stored
+                    with the workers, for example
+                    <code>azure/application_gateway_info.sh</code>.
+                  </td>
+                </tr>
+                <tr>
+                  <td><strong>Schema</strong></td>
+                  <td>
+                    The definition that maps an id to a runbook: arguments,
+                    worker pool, team, approval requirement, on-call flag and
+                    tags.
+                  </td>
+                </tr>
+                <tr>
+                  <td><strong>Worker</strong></td>
+                  <td>
+                    A node that listens on a queue, runs runbooks and reports
+                    status. Workers register themselves with a heartbeat and
+                    belong to a pool and a team.
+                  </td>
+                </tr>
+                <tr>
+                  <td><strong>Team</strong></td>
+                  <td>
+                    The ownership unit of schemas, schedules, users and workers.
+                    The built-in <code>default</code> team holds shared
+                    resources.
+                  </td>
+                </tr>
+                <tr>
+                  <td><strong>Schedule</strong></td>
+                  <td>
+                    A cron expression that triggers a runbook on a worker pool,
+                    for a team.
+                  </td>
+                </tr>
+                <tr>
+                  <td><strong>Execution</strong></td>
+                  <td>
+                    One run of a schema, identified by an <code>ExecId</code>,
+                    with a log row for every status change.
+                  </td>
+                </tr>
+                <tr>
+                  <td><strong>Routing rule</strong></td>
+                  <td>
+                    A condition plus a list of Slack and JSM targets, evaluated
+                    for every execution status change.
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </section>
+
+          <section id="architecture">
+            <h2>Architecture</h2>
+            <p class="lead">
+              Small, separated components that communicate through storage
+              tables and queues.
+            </p>
+            <figure>
+              <img
+                src="images/architecture.svg"
+                alt="ClouDO architecture diagram"
+              />
+              <figcaption>
+                Components and data flow. The diagram source is in
+                <code>docs/diagrams/architecture.d2</code>.
+              </figcaption>
+            </figure>
+            <table>
+              <thead>
+                <tr>
+                  <th>Component</th>
+                  <th>Responsibility</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td>UI</td>
+                  <td>
+                    Next.js console for discovery, execution, approvals, routing
+                    configuration, fleet and audit views. It talks to the
+                    orchestrator through an authenticated proxy.
+                  </td>
+                </tr>
+                <tr>
+                  <td>Orchestrator</td>
+                  <td>
+                    Authenticates requests, enforces team access, validates and
+                    enqueues runs, manages approvals, receives status updates
+                    and applies smart routing. Served by FastAPI under
+                    <code>/api</code>, also deployable as Azure Functions.
+                  </td>
+                </tr>
+                <tr>
+                  <td>Workers</td>
+                  <td>
+                    Pull run messages, execute the runbook, stream status and
+                    output back, and send a heartbeat so they appear in the
+                    registry.
+                  </td>
+                </tr>
+                <tr>
+                  <td>Storage</td>
+                  <td>
+                    Azure Table Storage for schemas, schedules, users, teams,
+                    settings, logs, audit and AI analysis; queues for work,
+                    notifications and AI analysis; blobs for run output.
+                  </td>
+                </tr>
+                <tr>
+                  <td>AI agent</td>
+                  <td>
+                    Optional service that consumes failed executions and
+                    produces a triage analysis.
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </section>
+
+          <section id="lifecycle">
+            <h2>Execution lifecycle</h2>
+            <p class="lead">
+              What happens from the moment a run is requested to the moment
+              people are notified.
+            </p>
+            <figure>
+              <img
+                src="images/lifecycle.svg"
+                alt="Execution lifecycle sequence diagram"
+              />
+              <figcaption>
+                The lifecycle of an execution. Source:
+                <code>docs/diagrams/lifecycle.d2</code>.
+              </figcaption>
+            </figure>
+            <ol>
+              <li>
+                <strong>Request.</strong> A caller triggers a schema id with
+                <code>/api/Trigger?id=&lt;schema&gt;</code>, from the UI, a
+                script, an alert webhook or a schedule.
+              </li>
+              <li>
+                <strong>Validation.</strong> The orchestrator checks the
+                session, the caller's team access, that the schema exists and is
+                enabled, and builds the context (resource information, severity,
+                initiator).
+              </li>
+              <li>
+                <strong>Worker selection.</strong> A worker queue is chosen
+                among the registered workers that offer the schema's capability
+                and belong to the schema's team or the shared
+                <code>default</code> team.
+              </li>
+              <li>
+                <strong>Approval (optional).</strong> If the schema requires
+                approval, the run is stored as <code>pending</code> and the
+                owning team is notified with signed approve/reject links.
+                Nothing runs until someone decides.
+              </li>
+              <li>
+                <strong>Run.</strong> The message is enqueued. The worker picks
+                it up, reports <code>running</code>, executes the script with
+                the resource information as environment variables, then reports
+                <code>succeeded</code> or <code>failed</code> with the output.
+              </li>
+              <li>
+                <strong>Record.</strong> The Receiver stores a log row for every
+                status, uploads long output to blob storage and keeps the latest
+                state per execution for the UI.
+              </li>
+              <li>
+                <strong>Notify.</strong> Smart routing applies the rules and
+                sends Slack and JSM notifications. The outcome of each target is
+                saved with the log row.
+              </li>
+              <li>
+                <strong>Triage.</strong> Failed or errored executions are
+                forwarded to the AI agent, when enabled, which adds a note to
+                the alert and stores the analysis.
+              </li>
+            </ol>
+            <p>
+              Statuses you will see: <code>pending</code>,
+              <code>accepted</code>, <code>running</code>,
+              <code>succeeded</code>, <code>failed</code>, <code>error</code>,
+              <code>rejected</code>, <code>stopped</code>, <code>skipped</code>,
+              <code>routed</code>.
+            </p>
+          </section>
+
+          <section id="teams">
+            <h2>Teams and roles</h2>
+            <p class="lead">
+              Every resource belongs to a team; access follows the team.
+            </p>
+            <table>
+              <thead>
+                <tr>
+                  <th>Role</th>
+                  <th>Can do</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td>Admin</td>
+                  <td>
+                    Manage teams and users, assign teams, see all teams' users,
+                    audit and resources, change any schema or schedule,
+                    configure the shared <code>default</code> routing and every
+                    team's routing.
+                  </td>
+                </tr>
+                <tr>
+                  <td>Operator</td>
+                  <td>
+                    Run, approve and stop executions of their own team, create
+                    and change their team's schemas and schedules, edit their
+                    team's routing (channel, tokens, rules and targets).
+                  </td>
+                </tr>
+                <tr>
+                  <td>Viewer</td>
+                  <td>
+                    Read-only access to their team's resources, plus the shared
+                    fleet view.
+                  </td>
+                </tr>
+                <tr>
+                  <td>Pending</td>
+                  <td>
+                    A freshly registered account waiting for an administrator to
+                    approve it.
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+            <h3>Rules of visibility and ownership</h3>
+            <ul>
+              <li>
+                People see the resources of their own team and of the shared
+                <code>default</code> team. Administrators can switch the sidebar
+                scope to see every team; the users and audit pages always show
+                all teams to administrators.
+              </li>
+              <li>
+                Worker nodes and in-flight executions are visible to everybody.
+                A team can stop only its own executions; administrators can stop
+                any.
+              </li>
+              <li>
+                Schemas and schedules can be changed or deleted only by
+                administrators and by members of the owning team. Resources in
+                <code>default</code> are therefore protected from other teams.
+              </li>
+              <li>
+                Only administrators can assign a resource to a team or move a
+                user to another team.
+              </li>
+              <li>
+                Schemas and schedules created by Terraform are marked as managed
+                and are read-only in the UI.
+              </li>
+            </ul>
+          </section>
+
+          <section id="approvals">
+            <h2>Approval gate</h2>
+            <p>
+              Set <code>require_approval</code> on a schema to put its
+              executions behind a gate.
+            </p>
+            <ul>
+              <li>
+                The execution is stored as <code>pending</code> and the owning
+                team's Slack channel is notified, with a link to the execution.
+                JSM is notified only when the schema is on call.
+              </li>
+              <li>
+                The approve and reject links carry a signed payload (HMAC) that
+                includes the team and expires after
+                <code>APPROVAL_TTL_MIN</code> minutes (default 60).
+              </li>
+              <li>
+                People see only the requests of their own team and of
+                <code>default</code>; administrators see all teams when the
+                scope is enabled.
+              </li>
+              <li>
+                Approving enqueues the run; rejecting records
+                <code>rejected</code>. Both are written to the audit log with
+                the approver's name, and the decision is notified back.
+              </li>
+              <li>A decision on a request that already has one is refused.</li>
+            </ul>
+          </section>
+
+          <section id="routing">
+            <h2>Smart routing</h2>
+            <p class="lead">
+              Decides who is notified, on which integration, for every execution
+              status change.
+            </p>
+            <figure>
+              <img src="images/routing.svg" alt="Smart routing decision flow" />
+              <figcaption>
+                How a routing decision is made. Source:
+                <code>docs/diagrams/routing.d2</code>.
+              </figcaption>
+            </figure>
+            <h3>How rules are evaluated</h3>
+            <ul>
+              <li>
+                <strong>Multi-match.</strong> Every matching rule contributes
+                targets. Rules are not a cascade: the first match does not stop
+                the others.
+              </li>
+              <li>
+                <strong>Scope.</strong> A rule bound to a team applies only to
+                executions of that team. A rule without a team applies to every
+                execution.
+              </li>
+              <li>
+                <strong>Conditions.</strong> All fields in
+                <code>when</code> must match. Supported fields:
+                <code>statusIn</code>, <code>severityMin</code>,
+                <code>severityMax</code> (Sev0 is the most critical),
+                <code>resourceGroup</code>, <code>resourceGroupPrefix</code>,
+                <code>resourceId</code>, <code>resourceName</code>,
+                <code>subscriptionId</code>, <code>namespace</code>,
+                <code>schemaName</code>, <code>oncall</code>,
+                <code>isAlert</code>, and <code>any: "*"</code> to match
+                everything.
+              </li>
+              <li>
+                <strong>Final outcomes only.</strong> By default a rule matches
+                only final statuses (<code>succeeded</code>,
+                <code>failed</code>, <code>error</code>, <code>timeout</code>,
+                <code>routed</code>). Set <code>finalOnly: false</code> to
+                include the others.
+              </li>
+              <li>
+                <strong>Targets.</strong> Each target is Slack or JSM, with a
+                team and an optional Slack channel. A target can point to
+                another team, which then uses its own Slack token, channel and
+                JSM API key.
+              </li>
+              <li>
+                <strong>Owning team.</strong> If a rule has a Slack target and
+                none for the execution's own team, a Slack target for the owning
+                team is added. The same applies to JSM, when an API key exists.
+              </li>
+              <li>
+                <strong>Duplicates</strong> with the same type, team and channel
+                are merged.
+              </li>
+            </ul>
+            <h3>JSM only for on-call executions</h3>
+            <p>
+              JSM targets are dropped when the schema is not flagged
+              <code>oncall</code>. This also removes the JSM fallback described
+              below.
+            </p>
+            <h3>Fallback</h3>
+            <p>
+              If no rule produces a target and the status is final, an on-call
+              execution opens a JSM alert for the owning team. If every target
+              fails, the same fallback is attempted once. Each step is logged.
+            </p>
+            <h3>Credentials</h3>
+            <p>
+              Secrets are never stored in the rule JSON. They are resolved by
+              team name: <code>SLACK_TOKEN_&lt;TEAM&gt;</code> and
+              <code>JSM_API_KEY_&lt;TEAM&gt;</code>, falling back to the
+              <code>_DEFAULT</code> values.
+            </p>
+            <h3>Example</h3>
+            <pre><code>{
+  "version": 2,
+  "defaults": { "slack": { "channel": "#cloudo-default" } },
+  "teams": {
+    "infra": { "slack": { "channel": "#infra-alerts" } },
+    "core":  { "slack": { "channel": "#core-alerts" } }
+  },
+  "rules": [
+    {
+      "team": "infra",
+      "when": { "statusIn": ["failed", "error"], "severityMax": "Sev2" },
+      "then": [
+        { "type": "slack", "team": "infra" },
+        { "type": "slack", "team": "core" },
+        { "type": "jsm",   "team": "infra" }
+      ]
+    }
+  ]
+}</code></pre>
+            <p>
+              A failed on-call execution of an <code>infra</code> schema
+              notifies <code>#infra-alerts</code>, <code>#core-alerts</code> and
+              opens an <code>infra</code> JSM alert. A schema that is not on
+              call gets only the two Slack messages.
+            </p>
+            <div class="note">
+              Routing configuration is stored in the
+              <code>CloudoSettings</code> table (<code>GlobalConfig</code> /
+              <code>ROUTING_RULES</code>) and cached for 60 seconds. Saving it
+              from the UI clears the cache.
+            </div>
+          </section>
+
+          <section id="jsm">
+            <h2>Jira Service Management</h2>
+            <ul>
+              <li>
+                Alerts use the schema id as alias, so repeated failures of the
+                same schema are de-duplicated while the alert is open.
+              </li>
+              <li>
+                A closed alert is never reused. ClouDO checks the state of the
+                alias and, when it is closed, opens the next one in the chain
+                (<code>alias</code>, <code>alias-2</code>, <code>alias-3</code>,
+                …).
+              </li>
+              <li>
+                When a monitor reports <em>Resolved</em>, the latest open alert
+                of the chain is closed.
+              </li>
+              <li>
+                Payloads are trimmed to the JSM limits (message, description,
+                tags and details) and details are flattened to strings.
+              </li>
+              <li>
+                The API key used must be allowed to read alerts, otherwise
+                ClouDO falls back to the plain alias.
+              </li>
+            </ul>
+          </section>
+
+          <section id="triage">
+            <h2>AI triage</h2>
+            <p>
+              When <code>AI_AGENT_ENABLED</code> is on, failed and errored
+              executions are queued for the agent. It reads the output and the
+              resource context and produces a summary, a probable root cause,
+              recommended actions and a confidence level. The note is added to
+              the matching JSM alert and the analysis is shown in the execution
+              detail, scoped to the owning team. Manual test runs from the
+              studio are skipped.
+            </p>
+          </section>
+
+          <section id="schedules">
+            <h2>Schedules</h2>
+            <p>
+              A schedule triggers a runbook on a cron expression for a worker
+              pool and a team. The scheduler picks the worker queue by pool and
+              team, exactly like a manual run, and the execution is tracked and
+              notified the same way. Schedules created by Terraform are locked
+              in the UI.
+            </p>
+          </section>
+
+          <section id="observability">
+            <h2>Observability</h2>
+            <ul>
+              <li>
+                <strong>Executions.</strong> Search by date, status, id or text.
+                The detail shows a snapshot, the timeline of statuses, the
+                process identity, the resource information, the output stream
+                and a <em>Notifications</em> section.
+              </li>
+              <li>
+                <strong>Notifications section.</strong> For every status change
+                that notified someone it lists each target: integration (Slack
+                or JSM), team, channel, sent or failed, and the error when there
+                is one. It also shows why the target was chosen (matched rule,
+                JSM fallback, approval request).
+              </li>
+              <li>
+                <strong>Workers.</strong> Fleet view with team, queue, region
+                and heartbeat; the runtime inspector lists running processes
+                with their team and lets a team stop its own.
+              </li>
+              <li>
+                <strong>Audit.</strong> Every change is recorded with operator,
+                action, target and team, and can be filtered by team and date.
+                Administrators always see all teams.
+              </li>
+              <li>
+                <strong>Time.</strong> Audit entries and worker heartbeats are
+                shown in Europe/Rome time.
+              </li>
+            </ul>
+          </section>
+
+          <section id="runbooks">
+            <h2>Writing runbooks</h2>
+            <p>
+              Runbooks are <code>bash</code> or <code>python</code> scripts.
+              When an alert comes from AKS they receive these environment
+              variables:
+            </p>
+            <table>
+              <thead>
+                <tr>
+                  <th>Variable</th>
+                  <th>Meaning</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td><code>RESOURCE_ID</code></td>
+                  <td>Full Azure resource id</td>
+                </tr>
+                <tr>
+                  <td><code>RESOURCE_RG</code></td>
+                  <td>Resource group name</td>
+                </tr>
+                <tr>
+                  <td><code>RESOURCE_NAME</code></td>
+                  <td>Resource name</td>
+                </tr>
+                <tr>
+                  <td>
+                    <code>AKS_NAMESPACE</code>, <code>AKS_POD</code>,
+                    <code>AKS_DEPLOYMENT</code>, <code>AKS_JOB</code>,
+                    <code>AKS_HPA</code>
+                  </td>
+                  <td>Kubernetes objects named by the alert, when available</td>
+                </tr>
+                <tr>
+                  <td><code>MONITOR_CONDITION</code></td>
+                  <td><code>Fired</code> or <code>Resolved</code></td>
+                </tr>
+              </tbody>
+            </table>
+            <p>
+              The worker image already includes the Azure CLI and the Python
+              Azure libraries. To use the worker's managed identity, start your
+              script with:
+            </p>
+            <pre><code># Ensure Azure login
+if ! az account show &gt;/dev/null 2&gt;&amp;1; then
+  echo "Logging into Azure..."
+  az login --identity --client-id "$AZURE_CLIENT_ID" &gt;/dev/null
+fi</code></pre>
+            <h3>Describing the runbook</h3>
+            <pre><code>[
+  {
+    "partition_key": "infra",
+    "entity": [
+      {
+        "id": "cdn-apim-switch",
+        "name": "Switch CDN to APIM",
+        "description": "Switch static content provider from CDN to APIM",
+        "runbook": "cdn/cdn_to_apim_switch.sh",
+        "run_args": "",
+        "worker": "generic",
+        "team": "infra",
+        "oncall": true,
+        "require_approval": true,
+        "tags": "checkout,azure"
+      }
+    ]
+  }
+]</code></pre>
+            <table>
+              <thead>
+                <tr>
+                  <th>Field</th>
+                  <th>Meaning</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td>
+                    <code>id</code>, <code>name</code>, <code>description</code>
+                  </td>
+                  <td>Identity and description shown in the UI</td>
+                </tr>
+                <tr>
+                  <td><code>runbook</code>, <code>run_args</code></td>
+                  <td>Script path and its arguments</td>
+                </tr>
+                <tr>
+                  <td><code>worker</code></td>
+                  <td>Worker capability (pool) that can run it</td>
+                </tr>
+                <tr>
+                  <td><code>team</code></td>
+                  <td>Owning team; defaults to <code>default</code></td>
+                </tr>
+                <tr>
+                  <td><code>oncall</code></td>
+                  <td>When true, failures can open JSM alerts</td>
+                </tr>
+                <tr>
+                  <td><code>require_approval</code></td>
+                  <td>When true, runs wait in the approval gate</td>
+                </tr>
+                <tr>
+                  <td>
+                    <code>enabled</code>, <code>group</code>, <code>tags</code>
+                  </td>
+                  <td>Optional switches and labels</td>
+                </tr>
+              </tbody>
+            </table>
+          </section>
+
+          <section id="getting-started">
+            <h2>Getting started</h2>
+            <p class="lead">
+              Try it locally with the bundled test environment.
+            </p>
+            <ol>
+              <li>
+                Clone the repository and install <code>docker-compose</code>.
+              </li>
+              <li>
+                From the repository root run <code>make test-env-start</code>.
+                It starts the services with pre-compiled schemas
+                (<code>test</code>, <code>test-2</code>, <code>test-3</code>)
+                and a local admin user.
+              </li>
+              <li>
+                Trigger a schema and follow it in the UI or at
+                <code>/api/logs</code>.
+              </li>
+            </ol>
+            <pre><code>git clone https://github.com/pagopa/payments-cloudo
+cd payments-cloudo
+make test-env-start
+
+curl "http://localhost:7071/api/Trigger?id=test"</code></pre>
+            <div class="note warn">
+              The local environment ships with a test admin account. Never reuse
+              it outside a development machine.
+            </div>
+          </section>
+
+          <section id="deploy">
+            <h2>Deployment</h2>
+            <ul>
+              <li>
+                <strong>Terraform.</strong> A module installs the complete stack
+                on an Azure subscription: orchestrator, workers, UI, storage,
+                identities and alerts. Schemas and schedules can be seeded from
+                JSON files, with an optional <code>team</code> on every entry.
+                See the
+                <a
+                  href="https://github.com/pagopa/payments-cloudo/blob/main/src/core/iac/README.md"
+                  >infrastructure documentation</a
+                >.
+              </li>
+              <li>
+                <strong>Kubernetes.</strong> A Helm chart under
+                <code>deploy/helm/cloudo</code> deploys the same components,
+                with a bootstrap job that creates tables, queues, the blob
+                container and the first admin.
+              </li>
+            </ul>
+          </section>
+
+          <section id="config">
+            <h2>Configuration</h2>
+            <table>
+              <thead>
+                <tr>
+                  <th>Setting</th>
+                  <th>Purpose</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td><code>SESSION_SECRET</code></td>
+                  <td>Signs user sessions</td>
+                </tr>
+                <tr>
+                  <td>
+                    <code>APPROVAL_SECRET</code>, <code>APPROVAL_TTL_MIN</code>
+                  </td>
+                  <td>
+                    Signs approve/reject links and sets how long they stay valid
+                  </td>
+                </tr>
+                <tr>
+                  <td><code>CLOUDO_SECRET_KEY</code></td>
+                  <td>Shared key between the orchestrator and the workers</td>
+                </tr>
+                <tr>
+                  <td>
+                    <code>ORCHESTRATOR_BASE_URL</code>, <code>NEXTJS_URL</code>
+                  </td>
+                  <td>Base URLs used to build approval and execution links</td>
+                </tr>
+                <tr>
+                  <td>
+                    <code>SLACK_TOKEN_&lt;TEAM&gt;</code>,
+                    <code>SLACK_CHANNEL_&lt;TEAM&gt;</code>
+                  </td>
+                  <td>
+                    Slack credentials and channel of a team;
+                    <code>_DEFAULT</code> is the shared fallback
+                  </td>
+                </tr>
+                <tr>
+                  <td><code>JSM_API_KEY_&lt;TEAM&gt;</code></td>
+                  <td>
+                    JSM integration key of a team; <code>_DEFAULT</code> is the
+                    shared fallback
+                  </td>
+                </tr>
+                <tr>
+                  <td><code>ROUTING_RULES</code></td>
+                  <td>
+                    Routing configuration; the stored value in
+                    <code>CloudoSettings</code> wins over the environment
+                    variable
+                  </td>
+                </tr>
+                <tr>
+                  <td>
+                    <code>ROUTING_CONFIG_CACHE_TTL_SECONDS</code>,
+                    <code>ROUTING_SETTINGS_CACHE_TTL_SECONDS</code>
+                  </td>
+                  <td>
+                    Cache lifetime of the routing configuration and of team
+                    credentials (default 60)
+                  </td>
+                </tr>
+                <tr>
+                  <td><code>AI_AGENT_ENABLED</code></td>
+                  <td>
+                    Turns AI triage on or off (also editable from the admin UI)
+                  </td>
+                </tr>
+                <tr>
+                  <td><code>LOCAL_DEV</code></td>
+                  <td>Relaxes some checks for local development</td>
+                </tr>
+              </tbody>
+            </table>
+            <p>
+              Tokens and API keys are stored as settings, never inside the
+              routing JSON, and are not shown back to operators.
+            </p>
+          </section>
+        </article>
+      </div>
+    </main>
+
+    <footer>
+      <div class="wrap">
+        ClouDO &middot;
+        <a href="https://github.com/pagopa/payments-cloudo"
+          >github.com/pagopa/payments-cloudo</a
+        >
+      </div>
+    </footer>
+  </body>
+</html>
