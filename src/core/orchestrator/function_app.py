@@ -4645,7 +4645,8 @@ def users_management(req: func.HttpRequest) -> func.HttpResponse:
             entities = table_client.query_entities(
                 query_filter="PartitionKey eq 'Operator'"
             )
-            entities = _filter_entities_by_team(list(entities), req, session)
+            if not _is_admin(session):
+                entities = _filter_entities_by_team(list(entities), req, session)
             users = []
             for e in entities:
                 users.append(
@@ -4688,7 +4689,7 @@ def users_management(req: func.HttpRequest) -> func.HttpResponse:
                 if _entity_team(existing_user) not in {
                     DEFAULT_TEAM,
                     _session_team(session),
-                } and not _can_view_all_teams(req, session):
+                } and not _is_admin(session):
                     return func.HttpResponse(
                         json.dumps({"error": "User belongs to another team"}),
                         status_code=403,
@@ -5067,7 +5068,7 @@ def get_audit_logs(req: func.HttpRequest) -> func.HttpResponse:
                 query_filter="PartitionKey eq 'Operator'"
             )
         }
-        see_all = _can_view_all_teams(req, session)
+        see_all = _is_admin(session)
         allowed_teams = {DEFAULT_TEAM, _session_team(session)}
         now = datetime.now(timezone.utc)
         for day_offset in range(days):

@@ -36,6 +36,8 @@ interface Notification {
   message: string;
 }
 
+type SortKey = "username" | "email" | "role" | "team";
+
 export default function UsersPage() {
   const router = useRouter();
   const [users, setUsers] = useState<User[]>([]);
@@ -45,6 +47,11 @@ export default function UsersPage() {
   const [modalMode, setModalMode] = useState<"create" | "edit" | null>(null);
   const [selectedUser, setSelectedUser] = useState<User | null>(null);
   const [userToDelete, setUserToDelete] = useState<User | null>(null);
+  const [teamFilter, setTeamFilter] = useState("all");
+  const [sort, setSort] = useState<{ key: SortKey; dir: "asc" | "desc" }>({
+    key: "username",
+    dir: "asc",
+  });
   const [notifications, setNotifications] = useState<Notification[]>([]);
   const [currentUser, setCurrentUser] = useState<User | null>(null);
 
@@ -138,12 +145,39 @@ export default function UsersPage() {
   };
 
   const filteredUsers = useMemo(() => {
-    return users.filter(
+    const query = searchQuery.toLowerCase();
+    const filtered = users.filter(
       (u) =>
-        u.username?.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        u.email?.toLowerCase().includes(searchQuery.toLowerCase()),
+        (teamFilter === "all" || (u.team || "default") === teamFilter) &&
+        (u.username?.toLowerCase().includes(query) ||
+          u.email?.toLowerCase().includes(query)),
     );
-  }, [users, searchQuery]);
+    const direction = sort.dir === "asc" ? 1 : -1;
+    return [...filtered].sort((a, b) => {
+      const left = String(
+        (sort.key === "team" ? a.team || "default" : a[sort.key]) || "",
+      ).toLowerCase();
+      const right = String(
+        (sort.key === "team" ? b.team || "default" : b[sort.key]) || "",
+      ).toLowerCase();
+      return left.localeCompare(right) * direction;
+    });
+  }, [users, searchQuery, teamFilter, sort]);
+
+  const teamOptions = useMemo(
+    () => Array.from(new Set(users.map((u) => u.team || "default"))).sort(),
+    [users],
+  );
+
+  const toggleSort = (key: SortKey) =>
+    setSort((prev) =>
+      prev.key === key
+        ? { key, dir: prev.dir === "asc" ? "desc" : "asc" }
+        : { key, dir: "asc" },
+    );
+
+  const sortMark = (key: SortKey) =>
+    sort.key === key ? (sort.dir === "asc" ? " ▲" : " ▼") : "";
 
   return (
     <div className="flex flex-col h-full bg-cloudo-dark text-cloudo-text font-mono selection:bg-cloudo-accent/30">
@@ -231,6 +265,23 @@ export default function UsersPage() {
               </button>
             )}
           </div>
+          <div className="flex items-center gap-2">
+            <span className="text-[10px] font-black text-cloudo-muted uppercase tracking-widest">
+              Team
+            </span>
+            <select
+              value={teamFilter}
+              onChange={(e) => setTeamFilter(e.target.value)}
+              className="bg-cloudo-dark border border-cloudo-border text-cloudo-text text-[10px] font-black px-2 h-10 outline-none focus:border-cloudo-accent/50 transition-colors cursor-pointer uppercase"
+            >
+              <option value="all">All teams</option>
+              {teamOptions.map((team) => (
+                <option key={team} value={team}>
+                  {team}
+                </option>
+              ))}
+            </select>
+          </div>
           {!isViewer && currentUser?.role === "ADMIN" && (
             <button
               onClick={() => setModalMode("create")}
@@ -253,20 +304,32 @@ export default function UsersPage() {
             <table className="w-full text-left border-collapse text-sm">
               <thead>
                 <tr className="border-b border-cloudo-border bg-cloudo-accent/10">
-                  <th className="px-8 py-5 font-black text-cloudo-muted uppercase tracking-[0.3em] text-[11px]">
-                    Identity
+                  <th
+                    onClick={() => toggleSort("username")}
+                    className="px-8 py-5 font-black text-cloudo-muted uppercase tracking-[0.3em] text-[11px] cursor-pointer select-none hover:text-cloudo-text"
+                  >
+                    Identity{sortMark("username")}
                   </th>
-                  <th className="px-8 py-5 font-black text-cloudo-muted uppercase tracking-[0.3em] text-[11px]">
-                    Email Endpoint
+                  <th
+                    onClick={() => toggleSort("email")}
+                    className="px-8 py-5 font-black text-cloudo-muted uppercase tracking-[0.3em] text-[11px] cursor-pointer select-none hover:text-cloudo-text"
+                  >
+                    Email Endpoint{sortMark("email")}
                   </th>
-                  <th className="px-8 py-5 font-black text-cloudo-muted uppercase tracking-[0.3em] text-[11px]">
-                    System Role
+                  <th
+                    onClick={() => toggleSort("role")}
+                    className="px-8 py-5 font-black text-cloudo-muted uppercase tracking-[0.3em] text-[11px] cursor-pointer select-none hover:text-cloudo-text"
+                  >
+                    System Role{sortMark("role")}
                   </th>
                   <th className="px-8 py-5 font-black text-cloudo-muted uppercase tracking-[0.3em] text-[11px]">
                     Provider
                   </th>
-                  <th className="px-8 py-5 font-black text-cloudo-muted uppercase tracking-[0.3em] text-[11px]">
-                    Team
+                  <th
+                    onClick={() => toggleSort("team")}
+                    className="px-8 py-5 font-black text-cloudo-muted uppercase tracking-[0.3em] text-[11px] cursor-pointer select-none hover:text-cloudo-text"
+                  >
+                    Team{sortMark("team")}
                   </th>
                   <th className="px-8 py-5 font-black text-cloudo-muted uppercase tracking-[0.3em] text-right text-[11px]">
                     Actions
