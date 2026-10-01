@@ -60,7 +60,9 @@ export default function SchedulesPage() {
   );
   const [notifications, setNotifications] = useState<Notification[]>([]);
   const [togglingId, setTogglingId] = useState<string | null>(null);
-  const [user, setUser] = useState<{ role: string } | null>(null);
+  const [user, setUser] = useState<{ role: string; team?: string } | null>(
+    null,
+  );
   const [codeSourceSelector, setCodeSourceSelector] = useState<
     "parsed" | "source"
   >("parsed");
@@ -387,6 +389,9 @@ export default function SchedulesPage() {
                         const isTerraformSchedule =
                           s.locked === true ||
                           (s.managed_by || "").toLowerCase() === "terraform";
+                        const canModify =
+                          user?.role === "ADMIN" ||
+                          (s.team || "default") === (user?.team || "default");
                         return (
                           <tr
                             key={s.id}
@@ -519,8 +524,9 @@ export default function SchedulesPage() {
                                       ? "opacity-50 cursor-not-allowed"
                                       : ""
                                   } ${
-                                    user?.role !== "ADMIN" &&
-                                    user?.role !== "OPERATOR"
+                                    !canModify ||
+                                    (user?.role !== "ADMIN" &&
+                                      user?.role !== "OPERATOR")
                                       ? "hidden"
                                       : ""
                                   }`}
@@ -549,8 +555,9 @@ export default function SchedulesPage() {
                                       ? "opacity-50 cursor-not-allowed hover:bg-cloudo-accent/10 hover:text-cloudo-err"
                                       : ""
                                   } ${
-                                    user?.role !== "ADMIN" &&
-                                    user?.role !== "OPERATOR"
+                                    !canModify ||
+                                    (user?.role !== "ADMIN" &&
+                                      user?.role !== "OPERATOR")
                                       ? "hidden"
                                       : ""
                                   }`}

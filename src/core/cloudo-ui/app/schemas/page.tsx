@@ -112,7 +112,9 @@ export default function SchemasPage() {
   const [executingId, setExecutingId] = useState<string | null>(null);
   const [togglingId, setTogglingId] = useState<string | null>(null);
   const [notifications, setNotifications] = useState<Notification[]>([]);
-  const [user, setUser] = useState<{ role: string } | null>(null);
+  const [user, setUser] = useState<{ role: string; team?: string } | null>(
+    null,
+  );
 
   const [runbookContent, setRunbookContent] = useState<string | null>(null);
   const [isRunbookModalOpen, setIsRunbookModalOpen] = useState(false);
@@ -620,6 +622,7 @@ export default function SchemasPage() {
                   schema={schema}
                   isViewer={isViewer}
                   userRole={user?.role}
+                  userTeam={user?.team}
                   copiedId={copiedId}
                   confirmRunId={confirmRunId}
                   executingId={executingId}
@@ -641,6 +644,7 @@ export default function SchemasPage() {
               schemas={paginatedSchemas}
               isViewer={isViewer}
               userRole={user?.role}
+              userTeam={user?.team}
               copiedId={copiedId}
               confirmRunId={confirmRunId}
               executingId={executingId}

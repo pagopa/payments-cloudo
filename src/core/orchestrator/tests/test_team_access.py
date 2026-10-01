@@ -166,3 +166,17 @@ def test_user_row_key_is_case_insensitive_and_keeps_legacy_rows():
         function_app._resolve_user_row_key(_FakeUsersTable(["Fabio"]), "Fabio")
         == "Fabio"
     )
+
+
+def test_only_admin_or_owning_team_can_modify_entities():
+    default_entity = {"team": "default"}
+    infra_entity = {"team": "infra"}
+    admin = {"role": "ADMIN", "team": "core"}
+    infra_op = {"role": "OPERATOR", "team": "infra"}
+
+    assert function_app._can_modify_entity(default_entity, admin)
+    assert function_app._can_modify_entity(infra_entity, infra_op)
+    assert not function_app._can_modify_entity(default_entity, infra_op)
+    assert not function_app._can_modify_entity({"team": "core"}, infra_op)
+    err = function_app._requested_write_team({}, infra_op, default_entity)[1]
+    assert err == "Resource belongs to another team"

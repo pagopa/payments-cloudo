@@ -21,6 +21,7 @@ interface SchemaTableProps {
   schemas: Schema[];
   isViewer: boolean;
   userRole?: string;
+  userTeam?: string;
   copiedId: string | null;
   confirmRunId: string | null;
   executingId: string | null;
@@ -38,6 +39,7 @@ export function SchemaTable({
   schemas,
   isViewer,
   userRole,
+  userTeam,
   copiedId,
   confirmRunId,
   executingId,
@@ -157,8 +159,12 @@ export function SchemaTable({
                 ?.split(",")
                 .map((t) => t.trim().toLowerCase())
                 .includes("terraform");
+              const ownsSchema =
+                userRole === "ADMIN" ||
+                (schema.team || "default") === (userTeam || "default");
               const canEdit =
                 !isViewer &&
+                ownsSchema &&
                 (userRole === "ADMIN" || userRole === "OPERATOR") &&
                 !isTf;
 
@@ -171,7 +177,7 @@ export function SchemaTable({
                     <div className="flex gap-1.5 items-center">
                       <button
                         onClick={() => onToggle && onToggle(schema)}
-                        disabled={togglingId === schema.id}
+                        disabled={togglingId === schema.id || !ownsSchema}
                         className={`p-1 border transition-all ${
                           schema.enabled !== false
                             ? "bg-cloudo-ok/5 border-cloudo-ok/30 text-cloudo-ok hover:border-cloudo-ok/50"
@@ -180,6 +186,8 @@ export function SchemaTable({
                           togglingId === schema.id
                             ? "opacity-50 cursor-wait"
                             : ""
+                        } ${
+                          !ownsSchema ? "cursor-not-allowed opacity-60" : ""
                         }`}
                         title={
                           schema.enabled !== false
@@ -345,6 +353,7 @@ export function SchemaTable({
                         )}
                       </button>
                       {!isViewer &&
+                        ownsSchema &&
                         (userRole === "ADMIN" || userRole === "OPERATOR") && (
                           <button
                             onClick={() => onDelete(schema)}

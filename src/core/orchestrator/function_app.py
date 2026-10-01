@@ -445,6 +445,11 @@ def _team_approval_targets(
         return slack_token, slack_channel, jsm_token
 
 
+def _can_modify_entity(entity: dict, session: Optional[dict]) -> bool:
+    """Admins can change anything; others only resources owned by their own team."""
+    return _is_admin(session) or _entity_team(entity) == _session_team(session)
+
+
 def _requested_write_team(
     body: dict, session: Optional[dict], existing: Optional[dict] = None
 ) -> tuple[Optional[str], Optional[str]]:
@@ -456,7 +461,7 @@ def _requested_write_team(
         if requested not in {DEFAULT_TEAM, own_team}:
             return None, "Only administrators can assign resources to another team"
         requested = _entity_team(existing) if existing else own_team
-        if requested not in {DEFAULT_TEAM, own_team}:
+        if requested != own_team:
             return None, "Resource belongs to another team"
     if requested != DEFAULT_TEAM:
         try:
@@ -5212,15 +5217,7 @@ def schedules_management(req: func.HttpRequest) -> func.HttpResponse:
             except Exception:
                 existing = None
 
-            if (
-                existing
-                and _entity_team(existing)
-                not in {
-                    DEFAULT_TEAM,
-                    _session_team(session),
-                }
-                and not _can_view_all_teams(req, session)
-            ):
+            if existing and not _can_modify_entity(existing, session):
                 return func.HttpResponse(
                     json.dumps({"error": "Schedule belongs to another team"}),
                     status_code=403,
@@ -5355,10 +5352,7 @@ def schedules_management(req: func.HttpRequest) -> func.HttpResponse:
                     headers={"Access-Control-Allow-Origin": "*"},
                 )
 
-            if _entity_team(existing) not in {
-                DEFAULT_TEAM,
-                _session_team(session),
-            } and not _can_view_all_teams(req, session):
+            if not _can_modify_entity(existing, session):
                 return func.HttpResponse(
                     json.dumps({"error": "Schedule belongs to another team"}),
                     status_code=403,
@@ -5575,6 +5569,18 @@ def runbook_schemas(
                 )
 
             schema_id = body.get("id", str(uuid.uuid4()))
+            try:
+                existing_schema = _get_table_client(TABLE_SCHEMAS).get_entity(
+                    partition_key=body.get("PartitionKey", "RunbookSchema"),
+                    row_key=schema_id,
+                )
+            except Exception:
+                existing_schema = None
+            if existing_schema and not _can_modify_entity(existing_schema, session):
+                return func.HttpResponse(
+                    body=json.dumps({"error": "Schema belongs to another team"}),
+                    status_code=403,
+                )
             team, team_error = _requested_write_team(body, session)
             if team_error:
                 return func.HttpResponse(
@@ -5650,15 +5656,7 @@ def runbook_schemas(
                 )
             except Exception:
                 existing_entity = None
-            if (
-                existing_entity
-                and _entity_team(existing_entity)
-                not in {
-                    DEFAULT_TEAM,
-                    _session_team(session),
-                }
-                and not _can_view_all_teams(req, session)
-            ):
+            if existing_entity and not _can_modify_entity(existing_entity, session):
                 return func.HttpResponse(
                     body=json.dumps({"error": "Schema belongs to another team"}),
                     status_code=403,
@@ -5739,15 +5737,7 @@ def runbook_schemas(
                 )
             except Exception:
                 existing_entity = None
-            if (
-                existing_entity
-                and _entity_team(existing_entity)
-                not in {
-                    DEFAULT_TEAM,
-                    _session_team(session),
-                }
-                and not _can_view_all_teams(req, session)
-            ):
+            if existing_entity and not _can_modify_entity(existing_entity, session):
                 return func.HttpResponse(
                     body=json.dumps({"error": "Schema belongs to another team"}),
                     status_code=403,

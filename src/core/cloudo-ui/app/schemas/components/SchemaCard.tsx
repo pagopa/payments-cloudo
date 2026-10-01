@@ -20,6 +20,7 @@ interface SchemaCardProps {
   schema: Schema;
   isViewer: boolean;
   userRole?: string;
+  userTeam?: string;
   copiedId: string | null;
   confirmRunId: string | null;
   executingId: string | null;
@@ -37,6 +38,7 @@ export function SchemaCard({
   schema,
   isViewer,
   userRole,
+  userTeam,
   copiedId,
   confirmRunId,
   executingId,
@@ -54,8 +56,14 @@ export function SchemaCard({
     .map((t) => t.trim().toLowerCase())
     .includes("terraform");
 
+  const ownsSchema =
+    userRole === "ADMIN" ||
+    (schema.team || "default") === (userTeam || "default");
   const canEdit =
-    !isViewer && (userRole === "ADMIN" || userRole === "OPERATOR") && !isTf;
+    !isViewer &&
+    ownsSchema &&
+    (userRole === "ADMIN" || userRole === "OPERATOR") &&
+    !isTf;
 
   return (
     <div className="group relative flex flex-col bg-cloudo-panel border border-cloudo-border hover:border-cloudo-accent/40 transition-all duration-300 overflow-hidden">
@@ -247,7 +255,8 @@ export function SchemaCard({
                     ? "bg-cloudo-accent/10 border-cloudo-border text-cloudo-muted hover:border-cloudo-muted/40"
                     : "bg-cloudo-accent/10 border-cloudo-border text-cloudo-ok hover:border-white/20"
                 } ${togglingId === schema.id ? "opacity-50 cursor-wait" : ""} ${
-                  userRole !== "ADMIN" && userRole !== "OPERATOR"
+                  !ownsSchema ||
+                  (userRole !== "ADMIN" && userRole !== "OPERATOR")
                     ? "hidden"
                     : ""
                 }`}
@@ -308,20 +317,22 @@ export function SchemaCard({
             )}
           </button>
 
-          {!isViewer && (userRole === "ADMIN" || userRole === "OPERATOR") && (
-            <button
-              onClick={() => onDelete(schema)}
-              disabled={isTf}
-              className={`p-2 border transition-all ${
-                isTf
-                  ? "opacity-20 cursor-not-allowed bg-cloudo-panel-2 border-cloudo-border"
-                  : "border-cloudo-border text-cloudo-err hover:bg-cloudo-err hover:text-white"
-              }`}
-              title={isTf ? "Protected Asset" : "Delete Schema"}
-            >
-              <HiOutlineTrash className="w-4 h-4" />
-            </button>
-          )}
+          {!isViewer &&
+            ownsSchema &&
+            (userRole === "ADMIN" || userRole === "OPERATOR") && (
+              <button
+                onClick={() => onDelete(schema)}
+                disabled={isTf}
+                className={`p-2 border transition-all ${
+                  isTf
+                    ? "opacity-20 cursor-not-allowed bg-cloudo-panel-2 border-cloudo-border"
+                    : "border-cloudo-border text-cloudo-err hover:bg-cloudo-err hover:text-white"
+                }`}
+                title={isTf ? "Protected Asset" : "Delete Schema"}
+              >
+                <HiOutlineTrash className="w-4 h-4" />
+              </button>
+            )}
         </div>
       </div>
 

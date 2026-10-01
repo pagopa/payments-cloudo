@@ -29,7 +29,9 @@ export function SchemaConfigPage({ schemaId }: SchemaConfigPageProps) {
   const router = useRouter();
   const isCreate = !schemaId;
 
-  const [user, setUser] = useState<{ role: string } | null>(null);
+  const [user, setUser] = useState<{ role: string; team?: string } | null>(
+    null,
+  );
   const [schema, setSchema] = useState<Schema | null>(null);
   const [availableRunbooks, setAvailableRunbooks] = useState<string[]>([]);
   const [availableWorkers, setAvailableWorkers] = useState<string[]>([]);
@@ -133,8 +135,13 @@ export function SchemaConfigPage({ schemaId }: SchemaConfigPageProps) {
   }, [isCreate, schemaId]);
 
   const isViewer = user?.role === "VIEWER";
+  const ownsSchema =
+    isCreate ||
+    user?.role === "ADMIN" ||
+    (schema?.team || "default") === (user?.team || "default");
   const canEdit =
     !isViewer &&
+    ownsSchema &&
     (user?.role === "ADMIN" || user?.role === "OPERATOR") &&
     !isTerraformSchema(schema?.tags);
 
