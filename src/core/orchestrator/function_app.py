@@ -416,6 +416,35 @@ def _filter_entities_by_team(
     return [entity for entity in entities if _entity_team(entity) in allowed]
 
 
+def _team_approval_targets(
+    team: Any, slack_token: Any, slack_channel: Any, jsm_token: Any
+) -> tuple[Any, Any, Any]:
+    """Prefer the resource team's own Slack/JSM config for approval requests."""
+    team = _normalize_team(team)
+    if team == DEFAULT_TEAM:
+        return slack_token, slack_channel, jsm_token
+    try:
+        from smart_routing import (
+            get_setting,
+            load_routing_config,
+            resolve_jsm_apikey,
+            resolve_slack_token,
+        )
+
+        team_cfg = (load_routing_config().get("teams") or {}).get(team) or {}
+        channel = (team_cfg.get("slack") or {}).get("channel") or get_setting(
+            f"SLACK_CHANNEL_{team.upper().replace('-', '_')}"
+        )
+        return (
+            resolve_slack_token(team) or slack_token,
+            channel or slack_channel,
+            resolve_jsm_apikey(team) or jsm_token,
+        )
+    except Exception as e:
+        logging.warning(f"Team approval targets unavailable for '{team}': {e}")
+        return slack_token, slack_channel, jsm_token
+
+
 def _requested_write_team(
     body: dict, session: Optional[dict], existing: Optional[dict] = None
 ) -> tuple[Optional[str], Optional[str]]:
@@ -449,7 +478,44 @@ def _rows_from_binding(rows: Union[str, list[dict], None]) -> Optional[list[dict
     return parsed if isinstance(parsed, list) else None
 
 
-def log_audit(user: str, action: str, target: str, details: str = ""):
+_user_team_cache: dict[str, tuple[str, float]] = {}
+
+
+def _resolve_user_row_key(table_client, username: Any) -> str:
+    """Login lowercases usernames: reuse an existing row (even mixed-case), else lowercase."""
+    raw = str(username or "").strip()
+    for candidate in dict.fromkeys([raw.lower(), raw]):
+        try:
+            table_client.get_entity(partition_key="Operator", row_key=candidate)
+            return candidate
+        except Exception:
+            continue
+    return raw.lower()
+
+
+def _team_of_user(username: Any) -> str:
+    """Team of an operator (API users are stored as `<name>-api`); default if unknown."""
+    name = str(username or "").strip()
+    if name.endswith("-api"):
+        name = name[: -len("-api")]
+    if not name:
+        return DEFAULT_TEAM
+    cached = _user_team_cache.get(name)
+    if cached and cached[1] > time.time():
+        return cached[0]
+    team = DEFAULT_TEAM
+    try:
+        entity = _get_table_client(TABLE_USERS).get_entity(
+            partition_key="Operator", row_key=name
+        )
+        team = _entity_team(entity)
+    except Exception:
+        pass
+    _user_team_cache[name] = (team, time.time() + 60)
+    return team
+
+
+def log_audit(user: str, action: str, target: str, details: str = "", team: Any = None):
     """Log an action to the Audit table."""
     try:
         table_client = _get_table_client(TABLE_AUDIT)
@@ -463,6 +529,7 @@ def log_audit(user: str, action: str, target: str, details: str = ""):
             "action": action,
             "target": target,
             "details": details,
+            "team": _normalize_team(team) if team else _team_of_user(user),
         }
         table_client.create_entity(entity=entity)
     except Exception as e:
@@ -490,6 +557,7 @@ def _notify_slack_decision(
     approver: str,
     extra: str = "",
     routing_info: Optional[dict] = None,
+    team: Optional[str] = None,
 ) -> None:
     from escalation import send_jsm_alert, send_slack_execution
     from smart_routing import resolve_jsm_apikey
@@ -539,6 +607,10 @@ def _notify_slack_decision(
                     "fields": [
                         {"type": "mrkdwn", "text": f"*Schema:*\n`{schema_id}`"},
                         {"type": "mrkdwn", "text": f"*ExecId:*\n`{exec_id}`"},
+                        {
+                            "type": "mrkdwn",
+                            "text": f"*Team:*\n`{_normalize_team(team)}`",
+                        },
                     ],
                 },
                 *(
@@ -597,6 +669,7 @@ def _notify_slack_decision(
                     description=(
                         f"Execution request for {schema_id} has been {decision.upper()} by {approver}.\n\n"
                         f"ExecId: {exec_id}\n"
+                        f"Team: {_normalize_team(team)}\n"
                         f"Reason/Details: {extra or '-'}\n\n"
                         f"View Execution: {ui_url}"
                     ),
@@ -606,6 +679,7 @@ def _notify_slack_decision(
                     details={
                         "execId": exec_id,
                         "schemaId": schema_id,
+                        "team": _normalize_team(team),
                         "decision": decision,
                         "approver": approver,
                     },
@@ -1311,6 +1385,9 @@ def Trigger(
                 or routing_info.get("opsgenie_token")
                 or resolve_jsm_apikey(routing_info.get("team"))
             )
+            slack_token, slack_channel, jsm_token = _team_approval_targets(
+                schema.team, slack_token, slack_channel, jsm_token
+            )
             notification_warnings: list[str] = []
 
             # UI Base URL
@@ -1391,6 +1468,10 @@ def Trigger(
                                     },
                                     {
                                         "type": "mrkdwn",
+                                        "text": f"*Team:* `{schema.team}`",
+                                    },
+                                    {
+                                        "type": "mrkdwn",
                                         "text": f"*Initiator:* `{requester_username or 'SYSTEM'}`",
                                     },
                                     {
@@ -1464,6 +1545,7 @@ def Trigger(
                         f"Runbook: {schema.runbook or '-'}\n"
                         f"Worker: {schema.worker or 'unknown'}\n"
                         f"Group: {schema.group}\n"
+                        f"Team: {schema.team}\n"
                         f"Initiator: {requester_username or 'SYSTEM'}\n"
                         f"On Call: {schema.oncall}\n\n"
                         f"Full Context: {ui_url}"
@@ -1478,6 +1560,7 @@ def Trigger(
                         details={
                             "execId": exec_id,
                             "schemaId": schema.id,
+                            "team": schema.team,
                             "runbook": schema.runbook or "-",
                             "initiator": requester_username or "SYSTEM",
                         },
@@ -1639,6 +1722,7 @@ def Trigger(
                     "execId": exec_id,
                     "name": schema.name or "",
                     "id": schema.id,
+                    "team": schema.team,
                     "routing_info": routing_info,
                 }
                 decision = route_alert(ctx)
@@ -1670,6 +1754,10 @@ def Trigger(
                                     {
                                         "type": "mrkdwn",
                                         "text": f"*Group:*\n{schema.group}",
+                                    },
+                                    {
+                                        "type": "mrkdwn",
+                                        "text": f"*Team:*\n{schema.team}",
                                     },
                                     {
                                         "type": "mrkdwn",
@@ -1753,6 +1841,7 @@ def Trigger(
                             "Runbook": schema.runbook,
                             "Run_Args": schema.run_args,
                             "Group": schema.group,
+                            "Team": schema.team,
                             "OnCall": schema.oncall,
                             "MonitorCondition": monitor_condition,
                             "Severity": severity,
@@ -2109,6 +2198,7 @@ def approve(
                 "execId": execId,
                 "name": schema.name or "",
                 "id": schema.id,
+                "team": schema.team,
                 "routing_info": routing_info,
             }
             decision = route_alert(ctx)
@@ -2121,6 +2211,7 @@ def approve(
                 decision="approved",
                 approver=approver,
                 routing_info=routing_info,
+                team=resource_team,
             )
 
             # We still execute other actions via smart routing if any (excluding Slack)
@@ -2178,6 +2269,7 @@ def approve(
             approver,
             extra=f"*Error:* {str(e)}",
             routing_info=routing_info,
+            team=resource_team,
         )
         return func.HttpResponse(
             json.dumps({"error": str(e)}, ensure_ascii=False),
@@ -2381,6 +2473,7 @@ def reject(
         decision="rejected",
         approver=approver,
         routing_info=routing_info,
+        team=resource_team,
     )
 
     # smart routing notification (if routing module available)
@@ -2397,6 +2490,7 @@ def reject(
             "execId": execId,
             "name": schema.name or "",
             "id": schema.id,
+            "team": schema.team,
             "routing_info": routing_info,
         }
         decision = route_alert(ctx)
@@ -2587,6 +2681,7 @@ def _process_receiver_body(body: dict, log_table: func.Out[str]) -> None:
             "execId": exec_id,
             "name": body.get("name"),
             "id": body.get("id"),
+            "team": body.get("team") or resource_info.get("team"),
             "routing_info": routing_info,  # sempre dict qui
         }
         decision = route_alert(ctx)
@@ -2664,6 +2759,10 @@ def _process_receiver_body(body: dict, log_table: func.Out[str]) -> None:
                             {
                                 "type": "mrkdwn",
                                 "text": f"*Group:* `{body.get('group') or 'default'}`",
+                            },
+                            {
+                                "type": "mrkdwn",
+                                "text": f"*Team:* `{body.get('team') or 'default'}`",
                             },
                             {
                                 "type": "mrkdwn",
@@ -2745,6 +2844,7 @@ def _process_receiver_body(body: dict, log_table: func.Out[str]) -> None:
                     "Run_Args": body.get("run_args"),
                     "Worker": body.get("worker"),
                     "Group": body.get("group"),
+                    "Team": body.get("team") or "default",
                     "OnCall": body.get("oncall"),
                     "MonitorCondition": body.get("monitor_condition"),
                     "Severity": body.get("severity"),
@@ -2846,7 +2946,7 @@ def _enqueue_ai_agent_analysis(
             if logs_raw
             else "",
         }
-        _write_ai_analysis_placeholder(body.get("exec_id"))
+        _write_ai_analysis_placeholder(body.get("exec_id"), body.get("team"))
         ai_queue.send_message(json.dumps(ai_payload, ensure_ascii=False))
     except Exception as e:
         logging.error(
@@ -2854,7 +2954,7 @@ def _enqueue_ai_agent_analysis(
         )
 
 
-def _write_ai_analysis_placeholder(exec_id: str) -> None:
+def _write_ai_analysis_placeholder(exec_id: str, team: Any = None) -> None:
     """Upsert a 'processing' placeholder as soon as an execution is enqueued
     for AI triage, so the UI can immediately show an in-progress state
     instead of "not found" while the Agent service works through the queue.
@@ -2868,6 +2968,7 @@ def _write_ai_analysis_placeholder(exec_id: str) -> None:
             entity={
                 "PartitionKey": "AiAnalysis",
                 "RowKey": str(exec_id),
+                "team": _normalize_team(team),
                 "status": "processing",
                 "updated_at": datetime.now(timezone.utc).isoformat(),
             }
@@ -3345,6 +3446,13 @@ def get_ai_analysis(req: func.HttpRequest) -> func.HttpResponse:
             )
 
         analysis_raw = entity.get("analysis")
+        if not _filter_entities_by_team([dict(entity)], req, session):
+            return func.HttpResponse(
+                json.dumps({"error": "Analysis belongs to another team"}),
+                status_code=403,
+                mimetype="application/json",
+                headers={"Access-Control-Allow-Origin": "*"},
+            )
         try:
             analysis = json.loads(analysis_raw) if analysis_raw else None
         except (TypeError, ValueError):
@@ -3748,7 +3856,12 @@ def list_workers(req: func.HttpRequest, workers: str) -> func.HttpResponse:
 
     try:
         # Parse binding result (can be string or list depending on extension version)
-        data = _filter_entities_by_team(_rows_from_binding(workers) or [], req, session)
+        # Monitoring views (?for=monitoring) show every node; other callers stay team-scoped.
+        rows = _rows_from_binding(workers) or []
+        if req.params.get("for") == "monitoring":
+            data = [{**row, "team": _entity_team(row)} for row in rows]
+        else:
+            data = _filter_entities_by_team(rows, req, session)
 
         return func.HttpResponse(
             json.dumps(data, ensure_ascii=False),
@@ -3815,8 +3928,28 @@ def get_worker_processes(req: func.HttpRequest) -> func.HttpResponse:
             headers={"x-cloudo-key": os.getenv("CLOUDO_SECRET_KEY")},
             timeout=5,
         )
+        body_text = resp.text
+        if resp.status_code == 200:
+            try:
+                parsed_body = resp.json()
+                runs = (
+                    parsed_body
+                    if isinstance(parsed_body, list)
+                    else (parsed_body.get("runs") or parsed_body.get("processes") or [])
+                )
+                can_act = session.get("role") != "VIEWER"
+                for run in runs:
+                    if isinstance(run, dict):
+                        run_team = _normalize_team(run.get("team"))
+                        run["team"] = run_team
+                        run["can_stop"] = can_act and (
+                            _is_admin(session) or run_team == _session_team(session)
+                        )
+                body_text = json.dumps(parsed_body, ensure_ascii=False)
+            except Exception as e:
+                logging.warning(f"Could not annotate worker processes: {e}")
         return func.HttpResponse(
-            resp.text,
+            body_text,
             status_code=resp.status_code,
             mimetype="application/json",
             headers={
@@ -3940,7 +4073,8 @@ def auth_login(req: func.HttpRequest) -> func.HttpResponse:
         table_client = _get_table_client(TABLE_USERS)
 
         user_entity = table_client.get_entity(
-            partition_key="Operator", row_key=username
+            partition_key="Operator",
+            row_key=_resolve_user_row_key(table_client, body.get("username")),
         )
 
         import bcrypt
@@ -4355,7 +4489,8 @@ def teams_management(req: func.HttpRequest) -> func.HttpResponse:
             entities = list(
                 table_client.query_entities(query_filter="PartitionKey eq 'Team'")
             )
-            if _is_admin(session):
+            # ?for=routing lists every team so rules can notify other teams.
+            if _is_admin(session) or req.params.get("for") == "routing":
                 visible = entities
             else:
                 visible = [
@@ -4543,6 +4678,7 @@ def users_management(req: func.HttpRequest) -> func.HttpResponse:
             username = body.get("username")
             if not username:
                 return func.HttpResponse("Missing username", status_code=400)
+            username = _resolve_user_row_key(table_client, username)
 
             # Check if user exists to preserve created_at
             try:
@@ -4637,6 +4773,7 @@ def users_management(req: func.HttpRequest) -> func.HttpResponse:
             username = req.params.get("username")
             if not username:
                 return func.HttpResponse("Missing username", status_code=400)
+            username = _resolve_user_row_key(table_client, username)
             existing_user = table_client.get_entity(
                 partition_key="Operator", row_key=username
             )
@@ -4671,6 +4808,77 @@ def users_management(req: func.HttpRequest) -> func.HttpResponse:
             )
 
 
+def _build_operator_settings_update(
+    table_client, body: dict, team: str, known_teams: set[str]
+) -> dict[str, str]:
+    """Reduce an operator settings POST to what their own team may change."""
+    suffix = team.upper().replace("-", "_")
+    allowed = {
+        f"SLACK_TOKEN_{suffix}",
+        f"SLACK_CHANNEL_{suffix}",
+        f"JSM_API_KEY_{suffix}",
+        f"JSM_TEAM_{suffix}",
+    }
+    updates = {k: str(v) for k, v in body.items() if k in allowed}
+    if "ROUTING_RULES" not in body:
+        return updates
+
+    submitted = json.loads(body["ROUTING_RULES"] or "{}")
+    try:
+        stored = json.loads(
+            table_client.get_entity(
+                partition_key="GlobalConfig", row_key="ROUTING_RULES"
+            ).get("value")
+            or "{}"
+        )
+    except Exception:
+        stored = {}
+
+    stored_teams = stored.setdefault("teams", {})
+    stored_team = dict(stored_teams.get(team) or {})
+    submitted_team = (submitted.get("teams") or {}).get(team) or {}
+    for section, field in (("slack", "channel"), ("jsm", "team")):
+        value = (submitted_team.get(section) or {}).get(field)
+        if value is not None:
+            stored_team[section] = {
+                **(stored_team.get(section) or {}),
+                field: str(value).strip(),
+            }
+    stored_teams[team] = stored_team
+    channel = (stored_team.get("slack") or {}).get("channel")
+    if channel is not None:
+        updates[f"SLACK_CHANNEL_{suffix}"] = channel
+
+    own_rules = []
+    for rule in submitted.get("rules") or []:
+        if not isinstance(rule, dict):
+            continue
+        then = []
+        for action in rule.get("then") or []:
+            if not isinstance(action, dict) or action.get("type") not in (
+                "slack",
+                "jsm",
+            ):
+                continue
+            # Targets may notify other known teams; no inline secrets.
+            target_team = _normalize_team(action.get("team"))
+            entry = {
+                "type": action["type"],
+                "team": target_team if target_team in known_teams else team,
+            }
+            if action["type"] == "slack" and action.get("channel"):
+                entry["channel"] = str(action["channel"]).strip()
+            then.append(entry)
+        own_rules.append({"team": team, "when": rule.get("when") or {}, "then": then})
+    stored["rules"] = [
+        rule
+        for rule in stored.get("rules") or []
+        if _normalize_team(rule.get("team")) != team
+    ] + own_rules
+    updates["ROUTING_RULES"] = json.dumps(stored, ensure_ascii=False)
+    return updates
+
+
 @app.route(
     route="settings",
     methods=[func.HttpMethod.GET, func.HttpMethod.POST, func.HttpMethod.OPTIONS],
@@ -4697,15 +4905,18 @@ def settings_management(req: func.HttpRequest) -> func.HttpResponse:
             headers={"Access-Control-Allow-Origin": "*"},
         )
 
+    operator_team = _session_team(session)
     if req.method == "POST" and session.get("role") != "ADMIN":
-        return func.HttpResponse(
-            json.dumps(
-                {"error": "Unauthorized: Admin role required to modify settings"}
-            ),
-            status_code=403,
-            mimetype="application/json",
-            headers={"Access-Control-Allow-Origin": "*"},
-        )
+        # Operators may only edit the routing of their own non-default team.
+        if session.get("role") != "OPERATOR" or operator_team == "default":
+            return func.HttpResponse(
+                json.dumps(
+                    {"error": "Unauthorized: Admin role required to modify settings"}
+                ),
+                status_code=403,
+                mimetype="application/json",
+                headers={"Access-Control-Allow-Origin": "*"},
+            )
 
     if req.method == "GET":
         try:
@@ -4713,11 +4924,37 @@ def settings_management(req: func.HttpRequest) -> func.HttpResponse:
                 query_filter="PartitionKey eq 'GlobalConfig'"
             )
             is_admin = session.get("role") == "ADMIN"
-            settings = {
-                e["RowKey"]: e["value"]
-                for e in entities
-                if is_admin or not _is_sensitive_setting_key(e["RowKey"])
-            }
+            current_team = _session_team(session)
+            settings: dict[str, str] = {}
+            for entity in entities:
+                key = str(entity.get("RowKey") or "")
+                if is_admin:
+                    settings[key] = entity.get("value", "")
+                    continue
+                if key == "ROUTING_RULES":
+                    try:
+                        routing_config = json.loads(entity.get("value") or "{}")
+                        routing_config["teams"] = {
+                            current_team: (routing_config.get("teams") or {}).get(
+                                current_team, {}
+                            )
+                        }
+                        routing_config["rules"] = [
+                            rule
+                            for rule in routing_config.get("rules", [])
+                            if _normalize_team(rule.get("team")) == current_team
+                        ]
+                        settings[key] = json.dumps(routing_config, ensure_ascii=False)
+                    except Exception:
+                        settings[key] = json.dumps({"teams": {}, "rules": []})
+                    continue
+                normalized_key = key.upper()
+                allowed_prefixes = {
+                    f"SLACK_CHANNEL_{current_team.upper().replace('-', '_')}",
+                    f"JSM_TEAM_{current_team.upper().replace('-', '_')}",
+                }
+                if normalized_key in allowed_prefixes:
+                    settings[key] = entity.get("value", "")
             return func.HttpResponse(
                 json.dumps(settings),
                 status_code=200,
@@ -4734,6 +4971,21 @@ def settings_management(req: func.HttpRequest) -> func.HttpResponse:
     if req.method == "POST":
         try:
             body = req.get_json()
+            if session.get("role") != "ADMIN":
+                known_teams = {DEFAULT_TEAM, operator_team}
+                try:
+                    known_teams.update(
+                        _normalize_team(entity.get("RowKey"))
+                        for entity in _get_table_client(TABLE_TEAMS).query_entities(
+                            query_filter="PartitionKey eq 'Team'"
+                        )
+                        if _as_bool(entity.get("enabled"), default=True)
+                    )
+                except Exception as e:
+                    logging.warning(f"Could not load teams for routing update: {e}")
+                body = _build_operator_settings_update(
+                    table_client, body, operator_team, known_teams
+                )
             for key, value in body.items():
                 entity = {
                     "PartitionKey": "GlobalConfig",
@@ -4800,17 +5052,35 @@ def get_audit_logs(req: func.HttpRequest) -> func.HttpResponse:
             days = 30
 
         logs = []
+        # Legacy rows have no team: fall back to the operator's current team.
+        user_teams = {
+            str(u.get("RowKey") or ""): _entity_team(u)
+            for u in _get_table_client(TABLE_USERS).query_entities(
+                query_filter="PartitionKey eq 'Operator'"
+            )
+        }
+        see_all = _can_view_all_teams(req, session)
+        allowed_teams = {DEFAULT_TEAM, _session_team(session)}
         now = datetime.now(timezone.utc)
         for day_offset in range(days):
             pk = (now - timedelta(days=day_offset)).strftime("%Y%m%d")
             entities = table_client.query_entities(
                 query_filter=f"PartitionKey eq '{pk}'",
-                select=["timestamp", "operator", "action", "target", "details"],
+                select=["timestamp", "operator", "action", "target", "details", "team"],
             )
             for e in entities:
+                operator = str(e.get("operator") or "")
+                row_team = _normalize_team(
+                    e.get("team")
+                    or user_teams.get(operator.removesuffix("-api"))
+                    or DEFAULT_TEAM
+                )
+                if not see_all and row_team not in allowed_teams:
+                    continue
                 logs.append(
                     {
                         "timestamp": e.get("timestamp"),
+                        "team": row_team,
                         "operator": e.get("operator"),
                         "action": e.get("action"),
                         "target": e.get("target"),
@@ -5156,6 +5426,36 @@ def stop_worker_process(req: func.HttpRequest) -> func.HttpResponse:
         target_url = f"http://{worker}/api/processes/stop?exec_id={exec_id}"
 
     try:
+        if not _is_admin(session):
+            # Non-admins can only stop runs of their own team.
+            list_url = target_url.split("/processes/stop")[0] + "/processes"
+            listing = requests.get(
+                list_url,
+                headers={"x-cloudo-key": os.getenv("CLOUDO_SECRET_KEY")},
+                timeout=5,
+            )
+            listing.raise_for_status()
+            payload = listing.json()
+            runs = (
+                payload
+                if isinstance(payload, list)
+                else (payload.get("runs") or payload.get("processes") or [])
+            )
+            run = next(
+                (
+                    r
+                    for r in runs
+                    if isinstance(r, dict) and str(r.get("exec_id")) == str(exec_id)
+                ),
+                None,
+            )
+            if run and _normalize_team(run.get("team")) != _session_team(session):
+                return func.HttpResponse(
+                    json.dumps({"error": "Execution belongs to another team"}),
+                    status_code=403,
+                    mimetype="application/json",
+                    headers={"Access-Control-Allow-Origin": "*"},
+                )
         resp = requests.delete(
             target_url,
             headers={"x-cloudo-key": os.getenv("CLOUDO_SECRET_KEY")},

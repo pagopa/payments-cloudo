@@ -1,3 +1,5 @@
+import json
+
 import azure.functions as func
 import function_app
 
@@ -53,3 +55,114 @@ def test_non_admin_cannot_assign_another_team():
 def test_team_is_normalized_for_legacy_entities():
     assert function_app._entity_team({}) == "default"
     assert function_app._entity_team({"Team": "Payments"}) == "payments"
+
+
+class _FakeSettingsTable:
+    def __init__(self, stored):
+        self._stored = stored
+
+    def get_entity(self, partition_key, row_key):
+        return {"value": json.dumps(self._stored)}
+
+
+def test_operator_settings_update_is_scoped_to_own_team():
+    stored = {
+        "defaults": {"slack": {"channel": "#default"}},
+        "teams": {"other": {"slack": {"channel": "#other"}}},
+        "rules": [
+            {
+                "team": "other",
+                "when": {"any": "*"},
+                "then": [{"type": "jsm", "team": "other"}],
+            },
+            {"team": "ops", "when": {}, "then": []},
+        ],
+    }
+    body = {
+        "SLACK_TOKEN_DEFAULT": "stolen",
+        "SLACK_TOKEN_OPS": "xoxb-ops",
+        "ROUTING_RULES": json.dumps(
+            {
+                "defaults": {"slack": {"channel": "#hijack"}},
+                "teams": {
+                    "other": {"slack": {"channel": "#hijack"}},
+                    "ops": {"slack": {"channel": "#ops-alerts", "token": "x"}},
+                },
+                "rules": [
+                    {
+                        "team": "other",
+                        "when": {"statusIn": ["failed"]},
+                        "then": [
+                            {
+                                "type": "slack",
+                                "team": "other",
+                                "channel": "#ops",
+                                "token": "t",
+                            }
+                        ],
+                    }
+                ],
+            }
+        ),
+    }
+
+    updates = function_app._build_operator_settings_update(
+        _FakeSettingsTable(stored), body, "ops", {"default", "ops", "other"}
+    )
+
+    assert "SLACK_TOKEN_DEFAULT" not in updates
+    assert updates["SLACK_TOKEN_OPS"] == "xoxb-ops"
+    assert updates["SLACK_CHANNEL_OPS"] == "#ops-alerts"
+    result = json.loads(updates["ROUTING_RULES"])
+    assert result["defaults"]["slack"]["channel"] == "#default"
+    assert result["teams"]["other"]["slack"]["channel"] == "#other"
+    assert result["teams"]["ops"]["slack"] == {"channel": "#ops-alerts"}
+    assert [r["team"] for r in result["rules"]] == ["other", "ops"]
+    assert result["rules"][1]["then"] == [
+        {"type": "slack", "team": "other", "channel": "#ops"}
+    ]
+
+
+def test_team_approval_targets_prefer_team_config(monkeypatch):
+    import smart_routing
+
+    monkeypatch.setattr(
+        smart_routing,
+        "load_routing_config",
+        lambda: {"teams": {"ops": {"slack": {"channel": "#ops-approvals"}}}},
+    )
+    monkeypatch.setattr(smart_routing, "resolve_slack_token", lambda team: "tok-ops")
+    monkeypatch.setattr(smart_routing, "resolve_jsm_apikey", lambda team: "jsm-ops")
+
+    assert function_app._team_approval_targets("ops", "t", "#c", "j") == (
+        "tok-ops",
+        "#ops-approvals",
+        "jsm-ops",
+    )
+    assert function_app._team_approval_targets("default", "t", "#c", "j") == (
+        "t",
+        "#c",
+        "j",
+    )
+
+
+class _FakeUsersTable:
+    def __init__(self, keys):
+        self._keys = set(keys)
+
+    def get_entity(self, partition_key, row_key):
+        if row_key not in self._keys:
+            raise KeyError(row_key)
+        return {"RowKey": row_key}
+
+
+def test_user_row_key_is_case_insensitive_and_keeps_legacy_rows():
+    assert function_app._resolve_user_row_key(_FakeUsersTable([]), " Fabio ") == "fabio"
+    assert (
+        function_app._resolve_user_row_key(_FakeUsersTable(["fabio"]), "FABIO")
+        == "fabio"
+    )
+    assert (
+        function_app._resolve_user_row_key(_FakeUsersTable(["Fabio"]), "Fabio")
+        == "Fabio"
+    )

@@ -3,6 +3,7 @@
 import { useState, useEffect, useMemo } from "react";
 import Image from "next/image";
 import { cloudoFetch } from "@/lib/api";
+import { DeleteConfirmationModal } from "../utils/modals";
 import { useRouter } from "next/navigation";
 import {
   HiOutlinePlus,
@@ -43,6 +44,7 @@ export default function UsersPage() {
   const [searchQuery, setSearchQuery] = useState("");
   const [modalMode, setModalMode] = useState<"create" | "edit" | null>(null);
   const [selectedUser, setSelectedUser] = useState<User | null>(null);
+  const [userToDelete, setUserToDelete] = useState<User | null>(null);
   const [notifications, setNotifications] = useState<Notification[]>([]);
   const [currentUser, setCurrentUser] = useState<User | null>(null);
 
@@ -112,27 +114,6 @@ export default function UsersPage() {
       setUsers([]);
     } finally {
       setLoading(false);
-    }
-  };
-
-  const deleteUser = async (username: string) => {
-    if (!confirm(`Are you sure you want to revoke access for ${username}?`))
-      return;
-
-    try {
-      const res = await cloudoFetch(`/users?username=${username}`, {
-        method: "DELETE",
-      });
-
-      if (res.ok) {
-        addNotification("success", `Access revoked for ${username}`);
-        fetchUsers();
-      } else {
-        const data = await res.json();
-        addNotification("error", data.error || "Failed to revoke access");
-      }
-    } catch {
-      addNotification("error", "Uplink failed");
     }
   };
 
@@ -410,7 +391,7 @@ export default function UsersPage() {
                                 <HiOutlinePencil className="w-4 h-4 group-hover/btn:scale-110 transition-transform" />
                               </button>
                               <button
-                                onClick={() => deleteUser(user.username)}
+                                onClick={() => setUserToDelete(user)}
                                 className="p-2.5 bg-cloudo-accent/10 border border-cloudo-border hover:border-cloudo-err/40 text-cloudo-err hover:bg-cloudo-err hover:text-cloudo-text transition-all group/btn disabled:opacity-60 disabled:cursor-not-allowed"
                                 title="Revoke Access"
                                 disabled={user.username === "admin"}
@@ -434,6 +415,20 @@ export default function UsersPage() {
           </div>
         </div>
       </div>
+
+      {/* Delete Confirmation Modal */}
+      {userToDelete && (
+        <DeleteConfirmationModal
+          schema={{ id: userToDelete.username }}
+          type="users"
+          onClose={() => setUserToDelete(null)}
+          onSuccess={(message) => {
+            fetchUsers();
+            addNotification("success", message);
+          }}
+          onError={(message) => addNotification("error", message)}
+        />
+      )}
 
       {/* Add/Edit User Modal */}
       {modalMode && (

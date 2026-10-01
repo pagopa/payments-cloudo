@@ -15,6 +15,76 @@ from slack_sdk.errors import SlackApiError
 # =========================
 
 JSM_ALERTS_URL = "https://api.atlassian.com/jsm/ops/integration/v2/alerts"
+_JSM_MAX_CHAIN = 4096
+
+
+def jsm_chain_alias(alias: str, index: int) -> str:
+    """Alias of the Nth alert opened for `alias` (1 -> `alias`, 2 -> `alias-2`...)."""
+    return alias if index <= 1 else f"{alias}-{index}"
+
+
+def _jsm_alert_state(alias: str, headers: dict):
+    """Return 'open', 'closed', 'missing', or None when the lookup is unavailable."""
+    try:
+        resp = requests.get(
+            f"{JSM_ALERTS_URL}/{alias}",
+            headers=headers,
+            params={"identifierType": "alias"},
+            timeout=10,
+        )
+    except Exception as e:
+        logging.warning(f"JSM: alert lookup failed (alias={alias}): {e}")
+        return None
+    if resp.status_code == 404:
+        return "missing"
+    if resp.status_code != 200:
+        logging.warning(
+            f"JSM: alert lookup returned {resp.status_code} (alias={alias})"
+        )
+        return None
+    try:
+        body = resp.json() or {}
+        data = body.get("data") if isinstance(body.get("data"), dict) else body
+        status = str(data.get("status") or "").strip().lower()
+    except Exception:
+        return None
+    return "closed" if status == "closed" else "open"
+
+
+def resolve_jsm_alias(alias: str, headers: dict):
+    """
+    Find the latest alert of the alias chain (`alias`, `alias-2`, ...).
+    Returns (index, state) where state is 'open', 'closed', 'missing' (no alert
+    yet) or None (lookup unavailable: callers fall back to the plain alias).
+    A closed alert is never reused: the next one is opened on the next index.
+    """
+    cache: dict = {}
+
+    def state(i: int):
+        if i not in cache:
+            cache[i] = _jsm_alert_state(jsm_chain_alias(alias, i), headers)
+        return cache[i]
+
+    if state(1) in (None, "missing"):
+        return 1, state(1)
+    lo, hi = 1, 2
+    while hi <= _JSM_MAX_CHAIN:
+        s = state(hi)
+        if s is None:
+            return 1, None
+        if s == "missing":
+            break
+        lo, hi = hi, hi * 2
+    while hi - lo > 1:
+        mid = (lo + hi) // 2
+        s = state(mid)
+        if s is None:
+            return 1, None
+        if s == "missing":
+            hi = mid
+        else:
+            lo = mid
+    return lo, state(lo)
 
 
 def send_jsm_alert(
@@ -49,6 +119,13 @@ def send_jsm_alert(
             if not alias:
                 logging.warning("JSM: cannot close alert without alias when resolved.")
                 return False
+            index, state = resolve_jsm_alias(alias, headers)
+            if state in ("closed", "missing"):
+                logging.info(
+                    f"JSM: no open alert to close (alias={alias}, state={state})"
+                )
+                return True
+            alias = jsm_chain_alias(alias, index)
             url = f"{JSM_ALERTS_URL}/{alias}/close"
             payload = {"user": "cloudo", "note": "Auto-closed on resolve"}
             resp = requests.post(
@@ -63,18 +140,27 @@ def send_jsm_alert(
             return True
 
         payload = {
-            "message": message,
+            "message": str(message or "")[:130],
             "priority": priority,
             "source": "cloudo",
         }
         if description:
-            payload["description"] = description
+            payload["description"] = str(description)[:15000]
         if alias:
-            payload["alias"] = alias
+            index, state = resolve_jsm_alias(alias, headers)
+            if state == "closed":
+                index += 1
+            alias = jsm_chain_alias(alias, index)
+            payload["alias"] = alias[:512]
         if tags:
-            payload["tags"] = tags
+            payload["tags"] = [str(t)[:50] for t in tags][:20]
         if details:
-            payload["details"] = details
+            # JSM details must be a flat map of non-null strings.
+            payload["details"] = {
+                str(k).strip(": ")[:8000]: str(v)[:8000]
+                for k, v in details.items()
+                if v is not None and str(k).strip(": ")
+            }
 
         resp = requests.post(JSM_ALERTS_URL, json=payload, headers=headers, timeout=10)
         resp.raise_for_status()
@@ -82,9 +168,9 @@ def send_jsm_alert(
         return True
 
     except requests.HTTPError as e:
-        logging.error(
-            f"JSM: HTTP error while sending/closing alert: {e} — {e.response.text if e.response else ''}"
-        )
+        # Response is falsy for 4xx/5xx, so compare with None to log the body.
+        body = e.response.text if e.response is not None else ""
+        logging.error(f"JSM: HTTP error while sending/closing alert: {e} — {body}")
         return False
     except Exception as e:
         logging.error(f"JSM: unexpected error while sending/closing alert: {e}")

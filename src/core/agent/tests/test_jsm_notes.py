@@ -49,6 +49,7 @@ def test_add_jsm_alert_note_posts_to_expected_url(monkeypatch):
         return _FakeResponse(202)
 
     monkeypatch.setattr(jsm_notes.requests, "post", _fake_post)
+    monkeypatch.setattr(jsm_notes, "resolve_current_alias", lambda k, a, timeout=10: a)
 
     ok = jsm_notes.add_jsm_alert_note(api_key="secret", alias="exec-123", note="hello")
 
@@ -64,7 +65,33 @@ def test_add_jsm_alert_note_returns_false_on_http_error(monkeypatch):
         return _FakeResponse(500, text="boom")
 
     monkeypatch.setattr(jsm_notes.requests, "post", _fake_post)
+    monkeypatch.setattr(jsm_notes, "resolve_current_alias", lambda k, a, timeout=10: a)
 
     ok = jsm_notes.add_jsm_alert_note(api_key="secret", alias="exec-123", note="hello")
 
     assert ok is False
+
+
+def test_resolve_current_alias_skips_closed_alerts(monkeypatch):
+    states = {"a": "closed", "a-2": "closed", "a-3": "open"}
+
+    class _Resp:
+        def __init__(self, code, status=None):
+            self.status_code = code
+            self._status = status
+
+        def json(self):
+            return {"data": {"status": self._status}}
+
+    def _fake_get(url, headers, params, timeout):
+        alias = url.rsplit("/", 1)[-1]
+        if alias in states:
+            return _Resp(200, states[alias])
+        return _Resp(404)
+
+    monkeypatch.setattr(jsm_notes.requests, "get", _fake_get)
+
+    assert jsm_notes.resolve_current_alias("k", "a") == "a-3"
+    states["a-3"] = "closed"
+    assert jsm_notes.resolve_current_alias("k", "a") == "a-3"
+    assert jsm_notes.resolve_current_alias("k", "zzz") == "zzz"

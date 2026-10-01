@@ -38,6 +38,7 @@ interface PendingApproval {
   OnCall?: string;
   Initiator?: string;
   ResourceInfo?: string;
+  team?: string;
 }
 
 export default function ApprovalsPage() {
@@ -65,6 +66,7 @@ function ApprovalsPageContent() {
   const [isProcessing, setIsProcessing] = useState(false);
   const [notifications, setNotifications] = useState<Notification[]>([]);
   const [linkCopied, setLinkCopied] = useState(false);
+  const [scopeLabel, setScopeLabel] = useState("");
 
   const addNotification = (type: "success" | "error", message: string) => {
     const id = Date.now().toString();
@@ -204,7 +206,17 @@ function ApprovalsPageContent() {
         OnCall?: string;
         Initiator?: string;
         ResourceInfo?: string;
+        team?: string;
       }[];
+
+      const storedUser = localStorage.getItem("cloudo_user");
+      const user = storedUser ? JSON.parse(storedUser) : null;
+      setScopeLabel(
+        user?.role === "ADMIN" &&
+          localStorage.getItem("cloudo_include_all_teams") === "true"
+          ? "All teams"
+          : `Team: ${user?.team || "default"} + shared`,
+      );
 
       const terminalIds = new Set(
         items
@@ -295,7 +307,7 @@ function ApprovalsPageContent() {
               Governance Gate
             </h1>
             <p className="text-[11px] text-cloudo-muted font-bold uppercase tracking-[0.3em] opacity-70">
-              Filtered Approval Queue
+              Filtered Approval Queue{scopeLabel ? ` // ${scopeLabel}` : ""}
             </p>
           </div>
         </div>
@@ -381,6 +393,9 @@ function ApprovalsPageContent() {
                       <div className="flex items-center gap-2 text-[11px] font-mono text-cloudo-accent/60 uppercase tracking-widest">
                         <HiOutlineTerminal className="w-4 h-4" />
                         {item.Runbook}
+                        <span className="ml-auto px-2 py-0.5 border border-cloudo-border text-cloudo-muted normal-case">
+                          {item.team || "default"}
+                        </span>
                       </div>
                       {selectedExec?.ExecId === item.ExecId && (
                         <div className="absolute -left-px top-0 w-0.5 h-full bg-cloudo-warn" />
@@ -482,6 +497,11 @@ function ApprovalsPageContent() {
                               "AUTO_TRIGGER"
                             }
                             icon={<HiOutlineUser />}
+                          />
+                          <DetailItem
+                            label="Team"
+                            value={selectedExec.team || "default"}
+                            icon={<HiOutlineShieldCheck />}
                           />
                           <DetailItem
                             label="Node"

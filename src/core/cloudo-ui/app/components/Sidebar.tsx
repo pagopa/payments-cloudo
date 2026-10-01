@@ -66,7 +66,6 @@ const navigation: NavItem[] = [
     name: "Smart Routing",
     href: "/smart-routing",
     icon: <MdOutlineRouter />,
-    adminOnly: true,
   },
   {
     name: "AI Agent",

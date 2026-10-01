@@ -37,29 +37,38 @@ export function DeleteConfirmationModal({
   onSuccess,
   onError,
 }: {
-  schema: Schema | Schedule;
-  type: "schemas" | "schedules";
+  schema: Schema | Schedule | { id: string };
+  type: "schemas" | "schedules" | "users";
   onClose: () => void;
   onSuccess: (message: string) => void;
   onError: (message: string) => void;
 }) {
   const [isDeleting, setIsDeleting] = useState(false);
+  const isUser = type === "users";
 
   const handleDelete = async () => {
     setIsDeleting(true);
     try {
-      const response = await cloudoFetch(`/${type}?id=${schema.id}`, {
-        method: "DELETE",
-      });
+      const query = isUser ? "username" : "id";
+      const response = await cloudoFetch(
+        `/${type}?${query}=${encodeURIComponent(schema.id)}`,
+        { method: "DELETE" },
+      );
       const data = await response.json();
 
       if (!response.ok) {
-        onError(data.error || "Delete failed");
+        onError(
+          data.error || (isUser ? "Failed to revoke access" : "Delete failed"),
+        );
         setIsDeleting(false);
         return;
       }
 
-      onSuccess(`Entry "${schema.id}" destroyed`);
+      onSuccess(
+        isUser
+          ? `Access revoked for ${schema.id}`
+          : `Entry "${schema.id}" destroyed`,
+      );
       onClose();
     } catch {
       onError("Network error // destruction failed");
@@ -81,7 +90,9 @@ export function DeleteConfirmationModal({
             Destructive Action
           </h3>
           <p className="text-[9px] text-cloudo-muted uppercase font-bold leading-relaxed">
-            Permanently delete schemas entry:
+            {isUser
+              ? "Permanently revoke access for user:"
+              : `Permanently delete ${type} entry:`}
             <br />
             <span className="text-cloudo-err mt-2 block font-mono">
               {schema.id}
