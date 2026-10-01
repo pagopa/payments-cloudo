@@ -34,6 +34,7 @@ MAX_INLINE_LOG_BYTES = int(
 LOGS_BLOB_CONTAINER = os.environ.get("LOGS_BLOB_CONTAINER", "runbook-logs")
 LOGS_REF_PREFIX = "blobref://"
 LOG_STREAM_UPDATE_SECONDS = float(os.environ.get("LOG_STREAM_UPDATE_SECONDS", "3"))
+WORKER_TEAM = os.environ.get("WORKER_TEAM", "default").strip().lower() or "default"
 
 # Receiver endpoint configuration
 RECEIVER_URL = os.environ.get("RECEIVER_URL", "http://orchestrator/api/receiver")
@@ -127,6 +128,7 @@ def _build_status_headers(payload: dict, status: str, log_message: str) -> dict:
         "Initiator": payload.get("initiator"),
         "MonitorCondition": payload.get("monitor_condition"),
         "Severity": payload.get("severity"),
+        "Team": payload.get("team") or WORKER_TEAM,
         "ResourceInfo": payload.get("resource_info"),
         "RoutingInfo": payload.get("routing_info"),
     }
@@ -193,6 +195,7 @@ def _post_status(payload: dict, status: str, log_message: str) -> str:
         "initiator": headers.get("Initiator"),
         "monitor_condition": headers.get("MonitorCondition"),
         "severity": headers.get("Severity"),
+        "team": headers.get("Team"),
         "resource_info": headers.get("ResourceInfo"),
         "routing_info": headers.get("RoutingInfo"),
         "log_ref": log_ref,
@@ -819,6 +822,7 @@ def process_runbook(msg: func.QueueMessage) -> None:
             "requestedAt": payload.get("requestedAt"),
             "startedAt": started_at,
             "resource_info": payload.get("resource_info") or {},
+            "team": payload.get("team") or WORKER_TEAM,
             "status": "running",
         }
 
@@ -1079,6 +1083,7 @@ def stop_process(
                 "monitor_condition": None,
                 "severity": None,
                 "requestedAt": run_info.get("requestedAt"),
+                "team": run_info.get("team") or WORKER_TEAM,
             }
             _dispatch_status(
                 payload,
@@ -1114,6 +1119,7 @@ def heartbeat_trigger(HeartBeatTimer: func.TimerRequest) -> None:
         "worker_id": os.getenv("WEBSITE_SITE_NAME", "azure-func-worker"),
         "queue": QUEUE_NAME,
         "region": os.getenv("REGION_NAME", "azure-cloud"),
+        "team": WORKER_TEAM,
     }
 
     try:

@@ -22,6 +22,7 @@ import {
   HiOutlineSun,
   HiOutlineMoon,
   HiOutlineUser,
+  HiOutlineGlobeAlt,
 } from "react-icons/hi";
 import { MdOutlineRouter } from "react-icons/md";
 import { LuBrain } from "react-icons/lu";
@@ -47,6 +48,12 @@ const navigation: NavItem[] = [
   { name: "Compute Nodes", href: "/workers", icon: <HiOutlineChip /> },
   { name: "Analytics", href: "/analytics", icon: <HiOutlineChartBar /> },
   { name: "Runbook Studio", href: "/studio", icon: <HiOutlineBookOpen /> },
+  {
+    name: "Teams",
+    href: "/teams",
+    icon: <HiOutlineUsers />,
+    adminOnly: true,
+  },
   { name: "Collection", href: "/collection", icon: <HiOutlineCollection /> },
   { name: "Users", href: "/users", icon: <HiOutlineUsers />, adminOnly: true },
   {
@@ -93,8 +100,14 @@ export function Sidebar({ theme, toggleTheme }: SidebarProps) {
     username: string;
     email: string;
     role: string;
+    team?: string;
     picture?: string;
   } | null>(null);
+  const [showAllTeams, setShowAllTeams] = useState(
+    () =>
+      typeof window !== "undefined" &&
+      localStorage.getItem("cloudo_include_all_teams") === "true",
+  );
 
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -124,6 +137,14 @@ export function Sidebar({ theme, toggleTheme }: SidebarProps) {
     localStorage.removeItem("cloudo_user");
     localStorage.removeItem("cloudo_expires_at");
     router.push("/login");
+  };
+
+  const toggleTeamScope = () => {
+    const next = !showAllTeams;
+    setShowAllTeams(next);
+    localStorage.setItem("cloudo_include_all_teams", String(next));
+    window.dispatchEvent(new Event("team-scope-change"));
+    window.location.reload();
   };
 
   return (
@@ -256,6 +277,24 @@ export function Sidebar({ theme, toggleTheme }: SidebarProps) {
 
       {/* Footer - Identity Layer */}
       <div className="p-4 border-t border-cloudo-border bg-cloudo-accent/5 space-y-2">
+        {user?.role === "ADMIN" && (
+          <button
+            onClick={toggleTeamScope}
+            className={`flex items-center gap-3 w-full px-3 py-2 transition-all border ${
+              showAllTeams
+                ? "border-cloudo-accent text-cloudo-accent bg-cloudo-accent/10"
+                : "border-cloudo-border text-cloudo-muted hover:text-cloudo-accent"
+            } ${collapsed ? "justify-center px-0" : ""}`}
+            title={showAllTeams ? "Show current team" : "Show all teams"}
+          >
+            <HiOutlineGlobeAlt className="w-4 h-4 shrink-0" />
+            {!collapsed && (
+              <span className="text-[11px] font-black uppercase tracking-[0.15em]">
+                {showAllTeams ? "All Teams" : `Team: ${user.team || "default"}`}
+              </span>
+            )}
+          </button>
+        )}
         {toggleTheme && (
           <button
             onClick={toggleTheme}
@@ -297,7 +336,7 @@ export function Sidebar({ theme, toggleTheme }: SidebarProps) {
                 {user?.username || "Unknown User"}
               </p>
               <p className="text-[11px] text-cloudo-muted uppercase font-bold tracking-widest opacity-70">
-                {user?.role || "L-GUEST"}
+                {user?.role || "L-GUEST"} {"//"} {user?.team || "default"}
               </p>
             </div>
             <button

@@ -38,6 +38,7 @@ interface Schedule {
   last_run?: string;
   managed_by?: string;
   locked?: boolean;
+  team?: string;
 }
 
 interface Notification {
@@ -353,6 +354,9 @@ export default function SchedulesPage() {
                     <th className="hidden lg:table-cell px-4 lg:px-8 py-5 font-black text-cloudo-muted uppercase tracking-[0.3em] text-[11px]">
                       On Call
                     </th>
+                    <th className="px-4 lg:px-8 py-5 font-black text-cloudo-muted uppercase tracking-[0.3em] text-[11px]">
+                      Team
+                    </th>
                     <th className="px-4 lg:px-8 py-5 font-black text-cloudo-muted uppercase tracking-[0.3em] text-right text-[11px]">
                       Actions
                     </th>
@@ -362,7 +366,7 @@ export default function SchedulesPage() {
                   {loading ? (
                     <tr>
                       <td
-                        colSpan={6}
+                        colSpan={7}
                         className="py-32 text-center text-cloudo-muted italic animate-pulse uppercase tracking-[0.5em] font-black opacity-50"
                       >
                         Syncing Cron Registry...
@@ -371,7 +375,7 @@ export default function SchedulesPage() {
                   ) : filteredSchedules.length === 0 ? (
                     <tr>
                       <td
-                        colSpan={6}
+                        colSpan={7}
                         className="py-32 text-center text-sm font-black uppercase tracking-[0.5em] opacity-40 italic"
                       >
                         NO_SCHEDULES_FOUND
@@ -458,6 +462,9 @@ export default function SchedulesPage() {
                                   <div className="w-2 h-2 bg-cloudo-err animate-pulse" />
                                 </div>
                               )}
+                            </td>
+                            <td className="px-4 lg:px-8 py-4 lg:py-6 text-[10px] text-cloudo-accent uppercase tracking-widest">
+                              {s.team || "default"}
                             </td>
                             <td className="px-4 lg:px-8 py-4 lg:py-6 text-right">
                               <div className="flex items-center justify-end gap-2">
@@ -741,6 +748,28 @@ function ScheduleForm({
   onCancel: () => void;
   onError: (msg: string) => void;
 }) {
+  const currentUserTeam = (() => {
+    if (typeof window === "undefined") return "default";
+    try {
+      return (
+        JSON.parse(localStorage.getItem("cloudo_user") || "null")?.team ||
+        "default"
+      );
+    } catch {
+      return "default";
+    }
+  })();
+  const isAdmin = (() => {
+    if (typeof window === "undefined") return false;
+    try {
+      return (
+        JSON.parse(localStorage.getItem("cloudo_user") || "null")?.role ===
+        "ADMIN"
+      );
+    } catch {
+      return false;
+    }
+  })();
   const [formData, setFormData] = useState({
     id: initialData?.id || "",
     name: initialData?.name || "",
@@ -750,8 +779,19 @@ function ScheduleForm({
     worker_pool: initialData?.worker_pool || "",
     enabled: initialData?.enabled ?? true,
     oncall: initialData?.oncall ?? false,
+    team: initialData?.team || (isAdmin ? "default" : currentUserTeam),
   });
   const [submitting, setSubmitting] = useState(false);
+  const [teams, setTeams] = useState<
+    { id: string; name: string; enabled: boolean }[]
+  >([]);
+
+  useEffect(() => {
+    cloudoFetch("/teams")
+      .then((response) => (response.ok ? response.json() : []))
+      .then((data) => setTeams(Array.isArray(data) ? data : []))
+      .catch(() => setTeams([]));
+  }, []);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -794,6 +834,32 @@ function ScheduleForm({
             onChange={(e) => setFormData({ ...formData, name: e.target.value })}
             placeholder="NIGHTLY_CLEANUP"
           />
+        </div>
+
+        <div className="space-y-1.5">
+          <label className="text-[11px] font-black uppercase tracking-widest text-cloudo-muted ml-1 block">
+            Team
+          </label>
+          <select
+            disabled={!isAdmin}
+            className="input h-11 w-full disabled:opacity-50"
+            value={formData.team}
+            onChange={(e) => setFormData({ ...formData, team: e.target.value })}
+          >
+            {teams
+              .filter(
+                (team) =>
+                  (team.enabled || team.id === formData.team) &&
+                  (isAdmin ||
+                    team.id === currentUserTeam ||
+                    team.id === formData.team),
+              )
+              .map((team) => (
+                <option key={team.id} value={team.id}>
+                  {team.name}
+                </option>
+              ))}
+          </select>
         </div>
         <div className="space-y-1.5">
           <label className="text-[11px] font-black uppercase tracking-widest text-cloudo-muted ml-1 block">

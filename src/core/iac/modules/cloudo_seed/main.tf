@@ -49,6 +49,7 @@ resource "azurerm_storage_table_entity" "schemas" {
       require_approval = tostring(try(tobool(lookup(each.value.entity, "require_approval", false)), false))
       group            = lookup(each.value.entity, "group", null) == null ? "-" : each.value.entity.group
       tags             = lookup(each.value.entity, "tags", null) == null ? "terraform" : contains(split(",", each.value.entity.tags), "terraform") ? each.value.entity.tags : "${each.value.entity.tags},terraform"
+      team             = lookup(each.value.entity, "team", "default")
     },
     {
       "enabled@odata.type"          = "Edm.Boolean"
@@ -88,6 +89,7 @@ resource "azurerm_storage_table_entity" "schedules" {
       last_run   = ""
       managed_by = "terraform"
       locked     = tostring(true)
+      team       = lookup(each.value.entity, "team", "default")
     },
     {
       "enabled@odata.type" = "Edm.Boolean"

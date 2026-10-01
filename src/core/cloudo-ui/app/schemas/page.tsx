@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useState, useEffect, useMemo, useRef } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import { cloudoFetch } from "@/lib/api";
 import {
   HiOutlinePlus,
@@ -24,13 +25,14 @@ import { DeleteConfirmationModal } from "../utils/modals";
 import { parseRunbookIntoCells } from "../utils/parser";
 import { Schema, Notification } from "./types";
 import { StatSmall } from "./components/StatSmall";
-import { SchemaForm } from "./components/SchemaForm";
 import { SchemaCard } from "./components/SchemaCard";
 import { SchemaTable } from "./components/SchemaTable";
 import { SchemaFilters } from "./components/SchemaFilters";
 import { HiMiniComputerDesktop } from "react-icons/hi2";
 
 export default function SchemasPage() {
+  const router = useRouter();
+  const searchParams = useSearchParams();
   const [schemas, setSchemas] = useState<Schema[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState("");
@@ -105,10 +107,6 @@ export default function SchemasPage() {
     isInitialized,
   ]);
 
-  const [modalMode, setModalMode] = useState<"create" | "edit" | "view" | null>(
-    null,
-  );
-  const [selectedSchema, setSelectedSchema] = useState<Schema | null>(null);
   const [schemaToDelete, setSchemaToDelete] = useState<Schema | null>(null);
   const [confirmRunId, setConfirmRunId] = useState<string | null>(null);
   const [executingId, setExecutingId] = useState<string | null>(null);
@@ -119,7 +117,6 @@ export default function SchemasPage() {
   const [runbookContent, setRunbookContent] = useState<string | null>(null);
   const [isRunbookModalOpen, setIsRunbookModalOpen] = useState(false);
   const [fetchingRunbook, setFetchingRunbook] = useState(false);
-  const [availableRunbooks, setAvailableRunbooks] = useState<string[]>([]);
   const [availableWorkers, setAvailableWorkers] = useState<string[]>([]);
   const [availableTags, setAvailableTags] = useState<string[]>([]);
 
@@ -151,6 +148,18 @@ export default function SchemasPage() {
     }
   }, []);
 
+  // Surface a one-off notification forwarded from the dedicated
+  // create/edit schema page, then strip it from the URL.
+  useEffect(() => {
+    const notice = searchParams.get("notice");
+    const msg = searchParams.get("msg");
+    if (notice && msg) {
+      addNotification(notice === "error" ? "error" : "success", msg);
+      router.replace("/schemas");
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [searchParams]);
+
   const isViewer = user?.role === "VIEWER";
 
   const fetchSchemas = async () => {
@@ -165,18 +174,6 @@ export default function SchemasPage() {
       setSchemas([]);
     } finally {
       setLoading(false);
-    }
-  };
-
-  const fetchAvailableRunbooks = async () => {
-    try {
-      const res = await cloudoFetch(`/runbooks/list`);
-      const data = await res.json();
-      if (res.ok && Array.isArray(data.runbooks)) {
-        setAvailableRunbooks(data.runbooks);
-      }
-    } catch {
-      console.error("Failed to fetch available runbooks");
     }
   };
 
@@ -499,12 +496,7 @@ export default function SchemasPage() {
             {!isViewer &&
               (user?.role === "ADMIN" || user?.role === "OPERATOR") && (
                 <button
-                  onClick={() => {
-                    setSelectedSchema(null);
-                    setModalMode("create");
-                    fetchAvailableRunbooks();
-                    fetchWorkers();
-                  }}
+                  onClick={() => router.push("/schemas/new")}
                   className="btn btn-primary h-10 px-4 flex items-center gap-2 group"
                 >
                   <HiOutlinePlus className="w-4 h-4 group-hover:rotate-90 transition-transform" />{" "}
@@ -637,18 +629,9 @@ export default function SchemasPage() {
                   onToggle={handleToggleSchema}
                   onConfirmRun={setConfirmRunId}
                   onViewSource={fetchRunbookContent}
-                  onEdit={(s) => {
-                    setSelectedSchema(s);
-                    setModalMode(
-                      !isViewer &&
-                        (user?.role === "ADMIN" || user?.role === "OPERATOR") &&
-                        !isTerraformSchema(s.tags)
-                        ? "edit"
-                        : "view",
-                    );
-                    fetchAvailableRunbooks();
-                    fetchWorkers();
-                  }}
+                  onEdit={(s) =>
+                    router.push(`/schemas/${encodeURIComponent(s.id)}`)
+                  }
                   onDelete={setSchemaToDelete}
                 />
               ))}
@@ -667,18 +650,9 @@ export default function SchemasPage() {
               onToggle={handleToggleSchema}
               onConfirmRun={setConfirmRunId}
               onViewSource={fetchRunbookContent}
-              onEdit={(s) => {
-                setSelectedSchema(s);
-                setModalMode(
-                  !isViewer &&
-                    (user?.role === "ADMIN" || user?.role === "OPERATOR") &&
-                    !isTerraformSchema(s.tags)
-                    ? "edit"
-                    : "view",
-                );
-                fetchAvailableRunbooks();
-                fetchWorkers();
-              }}
+              onEdit={(s) =>
+                router.push(`/schemas/${encodeURIComponent(s.id)}`)
+              }
               onDelete={setSchemaToDelete}
             />
           )}
@@ -773,55 +747,6 @@ export default function SchemasPage() {
           )}
         </div>
       </div>
-
-      {/* Form Modal */}
-      {modalMode && (
-        <div
-          className="fixed inset-0 bg-cloudo-dark/90 backdrop-blur-sm flex items-center justify-center z-50 p-4"
-          onClick={() => setModalMode(null)}
-        >
-          <div
-            className="bg-cloudo-panel border border-cloudo-border shadow-2xl w-full max-w-xl overflow-hidden animate-in zoom-in-95 duration-200 relative"
-            onClick={(e) => e.stopPropagation()}
-          >
-            {/* Decorative corner */}
-            <div className="absolute top-0 right-0 w-12 h-12 overflow-hidden pointer-events-none">
-              <div className="absolute top-[-24px] right-[-24px] w-12 h-12 bg-cloudo-border rotate-45" />
-            </div>
-
-            <div className="px-8 py-5 border-b border-cloudo-border flex justify-between items-center bg-cloudo-accent/5">
-              <div className="flex items-center gap-3">
-                <div className="w-1.5 h-1.5 bg-cloudo-accent animate-pulse" />
-                <h3 className="text-[10px] font-black uppercase tracking-[0.3em] text-cloudo-text">
-                  {modalMode === "create"
-                    ? "Register New Schema"
-                    : "Update Configuration"}
-                </h3>
-              </div>
-              <button
-                onClick={() => setModalMode(null)}
-                className="p-1.5 hover:bg-cloudo-err hover:text-cloudo-text border border-cloudo-border text-cloudo-muted transition-colors"
-              >
-                <HiOutlineX className="w-4 h-4" />
-              </button>
-            </div>
-
-            <SchemaForm
-              initialData={selectedSchema}
-              mode={modalMode}
-              availableRunbooks={availableRunbooks}
-              availableWorkers={availableWorkers}
-              onSuccess={(message) => {
-                fetchSchemas();
-                setModalMode(null);
-                addNotification("success", message);
-              }}
-              onCancel={() => setModalMode(null)}
-              onError={(message) => addNotification("error", message)}
-            />
-          </div>
-        </div>
-      )}
 
       {/* Delete Confirmation Modal */}
       {schemaToDelete && (

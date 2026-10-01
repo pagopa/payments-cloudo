@@ -77,9 +77,19 @@ def worker_routing(workers, schema):
     if not isinstance(all_workers_list, list):
         all_workers_list = []
 
-    # 2. Filter in memory: Capability (PartitionKey) matches Schema ID
+    requested_team = (
+        str(getattr(schema, "team", "default") or "default").strip().lower()
+    )
+
+    # Filter by capability and team. The default pool is shared with all teams.
     # Note: PartitionKey identifies the skill/alert type
-    candidates = [w for w in all_workers_list if w.get("PartitionKey") == schema.worker]
+    candidates = [
+        w
+        for w in all_workers_list
+        if w.get("PartitionKey") == schema.worker
+        and str(w.get("team") or "default").strip().lower()
+        in {"default", requested_team}
+    ]
 
     # 3. Filter Active using the helper function
     valid_workers = get_active_workers(candidates, timeout_minutes=3)

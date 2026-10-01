@@ -26,6 +26,7 @@ interface User {
   createdAt: string;
   picture?: string;
   sso_provider?: string;
+  team?: string;
 }
 
 interface Notification {
@@ -283,6 +284,9 @@ export default function UsersPage() {
                   <th className="px-8 py-5 font-black text-cloudo-muted uppercase tracking-[0.3em] text-[11px]">
                     Provider
                   </th>
+                  <th className="px-8 py-5 font-black text-cloudo-muted uppercase tracking-[0.3em] text-[11px]">
+                    Team
+                  </th>
                   <th className="px-8 py-5 font-black text-cloudo-muted uppercase tracking-[0.3em] text-right text-[11px]">
                     Actions
                   </th>
@@ -292,7 +296,7 @@ export default function UsersPage() {
                 {loading ? (
                   <tr key="loading-row">
                     <td
-                      colSpan={5}
+                      colSpan={6}
                       className="py-32 text-center text-cloudo-muted italic animate-pulse uppercase tracking-[0.5em] font-black opacity-50"
                     >
                       Syncing Identity Data...
@@ -301,7 +305,7 @@ export default function UsersPage() {
                 ) : error ? (
                   <tr key="error-row">
                     <td
-                      colSpan={5}
+                      colSpan={6}
                       className="py-32 text-center text-cloudo-err font-black uppercase tracking-[0.2em]"
                     >
                       <div className="flex flex-col items-center gap-4">
@@ -313,7 +317,7 @@ export default function UsersPage() {
                 ) : filteredUsers.length === 0 ? (
                   <tr key="empty-row">
                     <td
-                      colSpan={5}
+                      colSpan={6}
                       className="py-32 text-center text-[10px] font-black uppercase tracking-[0.5em] opacity-40 italic"
                     >
                       NO_OPERATORS_FOUND
@@ -373,6 +377,11 @@ export default function UsersPage() {
                           }`}
                         >
                           {user.sso_provider || "Local"}
+                        </span>
+                      </td>
+                      <td className="px-8 py-6">
+                        <span className="text-[10px] font-black uppercase tracking-widest text-cloudo-accent">
+                          {user.team || "default"}
                         </span>
                       </td>
                       <td className="px-8 py-6 text-right">
@@ -490,10 +499,21 @@ function UserForm({
     password: "",
     role: initialData?.role || "OPERATOR",
     sso_provider: initialData?.sso_provider || "",
+    team: initialData?.team || "default",
   });
   const [submitting, setSubmitting] = useState(false);
+  const [teams, setTeams] = useState<
+    { id: string; name: string; enabled: boolean }[]
+  >([]);
 
   const isSSOUser = formData.sso_provider === "google";
+
+  useEffect(() => {
+    cloudoFetch("/teams")
+      .then((response) => (response.ok ? response.json() : []))
+      .then((data) => setTeams(Array.isArray(data) ? data : []))
+      .catch(() => setTeams([]));
+  }, []);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -529,6 +549,26 @@ function UserForm({
     <form onSubmit={handleSubmit} className="p-5 space-y-4">
       <div className="space-y-3">
         <div className="space-y-1.5">
+          <div className="space-y-1.5">
+            <label className="text-[11px] font-black uppercase tracking-widest text-cloudo-muted ml-1 block">
+              Team
+            </label>
+            <select
+              className="input h-11 w-full"
+              value={formData.team}
+              onChange={(e) =>
+                setFormData({ ...formData, team: e.target.value })
+              }
+            >
+              {teams
+                .filter((team) => team.enabled || team.id === formData.team)
+                .map((team) => (
+                  <option key={team.id} value={team.id}>
+                    {team.name}
+                  </option>
+                ))}
+            </select>
+          </div>
           <label className="text-[11px] font-black uppercase tracking-widest text-cloudo-muted ml-1 block">
             Username
           </label>

@@ -31,6 +31,7 @@ import {
   HiOutlineInformationCircle,
   HiOutlineSparkles,
   HiOutlineLightBulb,
+  HiOutlineUsers,
 } from "react-icons/hi";
 import {
   parseDate,
@@ -57,6 +58,7 @@ interface LogEntry {
   Initiator?: string;
   Worker?: string;
   Group?: string;
+  team?: string;
   ResourceInfo?: string;
 }
 
@@ -618,6 +620,9 @@ function LogsPanelContent() {
                   <th className="hidden xl:table-cell px-4 lg:px-5 py-3.5 text-left min-w-25">
                     Worker
                   </th>
+                  <th className="hidden xl:table-cell px-4 lg:px-5 py-3.5 text-left min-w-20">
+                    Team
+                  </th>
                   <th className="hidden xl:table-cell px-4 lg:px-5 py-3.5 text-center w-16">
                     On Call
                   </th>
@@ -718,6 +723,9 @@ function LogsPanelContent() {
                         </div>
                       </div>
                     </td>
+                    <td className="hidden xl:table-cell px-4 lg:px-5 py-3.5 text-[10px] font-black text-cloudo-accent uppercase tracking-widest">
+                      {log.team || "default"}
+                    </td>
                     <td className="hidden xl:table-cell px-4 lg:px-5 py-3.5 text-center">
                       {(log.OnCall === true || log.OnCall === "true") && (
                         <div className="flex justify-center">
@@ -776,6 +784,14 @@ function LogsPanelContent() {
                         <span className="text-cloudo-accent/50 ml-1">
                           {log.RequestedAt?.split("T")[0]}
                         </span>
+                      </div>
+                    </div>
+                    <div className="space-y-0.5">
+                      <div className="text-[9px] font-black text-cloudo-muted uppercase tracking-widest">
+                        Team
+                      </div>
+                      <div className="text-[10px] font-black text-cloudo-accent uppercase tracking-widest truncate">
+                        {log.team || "default"}
                       </div>
                     </div>
                     <div className="space-y-0.5">
@@ -1017,6 +1033,11 @@ function LogsPanelContent() {
                     label="Group"
                     value={selectedLog.Group || "default"}
                     icon={<HiOutlineTag />}
+                  />
+                  <DetailItem
+                    label="Team"
+                    value={selectedLog.team || "default"}
+                    icon={<HiOutlineUsers />}
                   />
                 </div>
               </div>

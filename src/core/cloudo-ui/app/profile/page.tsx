@@ -32,6 +32,7 @@ interface User {
   role: string | null;
   picture?: string;
   sso_provider?: string;
+  team?: string;
 }
 
 export default function ProfilePage() {
@@ -45,6 +46,7 @@ export default function ProfilePage() {
     api_token: "",
     picture: "",
     sso_provider: "",
+    team: "default",
   });
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -92,6 +94,7 @@ export default function ProfilePage() {
         const nextApiToken = data.api_token ?? "";
         const nextPicture = data.picture ?? "";
         const nextSsoProvider = data.sso_provider ?? "";
+        const nextTeam = data.team ?? "default";
         setProfile((prev) => ({
           ...prev,
           username: nextUsername,
@@ -99,6 +102,7 @@ export default function ProfilePage() {
           api_token: nextApiToken,
           picture: nextPicture,
           sso_provider: nextSsoProvider,
+          team: nextTeam,
         }));
         // Synchronize local storage user if it changed
         const userData = localStorage.getItem("cloudo_user");
@@ -111,6 +115,10 @@ export default function ProfilePage() {
           }
           if (u.sso_provider !== nextSsoProvider) {
             u.sso_provider = nextSsoProvider;
+            updated = true;
+          }
+          if (u.team !== nextTeam) {
+            u.team = nextTeam;
             updated = true;
           }
           if (updated) {
@@ -382,6 +390,9 @@ export default function ProfilePage() {
                 <div className="flex items-center gap-2 mt-1">
                   <span className="px-2 py-0.5 border border-cloudo-accent/30 text-[10px] font-black text-cloudo-accent uppercase tracking-widest bg-cloudo-accent/5">
                     {user?.role || "L-GUEST"}
+                  </span>
+                  <span className="px-2 py-0.5 border border-cloudo-border text-[10px] font-black text-cloudo-muted uppercase tracking-widest">
+                    Team: {profile.team || user?.team || "default"}
                   </span>
                   <span className="text-[10px] text-cloudo-muted font-bold uppercase tracking-widest">
                     Authorized Terminal User

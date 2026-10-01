@@ -138,6 +138,9 @@ export function SchemaTable({
                 </div>
               </th>
               <th className="px-6 py-4 text-[10px] font-black uppercase tracking-[0.2em] text-cloudo-muted">
+                Team
+              </th>
+              <th className="px-6 py-4 text-[10px] font-black uppercase tracking-[0.2em] text-cloudo-muted">
                 Run_Args
               </th>
               <th className="px-6 py-4 text-[10px] font-black uppercase tracking-[0.2em] text-cloudo-muted">
@@ -261,6 +264,11 @@ export function SchemaTable({
                         {schema.group || "-"}
                       </span>
                     </div>
+                  </td>
+                  <td className="px-6 py-4">
+                    <span className="text-[11px] font-mono text-cloudo-accent uppercase">
+                      {schema.team || "default"}
+                    </span>
                   </td>
                   <td className="px-6 py-4">
                     <div className="flex flex-col gap-0.5 max-w-[150px]">

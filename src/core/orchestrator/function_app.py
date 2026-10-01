@@ -23,10 +23,12 @@ TABLE_NAME = "RunbookLogs"
 TABLE_SCHEMAS = "RunbookSchemas"
 TABLE_WORKERS_SCHEMAS = "WorkersRegistry"
 TABLE_USERS = "CloudoUsers"
+TABLE_TEAMS = "CloudoTeams"
 TABLE_SETTINGS = "CloudoSettings"
 TABLE_AUDIT = "CloudoAuditLogs"
 TABLE_SCHEDULES = "CloudoSchedules"
 TABLE_AI_ANALYSIS = "CloudoAiAnalysis"
+DEFAULT_TEAM = "default"
 STORAGE_CONN = "AzureWebJobsStorage"
 NOTIFICATION_QUEUE_NAME = os.environ.get(
     "NOTIFICATION_QUEUE_NAME", "cloudo-notification"
@@ -264,16 +266,23 @@ def _verify_signed_payload(exec_id_path: str, p: str, s: str) -> tuple[bool, dic
             return False, {}
         return True, payload
     except Exception as e:
-        logging.warning(f"verify signed payload failed: {e}")
+        logging.error(f"verify signed payload failed: {e}")
         return False, {}
 
 
-def _create_session_token(username: str, role: str, expires_at: str) -> str:
+def _create_session_token(
+    username: str, role: str, expires_at: str, team: str = DEFAULT_TEAM
+) -> str:
     import hashlib
     import hmac
 
     payload = json.dumps(
-        {"username": username, "role": role, "expires_at": expires_at}
+        {
+            "username": username,
+            "role": role,
+            "team": _normalize_team(team),
+            "expires_at": expires_at,
+        }
     ).encode("utf-8")
     payload_b64 = _b64url_encode(payload)
     key = SESSION_SECRET.encode("utf-8")
@@ -334,6 +343,7 @@ def _get_authenticated_user(
                 "user": forwarded_user or "api",
                 "username": forwarded_user or "api",
                 "role": "OPERATOR",
+                "team": DEFAULT_TEAM,
             }, None
 
         # Check personal API tokens
@@ -351,6 +361,7 @@ def _get_authenticated_user(
                     "username": f"{u.get('RowKey')}-api",
                     "role": u.get("role", "OPERATOR"),
                     "email": u.get("email"),
+                    "team": _normalize_team(u.get("team")),
                 }, None
         except Exception as e:
             logging.error(f"Error verifying personal API token: {e}")
@@ -363,6 +374,7 @@ def _get_authenticated_user(
             "user": "azure-action",
             "username": "azure-action",
             "role": "OPERATOR",
+            "team": DEFAULT_TEAM,
         }, None
 
     return None, func.HttpResponse(
@@ -371,6 +383,62 @@ def _get_authenticated_user(
         mimetype="application/json",
         headers={"Access-Control-Allow-Origin": "*"},
     )
+
+
+def _normalize_team(value: Any) -> str:
+    team = str(value or DEFAULT_TEAM).strip().lower()
+    return team or DEFAULT_TEAM
+
+
+def _session_team(session: Optional[dict]) -> str:
+    return _normalize_team((session or {}).get("team"))
+
+
+def _is_admin(session: Optional[dict]) -> bool:
+    return str((session or {}).get("role") or "").upper() == "ADMIN"
+
+
+def _can_view_all_teams(req: func.HttpRequest, session: Optional[dict]) -> bool:
+    raw = req.params.get("includeAllTeams") or req.params.get("include_all_teams")
+    return _is_admin(session) and _as_bool(raw, default=False)
+
+
+def _entity_team(entity: dict) -> str:
+    return _normalize_team(entity.get("team", entity.get("Team")))
+
+
+def _filter_entities_by_team(
+    entities: list[dict], req: func.HttpRequest, session: Optional[dict]
+) -> list[dict]:
+    if _can_view_all_teams(req, session):
+        return entities
+    allowed = {DEFAULT_TEAM, _session_team(session)}
+    return [entity for entity in entities if _entity_team(entity) in allowed]
+
+
+def _requested_write_team(
+    body: dict, session: Optional[dict], existing: Optional[dict] = None
+) -> tuple[Optional[str], Optional[str]]:
+    requested = _normalize_team(
+        body.get("team") if "team" in body else (existing or {}).get("team")
+    )
+    if not _is_admin(session):
+        own_team = _session_team(session)
+        if requested not in {DEFAULT_TEAM, own_team}:
+            return None, "Only administrators can assign resources to another team"
+        requested = _entity_team(existing) if existing else own_team
+        if requested not in {DEFAULT_TEAM, own_team}:
+            return None, "Resource belongs to another team"
+    if requested != DEFAULT_TEAM:
+        try:
+            team_entity = _get_table_client(TABLE_TEAMS).get_entity(
+                partition_key="Team", row_key=requested
+            )
+            if not _as_bool(team_entity.get("enabled"), default=True):
+                return None, "Team is disabled"
+        except Exception:
+            return None, "Team does not exist"
+    return requested, None
 
 
 def _rows_from_binding(rows: Union[str, list[dict], None]) -> Optional[list[dict]]:
@@ -786,6 +854,7 @@ def build_response_body(
                 "group": schema.group,
                 "monitor_condition": schema.monitor_condition,
                 "severity": schema.severity,
+                "team": schema.team,
             },
             "response": api_json,
             "log": {"partitionKey": partition_key, "exec_id": exec_id},
@@ -821,6 +890,7 @@ def build_log_entry(
     oncall: Optional[str],
     monitor_condition: Optional[str],
     severity: Optional[str],
+    team: Optional[str] = DEFAULT_TEAM,
     initiator: Optional[str] = None,
     resource_info: Optional[dict[str, Any]] = None,
     approval_required: Optional[bool] = None,
@@ -848,6 +918,7 @@ def build_log_entry(
         else None,
         "MonitorCondition": monitor_condition,
         "Severity": severity,
+        "team": _normalize_team(team),
         "ApprovalRequired": approval_required,
         "ApprovalExpiresAt": approval_expires_at,
         "ApprovalDecisionBy": approval_decision_by,
@@ -882,6 +953,7 @@ def _post_status(payload: dict, status: str, log_message: str) -> str:
         "initiator": payload.get("initiator"),
         "monitor_condition": payload.get("monitor_condition"),
         "severity": payload.get("severity"),
+        "team": payload.get("team"),
         "resource_info": payload.get("resource_info"),
         "routing_info": payload.get("routing_info"),
         "logs_b64": log_bytes.decode("utf-8"),
@@ -1088,6 +1160,11 @@ def Trigger(
         )
 
     schema_entity = _find_schema_entity(parsed, schema_id)
+    if schema_entity and not _can_view_all_teams(req, session):
+        if _entity_team(schema_entity) not in {DEFAULT_TEAM, _session_team(session)}:
+            return _json_response(
+                {"error": "Schema belongs to another team"}, status_code=403
+            )
 
     if not schema_entity:
         if monitor_condition and severity:
@@ -1129,7 +1206,7 @@ def Trigger(
                 status_code=204,
             )
 
-    logging.info(
+    logging.debug(
         f"{log_prefix} Getting schema entity id '{_get_entity_id(schema_entity)}'"
     )
     # Build domain model
@@ -1192,6 +1269,7 @@ def Trigger(
                 "code": func_key or "",
                 "monitorCondition": monitor_condition,
                 "severity": severity,
+                "team": schema.team,
                 "worker": schema.worker,
                 "group": schema.group,
             }
@@ -1368,11 +1446,11 @@ def Trigger(
                     )
                 except Exception as e:
                     msg = f"Slack approval notify failed: {e}"
-                    logging.warning(f"[{exec_id}] {msg}")
+                    logging.debug(f"[{exec_id}] {msg}")
                     notification_warnings.append(msg)
             else:
                 msg = "Slack approval notify skipped: missing token or channel"
-                logging.warning(f"[{exec_id}] {msg}")
+                logging.debug(f"[{exec_id}] {msg}")
                 notification_warnings.append(msg)
 
             if jsm_token:
@@ -1406,11 +1484,11 @@ def Trigger(
                     )
                 except Exception as e:
                     msg = f"JSM approval notify failed: {e}"
-                    logging.warning(f"[{exec_id}] {msg}")
+                    logging.debug(f"[{exec_id}] {msg}")
                     notification_warnings.append(msg)
             else:
                 msg = "JSM approval notify skipped: missing token"
-                logging.warning(f"[{exec_id}] {msg}")
+                logging.debug(f"[{exec_id}] {msg}")
                 notification_warnings.append(msg)
 
             if notification_warnings:
@@ -1435,6 +1513,7 @@ def Trigger(
                 resource_info=resource_info,
                 monitor_condition=monitor_condition,
                 severity=severity,
+                team=schema.team,
                 approval_required=True,
                 approval_expires_at=expires_at,
             )
@@ -1473,7 +1552,7 @@ def Trigger(
         status_code = 202
 
         if target_queue:
-            logging.info(
+            logging.debug(
                 f"{log_prefix} 🎯 Dynamic Routing: Selected Queue '{target_queue}'"
             )
 
@@ -1489,6 +1568,7 @@ def Trigger(
                     "oncall": schema.oncall,
                     "monitor_condition": monitor_condition,
                     "severity": severity,
+                    "team": schema.team,
                     "worker": schema.worker,
                     "group": schema.group,
                     "initiator": requester_username,
@@ -1539,6 +1619,7 @@ def Trigger(
             initiator=requester_username,
             monitor_condition=monitor_condition,
             severity=severity,
+            team=schema.team,
             resource_info=resource_info,
         )
         log_table.set(json.dumps(start_log, ensure_ascii=False))
@@ -1743,6 +1824,7 @@ def Trigger(
             oncall=schema.oncall,
             monitor_condition=monitor_condition,
             severity=severity,
+            team=schema.team,
         )
         log_table.set(json.dumps(error_log, ensure_ascii=False))
 
@@ -1880,6 +1962,7 @@ def approve(
     routing_info = payload.get("routing_info") or None
     monitor_condition = payload.get("monitorCondition") or ""
     severity = payload.get("severity") or ""
+    resource_team = _normalize_team(payload.get("team"))
 
     # Load schema entity
     parsed = _rows_from_binding(schemas)
@@ -1899,6 +1982,20 @@ def approve(
         )
 
     schema = Schema(id=_get_entity_id(schema_entity), entity=schema_entity)
+    if (
+        session
+        and not _is_admin(session)
+        and resource_team
+        not in {
+            DEFAULT_TEAM,
+            _session_team(session),
+        }
+    ):
+        return func.HttpResponse(
+            json.dumps({"error": "Approval belongs to another team"}),
+            status_code=403,
+            mimetype="application/json",
+        )
 
     partition_key = utils.today_partition_key()
     requested_at = utils.format_requested_at()
@@ -1914,7 +2011,7 @@ def approve(
         status_code = 202
 
         if target_queue:
-            logging.info(
+            logging.debug(
                 f"{log_prefix} 🎯 Dynamic Routing: Selected Queue '{target_queue}'"
             )
 
@@ -1930,6 +2027,7 @@ def approve(
                     "oncall": schema.oncall,
                     "monitor_condition": monitor_condition,
                     "severity": severity,
+                    "team": schema.team,
                     "worker": schema.worker,
                     "group": schema.group,
                     "initiator": initiator,
@@ -1984,6 +2082,7 @@ def approve(
             resource_info=resource_info,
             monitor_condition=monitor_condition,
             severity=severity,
+            team=schema.team,
             approval_required=True,
             approval_decision_by=approver,
         )
@@ -2204,6 +2303,7 @@ def reject(
     routing_info = payload.get("routing_info") or None
     monitor_condition = payload.get("monitorCondition") or ""
     severity = payload.get("severity") or ""
+    resource_team = _normalize_team(payload.get("team"))
 
     # Load schema entity
     parsed = _rows_from_binding(schemas)
@@ -2223,6 +2323,20 @@ def reject(
         )
 
     schema = Schema(id=_get_entity_id(schema_entity), entity=schema_entity)
+    if (
+        session
+        and not _is_admin(session)
+        and resource_team
+        not in {
+            DEFAULT_TEAM,
+            _session_team(session),
+        }
+    ):
+        return func.HttpResponse(
+            json.dumps({"error": "Approval belongs to another team"}),
+            status_code=403,
+            mimetype="application/json",
+        )
 
     partition_key = utils.today_partition_key()
     requested_at = utils.format_requested_at()
@@ -2247,6 +2361,7 @@ def reject(
         resource_info=resource_info,
         monitor_condition=monitor_condition,
         severity=severity,
+        team=schema.team,
         approval_required=True,
         approval_decision_by=approver,
     )
@@ -2327,7 +2442,7 @@ def _process_receiver_body(body: dict, log_table: func.Out[str]) -> None:
             body.get("exec_id"), body.get("initiator")
         )
         # Normalize fields that can arrive as list/scalars to keep Receiver robust.
-        for key in ("exec_id", "status", "name", "id", "runbook"):
+        for key in ("exec_id", "status", "name", "id", "runbook", "team"):
             value = body.get(key)
             if isinstance(value, list):
                 first = next((str(v).strip() for v in value if str(v).strip()), "")
@@ -2354,7 +2469,7 @@ def _process_receiver_body(body: dict, log_table: func.Out[str]) -> None:
         logging.warning(f"{receiver_prefix} Missing required fields: {missing}")
         return
 
-    logging.warning(
+    logging.info(
         f"{receiver_prefix} [{body.get('status')}] Receiver invoked",
         extra={
             "headers": {
@@ -2368,6 +2483,7 @@ def _process_receiver_body(body: dict, log_table: func.Out[str]) -> None:
                 "Initiator": body.get("initiator"),
                 "MonitorCondition": body.get("monitor_condition"),
                 "Severity": body.get("severity"),
+                "Team": body.get("team"),
             }
         },
     )
@@ -2419,6 +2535,8 @@ def _process_receiver_body(body: dict, log_table: func.Out[str]) -> None:
         except Exception:
             routing_info = {}
 
+    body["team"] = _normalize_team(body.get("team") or resource_info.get("team"))
+
     log_entity = build_log_entry(
         status=status_label,
         partition_key=partition_key,
@@ -2437,6 +2555,7 @@ def _process_receiver_body(body: dict, log_table: func.Out[str]) -> None:
         resource_info=resource_info,
         monitor_condition=body.get("monitor_condition"),
         severity=body.get("severity"),
+        team=body.get("team") or resource_info.get("team"),
     )
     log_entity = _ensure_log_entity_size_for_table(log_entity)
     log_table.set(json.dumps(log_entity, ensure_ascii=False))
@@ -2694,7 +2813,7 @@ def _enqueue_ai_agent_analysis(
         and str(resource_info.get("team") or "").strip().lower() == "dev-test"
     )
     if is_dev_test_run:
-        logging.info(
+        logging.debug(
             "[%s] Agent: skipping AI triage for Dev Test Run execution",
             body.get("exec_id"),
         )
@@ -2730,7 +2849,7 @@ def _enqueue_ai_agent_analysis(
         _write_ai_analysis_placeholder(body.get("exec_id"))
         ai_queue.send_message(json.dumps(ai_payload, ensure_ascii=False))
     except Exception as e:
-        logging.warning(
+        logging.error(
             f"[{body.get('exec_id')}] Failed to enqueue AI agent analysis: {e}"
         )
 
@@ -2754,7 +2873,7 @@ def _write_ai_analysis_placeholder(exec_id: str) -> None:
             }
         )
     except Exception as e:
-        logging.warning(f"[{exec_id}] Failed to write AI analysis placeholder: {e}")
+        logging.error(f"[{exec_id}] Failed to write AI analysis placeholder: {e}")
 
 
 # =========================
@@ -2905,6 +3024,12 @@ def dev_test_run(
     capability = req_body.get("capability", "").strip()
     script_type = req_body.get("scriptType", "python").lower()  # Default to python
 
+    # Get authenticated user
+    session, error_res = _get_authenticated_user(req)
+    if error_res:
+        return error_res
+    initiator = session.get("username") or "dev-user"
+
     # Parse resource_info from the body using detection (same as Trigger endpoint)
     parsed_body = detection.parse_resource_fields(req_body.get("body"))
     resource_info = {
@@ -2918,7 +3043,7 @@ def dev_test_run(
         "aks_deployment": parsed_body.get("deployment"),
         "aks_job": parsed_body.get("job"),
         "aks_horizontalpodautoscaler": parsed_body.get("horizontalpodautoscaler"),
-        "team": "dev-test",
+        "team": session.get("team") or "default",
         "payload": parsed_body.get("payload"),
     }
 
@@ -2949,13 +3074,7 @@ def dev_test_run(
     exec_id = str(uuid.uuid4())
     requested_at = utils.format_requested_at()
 
-    # Get authenticated user
-    session, error_res = _get_authenticated_user(req)
-    if error_res:
-        return error_res
-    initiator = session.get("username") or "dev-user"
-
-    logging.info(
+    logging.debug(
         f"[DEV TEST] Scheduling test run: {script_name} with capability {capability} (exec_id={exec_id}, initiator={initiator})"
     )
 
@@ -3004,7 +3123,7 @@ def dev_test_run(
             "routing_info": {},
         }
 
-        logging.info(
+        logging.debug(
             f"[DEV TEST] Selected queue '{target_queue}' for capability '{capability}'. Sending payload: {queue_payload}"
         )
 
@@ -3039,6 +3158,7 @@ def dev_test_run(
             initiator=initiator,
             monitor_condition=parsed_body.get("monitor_condition", "Fired"),
             severity=parsed_body.get("severity", "Sev4"),
+            team=session.get("team") or "default",
             resource_info=resource_info,
         )
         log_table.set(json.dumps(start_log, ensure_ascii=False))
@@ -3161,10 +3281,19 @@ def get_log(req: func.HttpRequest, log_entity: str) -> func.HttpResponse:
         if isinstance(parsed, list):
             parsed = parsed[0] if parsed else None
         if isinstance(parsed, dict):
+            if not _can_view_all_teams(req, session) and _entity_team(parsed) not in {
+                DEFAULT_TEAM,
+                _session_team(session),
+            }:
+                return func.HttpResponse(
+                    json.dumps({"error": "Execution belongs to another team"}),
+                    status_code=403,
+                    mimetype="application/json",
+                )
             parsed = _hydrate_log_field(parsed)
             log_entity = json.dumps(parsed, ensure_ascii=False)
     except Exception as e:
-        logging.warning(f"Failed to hydrate get_log entity: {e}")
+        logging.error(f"Failed to hydrate get_log entity: {e}")
 
     # log_entity is a JSON string of the complete entity
     return func.HttpResponse(
@@ -3365,6 +3494,7 @@ def logs_query(req: func.HttpRequest) -> func.HttpResponse:
             "Severity",
             "MonitorCondition",
             "ResourceInfo",
+            "team",
         ]
         if include_log_content or q:
             selected_columns.append("Log")
@@ -3374,6 +3504,7 @@ def logs_query(req: func.HttpRequest) -> func.HttpResponse:
                 query_filter=filter_query, select=selected_columns
             )
             data = list(entities)
+            data = _filter_entities_by_team(data, req, session)
         except Exception as e:
             logging.error(f"Table query failed: {e}")
             return func.HttpResponse(
@@ -3502,7 +3633,7 @@ def logs_query(req: func.HttpRequest) -> func.HttpResponse:
             try:
                 hydrated_items.append(_hydrate_log_field(item))
             except Exception as e:
-                logging.warning(f"Failed to hydrate log item {item.get('RowKey')}: {e}")
+                logging.error(f"Failed to hydrate log item {item.get('RowKey')}: {e}")
                 hydrated_items.append(item)
 
         body = json.dumps({"items": hydrated_items}, ensure_ascii=False)
@@ -3549,11 +3680,25 @@ def register_worker(req: func.HttpRequest) -> func.HttpResponse:
         capability = (body.get("capability") or body.get("id") or "").strip()
         worker_instance_id = (body.get("worker_id") or "").strip()
         worker_queue = body.get("queue")
+        worker_team = _normalize_team(body.get("team"))
 
         if not capability or not worker_queue or not worker_instance_id:
             return func.HttpResponse(
                 "Missing capability, worker_id or url", status_code=400
             )
+
+        if worker_team != DEFAULT_TEAM:
+            try:
+                team_entity = _get_table_client(TABLE_TEAMS).get_entity(
+                    partition_key="Team", row_key=worker_team
+                )
+                if not _as_bool(team_entity.get("enabled"), default=True):
+                    raise ValueError("Team is disabled")
+            except Exception:
+                return func.HttpResponse(
+                    json.dumps({"error": "Worker team does not exist"}),
+                    status_code=400,
+                )
 
         table_client = _get_table_client(TABLE_WORKERS_SCHEMAS)
 
@@ -3564,6 +3709,7 @@ def register_worker(req: func.HttpRequest) -> func.HttpResponse:
             "LastSeen": utils.utc_now_iso(),
             "Region": body.get("region", "default"),
             "Load": body.get("load", 0),
+            "team": worker_team,
         }
 
         table_client.upsert_entity(entity=entity, mode=UpdateMode.REPLACE)
@@ -3602,7 +3748,7 @@ def list_workers(req: func.HttpRequest, workers: str) -> func.HttpResponse:
 
     try:
         # Parse binding result (can be string or list depending on extension version)
-        data = _rows_from_binding(workers) or []
+        data = _filter_entities_by_team(_rows_from_binding(workers) or [], req, session)
 
         return func.HttpResponse(
             json.dumps(data, ensure_ascii=False),
@@ -3741,6 +3887,7 @@ def auth_register(req: func.HttpRequest) -> func.HttpResponse:
             "email": email,
             "role": "PENDING",
             "created_at": datetime.now(timezone.utc).isoformat(),
+            "team": DEFAULT_TEAM,
         }
 
         table_client.create_entity(entity=entity)
@@ -3810,7 +3957,7 @@ def auth_login(req: func.HttpRequest) -> func.HttpResponse:
                     ):
                         is_valid = True
                 except Exception as e:
-                    logging.warning(f"Bcrypt check failed: {e}")
+                    logging.error(f"Bcrypt check failed: {e}")
             else:
                 # Fallback for plain text (for migration period)
                 if db_password == password:
@@ -3822,7 +3969,7 @@ def auth_login(req: func.HttpRequest) -> func.HttpResponse:
                         ).decode("utf-8")
                         user_entity["password"] = hashed
                         table_client.update_entity(entity=user_entity)
-                        logging.info(f"User {username} password migrated to hash")
+                        logging.debug(f"User {username} password migrated to hash")
                     except Exception as e:
                         logging.error(f"Failed to migrate password for {username}: {e}")
 
@@ -3851,6 +3998,7 @@ def auth_login(req: func.HttpRequest) -> func.HttpResponse:
                 username=user_entity.get("RowKey"),
                 role=user_entity.get("role"),
                 expires_at=expires_at,
+                team=_entity_team(user_entity),
             )
 
             return func.HttpResponse(
@@ -3861,6 +4009,7 @@ def auth_login(req: func.HttpRequest) -> func.HttpResponse:
                             "username": user_entity.get("RowKey"),
                             "email": user_entity.get("email"),
                             "role": user_entity.get("role"),
+                            "team": _entity_team(user_entity),
                         },
                         "expires_at": expires_at,
                         "token": session_token,
@@ -3972,6 +4121,7 @@ def auth_google(req: func.HttpRequest) -> func.HttpResponse:
                 "picture": picture,
                 "created_at": datetime.now(timezone.utc).isoformat(),
                 "sso_provider": "google",
+                "team": DEFAULT_TEAM,
             }
             table_client.create_entity(entity=user_entity)
             log_audit(
@@ -4000,6 +4150,7 @@ def auth_google(req: func.HttpRequest) -> func.HttpResponse:
             username=user_entity.get("RowKey"),
             role=user_entity.get("role"),
             expires_at=expires_at,
+            team=_entity_team(user_entity),
         )
 
         log_audit(
@@ -4017,6 +4168,7 @@ def auth_google(req: func.HttpRequest) -> func.HttpResponse:
                         "username": user_entity.get("RowKey"),
                         "email": user_entity.get("email"),
                         "role": user_entity.get("role"),
+                        "team": _entity_team(user_entity),
                         "picture": user_entity.get("picture"),
                     },
                     "expires_at": expires_at,
@@ -4079,6 +4231,7 @@ def auth_profile(req: func.HttpRequest) -> func.HttpResponse:
                     "created_at": user_entity.get("created_at"),
                     "api_token": user_entity.get("api_token"),
                     "sso_provider": user_entity.get("sso_provider"),
+                    "team": _entity_team(user_entity),
                 }
             ),
             status_code=200,
@@ -4092,6 +4245,16 @@ def auth_profile(req: func.HttpRequest) -> func.HttpResponse:
             new_email = body.get("email")
             new_password = body.get("password")
             generate_token = body.get("generate_token")
+            requested_team = body.get("team")
+
+            if requested_team is not None and not _is_admin(session):
+                return func.HttpResponse(
+                    json.dumps({"error": "Only administrators can assign teams"}),
+                    status_code=403,
+                    mimetype="application/json",
+                )
+            if requested_team is not None:
+                user_entity["team"] = _normalize_team(requested_team)
 
             # Check if user is SSO (Google)
             is_sso = user_entity.get("sso_provider") == "google"
@@ -4161,6 +4324,147 @@ def auth_profile(req: func.HttpRequest) -> func.HttpResponse:
 
 
 @app.route(
+    route="teams",
+    methods=[
+        func.HttpMethod.GET,
+        func.HttpMethod.POST,
+        func.HttpMethod.DELETE,
+        func.HttpMethod.OPTIONS,
+    ],
+    auth_level=AUTH,
+)
+def teams_management(req: func.HttpRequest) -> func.HttpResponse:
+    if req.method == "OPTIONS":
+        return create_cors_response()
+
+    session, error_res = _get_authenticated_user(req)
+    if error_res:
+        return error_res
+
+    if req.method in {"POST", "DELETE"} and not _is_admin(session):
+        return func.HttpResponse(
+            json.dumps({"error": "Admin role required"}),
+            status_code=403,
+            mimetype="application/json",
+        )
+
+    table_client = _get_table_client(TABLE_TEAMS)
+
+    if req.method == "GET":
+        try:
+            entities = list(
+                table_client.query_entities(query_filter="PartitionKey eq 'Team'")
+            )
+            if _is_admin(session):
+                visible = entities
+            else:
+                visible = [
+                    entity
+                    for entity in entities
+                    if _normalize_team(entity.get("RowKey"))
+                    in {DEFAULT_TEAM, _session_team(session)}
+                ]
+            teams = [
+                {
+                    "id": DEFAULT_TEAM,
+                    "name": "default",
+                    "description": "Shared resources",
+                    "enabled": True,
+                    "shared": True,
+                }
+            ]
+            teams.extend(
+                {
+                    "id": _normalize_team(entity.get("RowKey")),
+                    "name": entity.get("name") or entity.get("RowKey"),
+                    "description": entity.get("description") or "",
+                    "enabled": _as_bool(entity.get("enabled"), default=True),
+                    "shared": False,
+                }
+                for entity in visible
+                if _normalize_team(entity.get("RowKey")) != DEFAULT_TEAM
+            )
+            return func.HttpResponse(
+                json.dumps(teams, ensure_ascii=False),
+                status_code=200,
+                mimetype="application/json",
+                headers={"Access-Control-Allow-Origin": "*"},
+            )
+        except Exception as e:
+            logging.error(f"Failed to list teams: {e}")
+            return func.HttpResponse(
+                json.dumps({"error": "Failed to fetch teams"}), status_code=500
+            )
+
+    if req.method == "POST":
+        try:
+            body = req.get_json()
+            if not isinstance(body, dict):
+                return func.HttpResponse(
+                    json.dumps({"error": "Invalid request body"}), status_code=400
+                )
+            team_id = _normalize_team(body.get("id") or body.get("name"))
+            if team_id == DEFAULT_TEAM or not team_id:
+                return func.HttpResponse(
+                    json.dumps({"error": "The default team is reserved"}),
+                    status_code=400,
+                )
+            entity = {
+                "PartitionKey": "Team",
+                "RowKey": team_id,
+                "name": str(body.get("name") or team_id).strip(),
+                "description": str(body.get("description") or "").strip(),
+                "enabled": _as_bool(body.get("enabled"), default=True),
+                "created_at": datetime.now(timezone.utc).isoformat(),
+            }
+            table_client.upsert_entity(entity=entity)
+            log_audit(
+                user=session.get("username") or "SYSTEM",
+                action="TEAM_UPSERT",
+                target=team_id,
+                details=f"Name: {entity['name']}",
+            )
+            return func.HttpResponse(
+                json.dumps({"success": True, "id": team_id}), status_code=200
+            )
+        except Exception as e:
+            logging.error(f"Failed to save team: {e}")
+            return func.HttpResponse(
+                json.dumps({"error": "Failed to save team"}), status_code=500
+            )
+
+    if req.method == "DELETE":
+        team_id = _normalize_team(req.params.get("id"))
+        if team_id == DEFAULT_TEAM:
+            return func.HttpResponse(
+                json.dumps({"error": "The default team cannot be deleted"}),
+                status_code=400,
+            )
+        try:
+            for table_name in (TABLE_USERS, TABLE_SCHEMAS, TABLE_SCHEDULES):
+                rows = _get_table_client(table_name).query_entities(
+                    query_filter=f"team eq '{team_id}'"
+                )
+                if next(iter(rows), None):
+                    return func.HttpResponse(
+                        json.dumps({"error": "Team is still assigned to resources"}),
+                        status_code=409,
+                    )
+            table_client.delete_entity(partition_key="Team", row_key=team_id)
+            log_audit(
+                user=session.get("username") or "SYSTEM",
+                action="TEAM_DELETE",
+                target=team_id,
+            )
+            return func.HttpResponse(json.dumps({"success": True}), status_code=200)
+        except Exception as e:
+            logging.error(f"Failed to delete team: {e}")
+            return func.HttpResponse(
+                json.dumps({"error": "Failed to delete team"}), status_code=500
+            )
+
+
+@app.route(
     route="users",
     methods=[
         func.HttpMethod.GET,
@@ -4206,6 +4510,7 @@ def users_management(req: func.HttpRequest) -> func.HttpResponse:
             entities = table_client.query_entities(
                 query_filter="PartitionKey eq 'Operator'"
             )
+            entities = _filter_entities_by_team(list(entities), req, session)
             users = []
             for e in entities:
                 users.append(
@@ -4216,6 +4521,7 @@ def users_management(req: func.HttpRequest) -> func.HttpResponse:
                         "created_at": e.get("created_at"),
                         "picture": e.get("picture"),
                         "sso_provider": e.get("sso_provider"),
+                        "team": _entity_team(e),
                     }
                 )
             return func.HttpResponse(
@@ -4243,6 +4549,14 @@ def users_management(req: func.HttpRequest) -> func.HttpResponse:
                 existing_user = table_client.get_entity(
                     partition_key="Operator", row_key=username
                 )
+                if _entity_team(existing_user) not in {
+                    DEFAULT_TEAM,
+                    _session_team(session),
+                } and not _can_view_all_teams(req, session):
+                    return func.HttpResponse(
+                        json.dumps({"error": "User belongs to another team"}),
+                        status_code=403,
+                    )
                 created_at = existing_user.get("created_at")
 
                 # Check if user is SSO (Google)
@@ -4267,6 +4581,14 @@ def users_management(req: func.HttpRequest) -> func.HttpResponse:
                 sso_provider = None
                 picture = None
 
+            team, team_error = _requested_write_team(
+                body, session, existing_user if "existing_user" in locals() else None
+            )
+            if team_error:
+                return func.HttpResponse(
+                    json.dumps({"error": team_error}), status_code=403
+                )
+
             import bcrypt
 
             # If password is provided and doesn't look like a bcrypt hash, hash it
@@ -4286,6 +4608,7 @@ def users_management(req: func.HttpRequest) -> func.HttpResponse:
                 "created_at": created_at,
                 "sso_provider": sso_provider,
                 "picture": picture,
+                "team": team,
             }
             table_client.upsert_entity(entity=entity, mode=UpdateMode.REPLACE)
 
@@ -4314,6 +4637,17 @@ def users_management(req: func.HttpRequest) -> func.HttpResponse:
             username = req.params.get("username")
             if not username:
                 return func.HttpResponse("Missing username", status_code=400)
+            existing_user = table_client.get_entity(
+                partition_key="Operator", row_key=username
+            )
+            if _entity_team(existing_user) not in {
+                DEFAULT_TEAM,
+                _session_team(session),
+            } and not _is_admin(session):
+                return func.HttpResponse(
+                    json.dumps({"error": "User belongs to another team"}),
+                    status_code=403,
+                )
             table_client.delete_entity(partition_key="Operator", row_key=username)
 
             # Audit log
@@ -4547,6 +4881,7 @@ def schedules_management(req: func.HttpRequest) -> func.HttpResponse:
             entities = table_client.query_entities(
                 query_filter="PartitionKey eq 'Schedule'"
             )
+            entities = _filter_entities_by_team(list(entities), req, session)
             schedules = []
             for e in entities:
                 schedules.append(
@@ -4563,6 +4898,7 @@ def schedules_management(req: func.HttpRequest) -> func.HttpResponse:
                         "last_run": e.get("last_run"),
                         "managed_by": e.get("managed_by") or "manual",
                         "locked": _is_terraform_locked(e),
+                        "team": _entity_team(e),
                     }
                 )
             return func.HttpResponse(
@@ -4596,6 +4932,26 @@ def schedules_management(req: func.HttpRequest) -> func.HttpResponse:
                 )
             except Exception:
                 existing = None
+
+            if (
+                existing
+                and _entity_team(existing)
+                not in {
+                    DEFAULT_TEAM,
+                    _session_team(session),
+                }
+                and not _can_view_all_teams(req, session)
+            ):
+                return func.HttpResponse(
+                    json.dumps({"error": "Schedule belongs to another team"}),
+                    status_code=403,
+                )
+
+            team, team_error = _requested_write_team(body, session, existing)
+            if team_error:
+                return func.HttpResponse(
+                    json.dumps({"error": team_error}), status_code=403
+                )
 
             if _is_terraform_locked(existing):
                 immutable_fields = [
@@ -4649,6 +5005,7 @@ def schedules_management(req: func.HttpRequest) -> func.HttpResponse:
                     "last_run": existing.get("last_run", ""),
                     "managed_by": existing.get("managed_by", "terraform"),
                     "locked": _as_bool(existing.get("locked"), default=True),
+                    "team": team,
                 }
             else:
                 entity = {
@@ -4665,6 +5022,7 @@ def schedules_management(req: func.HttpRequest) -> func.HttpResponse:
                     "last_run": (existing or {}).get("last_run", ""),
                     "managed_by": (existing or {}).get("managed_by", "manual"),
                     "locked": _as_bool((existing or {}).get("locked"), default=False),
+                    "team": team,
                 }
             table_client.upsert_entity(entity=entity, mode=UpdateMode.REPLACE)
 
@@ -4718,6 +5076,15 @@ def schedules_management(req: func.HttpRequest) -> func.HttpResponse:
                     headers={"Access-Control-Allow-Origin": "*"},
                 )
 
+            if _entity_team(existing) not in {
+                DEFAULT_TEAM,
+                _session_team(session),
+            } and not _can_view_all_teams(req, session):
+                return func.HttpResponse(
+                    json.dumps({"error": "Schedule belongs to another team"}),
+                    status_code=403,
+                )
+
             table_client.delete_entity(partition_key="Schedule", row_key=schedule_id)
             log_audit(
                 user=session.get("username") or "SYSTEM",
@@ -4749,7 +5116,7 @@ def stop_worker_process(req: func.HttpRequest) -> func.HttpResponse:
     """
     import requests
 
-    logging.info(f"Stop worker process requested. Params: {req.params}")
+    logging.debug(f"Stop worker process requested. Params: {req.params}")
 
     if req.method == "OPTIONS":
         return create_cors_response()
@@ -4834,7 +5201,7 @@ def stop_worker_process(req: func.HttpRequest) -> func.HttpResponse:
 def runbook_schemas(
     req: func.HttpRequest, entities: str, outputTable: func.Out[str]
 ) -> func.HttpResponse:
-    logging.info(f"Processing {req.method} request for schemas.")
+    logging.debug(f"Processing {req.method} request for schemas.")
 
     if req.method == "OPTIONS":
         return create_cors_response()
@@ -4864,10 +5231,12 @@ def runbook_schemas(
         try:
             schemas_data = json.loads(entities)
             if isinstance(schemas_data, list):
+                schemas_data = _filter_entities_by_team(schemas_data, req, session)
                 for item in schemas_data:
                     if isinstance(item, dict):
                         item["enabled"] = _as_bool(item.get("enabled"), default=True)
-            logging.info(f"schemas: {str(schemas_data)}")
+                        item["team"] = _entity_team(item)
+            logging.debug(f"schemas: {str(schemas_data)}")
 
             return func.HttpResponse(
                 body=json.dumps(schemas_data),
@@ -4897,11 +5266,17 @@ def runbook_schemas(
                 )
 
             schema_id = body.get("id", str(uuid.uuid4()))
+            team, team_error = _requested_write_team(body, session)
+            if team_error:
+                return func.HttpResponse(
+                    body=json.dumps({"error": team_error}), status_code=403
+                )
             new_entity = {
                 "PartitionKey": body.get("PartitionKey", "RunbookSchema"),
                 "RowKey": schema_id,
                 **body,
                 "enabled": _as_bool(body.get("enabled"), default=True),
+                "team": team,
             }
 
             outputTable.set(json.dumps(new_entity))
@@ -4958,11 +5333,39 @@ def runbook_schemas(
                     },
                 )
 
+            table_client = _get_table_client(TABLE_SCHEMAS)
+            try:
+                existing_entity = table_client.get_entity(
+                    partition_key=body.get("PartitionKey", "RunbookSchema"),
+                    row_key=schema_id,
+                )
+            except Exception:
+                existing_entity = None
+            if (
+                existing_entity
+                and _entity_team(existing_entity)
+                not in {
+                    DEFAULT_TEAM,
+                    _session_team(session),
+                }
+                and not _can_view_all_teams(req, session)
+            ):
+                return func.HttpResponse(
+                    body=json.dumps({"error": "Schema belongs to another team"}),
+                    status_code=403,
+                )
+            team, team_error = _requested_write_team(body, session, existing_entity)
+            if team_error:
+                return func.HttpResponse(
+                    body=json.dumps({"error": team_error}), status_code=403
+                )
+
             updated_entity = {
                 "PartitionKey": body.get("PartitionKey", "RunbookSchema"),
                 "RowKey": schema_id,
                 **body,
                 "enabled": _as_bool(body.get("enabled"), default=True),
+                "team": team,
             }
 
             table_client = _get_table_client(TABLE_SCHEMAS)
@@ -5021,6 +5424,25 @@ def runbook_schemas(
                 )
 
             table_client = _get_table_client(TABLE_SCHEMAS)
+            try:
+                existing_entity = table_client.get_entity(
+                    partition_key=partition_key, row_key=schema_id
+                )
+            except Exception:
+                existing_entity = None
+            if (
+                existing_entity
+                and _entity_team(existing_entity)
+                not in {
+                    DEFAULT_TEAM,
+                    _session_team(session),
+                }
+                and not _can_view_all_teams(req, session)
+            ):
+                return func.HttpResponse(
+                    body=json.dumps({"error": "Schema belongs to another team"}),
+                    status_code=403,
+                )
             table_client.delete_entity(partition_key=partition_key, row_key=schema_id)
 
             # Audit log
@@ -5118,9 +5540,9 @@ def get_runbook_content(req: func.HttpRequest) -> func.HttpResponse:
             if os.path.exists(local_path):
                 with open(local_path, encoding="utf-8") as f:
                     content_text = f.read()
-                logging.info(f"Loaded runbook from local path: {local_path}")
+                logging.debug(f"Loaded runbook from local path: {local_path}")
             else:
-                logging.warning(f"Local runbook not found at {local_path}")
+                logging.error(f"Local runbook not found at {local_path}")
         except Exception as e:
             logging.error(f"Error reading local runbook: {e}")
 
@@ -5308,17 +5730,22 @@ def scheduler_engine(schedulerTimer: func.TimerRequest) -> None:
     workers_table = _get_table_client(TABLE_WORKERS_SCHEMAS)
 
     try:
-        worker_pool_to_queue: dict[str, str] = {}
+        worker_pool_to_queue: dict[tuple[str, str], str] = {}
         try:
             workers = workers_table.query_entities(
                 query_filter="PartitionKey ne ''",
-                select=["PartitionKey", "Queue"],
+                select=["PartitionKey", "Queue", "team"],
             )
             for w in workers:
                 pool = str(w.get("PartitionKey") or "").strip()
                 queue_name = str(w.get("Queue") or "").strip()
-                if pool and queue_name and pool not in worker_pool_to_queue:
-                    worker_pool_to_queue[pool] = queue_name
+                worker_team = _entity_team(w)
+                if (
+                    pool
+                    and queue_name
+                    and (pool, worker_team) not in worker_pool_to_queue
+                ):
+                    worker_pool_to_queue[(pool, worker_team)] = queue_name
         except Exception as werr:
             logging.error(f"[Scheduler] Failed to load WorkersRegistry map: {werr}")
 
@@ -5354,15 +5781,21 @@ def scheduler_engine(schedulerTimer: func.TimerRequest) -> None:
 
             if should_run:
                 exec_id = str(uuid.uuid4())
-                logging.warning(
+                logging.info(
                     f"[Scheduler] Triggering {s['name']} (ID: {s['RowKey']}) -> ExecId: {exec_id}"
                 )
 
                 worker_pool = s.get("worker_pool")
+                schedule_team = _entity_team(s)
                 target_queue = "cloudo-default"
 
                 if worker_pool:
-                    target_queue = worker_pool_to_queue.get(worker_pool, target_queue)
+                    target_queue = worker_pool_to_queue.get(
+                        (worker_pool, schedule_team),
+                        worker_pool_to_queue.get(
+                            (worker_pool, DEFAULT_TEAM), target_queue
+                        ),
+                    )
 
                 requested_at = format_requested_at()
                 partition_key = today_partition_key()
@@ -5379,6 +5812,7 @@ def scheduler_engine(schedulerTimer: func.TimerRequest) -> None:
                     "oncall": oncall_enabled,
                     "require_approval": False,
                     "requested_at": requested_at,
+                    "team": _entity_team(s),
                 }
 
                 try:
@@ -5404,6 +5838,7 @@ def scheduler_engine(schedulerTimer: func.TimerRequest) -> None:
                         ),
                         monitor_condition="",
                         severity="",
+                        team=_entity_team(s),
                     )
                     log_table_client.create_entity(entity=log_entry)
                 except Exception as le:
@@ -5446,7 +5881,7 @@ def worker_cleanup(cleanupTimer: func.TimerRequest) -> None:
     now_dt = datetime.fromisoformat(now_str.replace("Z", "+00:00"))
     limit_time = now_dt - timedelta(minutes=3)
     limit_iso = limit_time.isoformat()
-    logging.info(f"[Cleanup] Cleaning up {limit_iso}")
+    logging.debug(f"[Cleanup] Cleaning up {limit_iso}")
 
     filter_query = f"LastSeen lt '{limit_iso}'"
 
@@ -5465,7 +5900,7 @@ def worker_cleanup(cleanupTimer: func.TimerRequest) -> None:
             )
             count += 1
 
-        logging.info(f"[Cleanup] Completed. Removed {count} workers.")
+        logging.debug(f"[Cleanup] Completed. Removed {count} workers.")
 
     except Exception as e:
         logging.error(f"[Cleanup] Failed: {e}")

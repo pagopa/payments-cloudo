@@ -144,6 +144,20 @@ export function SchemaCard({
           </div>
 
           <div className="flex items-center gap-3">
+            <div className="p-2 bg-cloudo-accent/5 border border-cloudo-border shrink-0">
+              <HiOutlineUserGroup className="text-cloudo-accent w-4 h-4" />
+            </div>
+            <div className="flex flex-col min-w-0">
+              <span className="text-[10px] text-cloudo-muted/50 uppercase font-black tracking-widest">
+                Team
+              </span>
+              <span className="text-xs text-cloudo-accent font-bold uppercase truncate">
+                {schema.team || "default"}
+              </span>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-3">
             <div className="p-2 bg-cloudo-accent/5 border border-cloudo-border group-hover:border-cloudo-accent/20 transition-all shrink-0">
               <HiOutlineChip className="text-cloudo-accent w-4 h-4" />
             </div>
