@@ -16,12 +16,13 @@ import {
   HiOutlineChip,
   HiOutlineViewGrid,
   HiOutlineShieldCheck,
-  HiOutlineUsers,
+  HiOutlineUserGroup,
   HiOutlineClipboardList,
   HiOutlineClock,
   HiOutlineSun,
   HiOutlineMoon,
   HiOutlineUser,
+  HiOutlineUsers,
   HiOutlineGlobeAlt,
 } from "react-icons/hi";
 import { MdOutlineRouter } from "react-icons/md";
@@ -51,7 +52,7 @@ const navigation: NavItem[] = [
   {
     name: "Teams",
     href: "/teams",
-    icon: <HiOutlineUsers />,
+    icon: <HiOutlineUserGroup />,
     adminOnly: true,
   },
   { name: "Collection", href: "/collection", icon: <HiOutlineCollection /> },
