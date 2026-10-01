@@ -179,8 +179,8 @@ export function SmartRoutingConsole() {
               token:
                 settings[`SLACK_TOKEN_${key}`] || teamConfig.slack?.token || "",
               channel:
-                settings[`SLACK_CHANNEL_${key}`] ||
                 teamConfig.slack?.channel ||
+                settings[`SLACK_CHANNEL_${key}`] ||
                 "",
             },
             jsm: {
@@ -297,8 +297,14 @@ export function SmartRoutingConsole() {
       if (config.defaults.jsm?.apiKey) {
         settingsPayload.JSM_API_KEY_DEFAULT = config.defaults.jsm.apiKey;
       }
+      if (config.defaults.slack?.channel !== undefined) {
+        settingsPayload.SLACK_CHANNEL_DEFAULT = config.defaults.slack.channel;
+      }
       Object.entries(config.teams).forEach(([teamName, team]) => {
         const key = teamName.toUpperCase().replace(/-/g, "_");
+        // Keep the SLACK_CHANNEL_<TEAM> setting aligned, or it would shadow the edit on reload.
+        if (team.slack?.channel !== undefined)
+          settingsPayload[`SLACK_CHANNEL_${key}`] = team.slack.channel;
         if (team.slack?.token)
           settingsPayload[`SLACK_TOKEN_${key}`] = team.slack.token;
         if (team.jsm?.apiKey)

@@ -4994,6 +4994,14 @@ def settings_management(req: func.HttpRequest) -> func.HttpResponse:
                 }
                 table_client.upsert_entity(entity=entity)
 
+            try:
+                import smart_routing
+
+                smart_routing._routing_config_cache["expires_at"] = 0.0
+                smart_routing._setting_cache.clear()
+            except Exception:
+                pass
+
             log_audit(
                 user=session.get("username") or "SYSTEM",
                 action="SETTINGS_UPDATE",
