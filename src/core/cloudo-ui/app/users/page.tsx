@@ -3,6 +3,7 @@
 import { useState, useEffect, useMemo } from "react";
 import Image from "next/image";
 import { cloudoFetch } from "@/lib/api";
+import { DeleteConfirmationModal } from "../utils/modals";
 import { useRouter } from "next/navigation";
 import {
   HiOutlinePlus,
@@ -26,6 +27,7 @@ interface User {
   createdAt: string;
   picture?: string;
   sso_provider?: string;
+  team?: string;
 }
 
 interface Notification {
@@ -33,6 +35,8 @@ interface Notification {
   type: "success" | "error";
   message: string;
 }
+
+type SortKey = "username" | "email" | "role" | "team";
 
 export default function UsersPage() {
   const router = useRouter();
@@ -42,6 +46,12 @@ export default function UsersPage() {
   const [searchQuery, setSearchQuery] = useState("");
   const [modalMode, setModalMode] = useState<"create" | "edit" | null>(null);
   const [selectedUser, setSelectedUser] = useState<User | null>(null);
+  const [userToDelete, setUserToDelete] = useState<User | null>(null);
+  const [teamFilter, setTeamFilter] = useState("all");
+  const [sort, setSort] = useState<{ key: SortKey; dir: "asc" | "desc" }>({
+    key: "username",
+    dir: "asc",
+  });
   const [notifications, setNotifications] = useState<Notification[]>([]);
   const [currentUser, setCurrentUser] = useState<User | null>(null);
 
@@ -57,7 +67,7 @@ export default function UsersPage() {
   }, []);
 
   const addNotification = (type: "success" | "error", message: string) => {
-    const id = Date.now().toString();
+    const id = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
     setNotifications((prev) => [...prev, { id, type, message }]);
     setTimeout(() => {
       setNotifications((prev) => prev.filter((n) => n.id !== id));
@@ -114,27 +124,6 @@ export default function UsersPage() {
     }
   };
 
-  const deleteUser = async (username: string) => {
-    if (!confirm(`Are you sure you want to revoke access for ${username}?`))
-      return;
-
-    try {
-      const res = await cloudoFetch(`/users?username=${username}`, {
-        method: "DELETE",
-      });
-
-      if (res.ok) {
-        addNotification("success", `Access revoked for ${username}`);
-        fetchUsers();
-      } else {
-        const data = await res.json();
-        addNotification("error", data.error || "Failed to revoke access");
-      }
-    } catch {
-      addNotification("error", "Uplink failed");
-    }
-  };
-
   const approveUser = async (username: string, email: string) => {
     try {
       const res = await cloudoFetch(`/users`, {
@@ -156,12 +145,39 @@ export default function UsersPage() {
   };
 
   const filteredUsers = useMemo(() => {
-    return users.filter(
+    const query = searchQuery.toLowerCase();
+    const filtered = users.filter(
       (u) =>
-        u.username?.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        u.email?.toLowerCase().includes(searchQuery.toLowerCase()),
+        (teamFilter === "all" || (u.team || "default") === teamFilter) &&
+        (u.username?.toLowerCase().includes(query) ||
+          u.email?.toLowerCase().includes(query)),
     );
-  }, [users, searchQuery]);
+    const direction = sort.dir === "asc" ? 1 : -1;
+    return [...filtered].sort((a, b) => {
+      const left = String(
+        (sort.key === "team" ? a.team || "default" : a[sort.key]) || "",
+      ).toLowerCase();
+      const right = String(
+        (sort.key === "team" ? b.team || "default" : b[sort.key]) || "",
+      ).toLowerCase();
+      return left.localeCompare(right) * direction;
+    });
+  }, [users, searchQuery, teamFilter, sort]);
+
+  const teamOptions = useMemo(
+    () => Array.from(new Set(users.map((u) => u.team || "default"))).sort(),
+    [users],
+  );
+
+  const toggleSort = (key: SortKey) =>
+    setSort((prev) =>
+      prev.key === key
+        ? { key, dir: prev.dir === "asc" ? "desc" : "asc" }
+        : { key, dir: "asc" },
+    );
+
+  const sortMark = (key: SortKey) =>
+    sort.key === key ? (sort.dir === "asc" ? " ▲" : " ▼") : "";
 
   return (
     <div className="flex flex-col h-full bg-cloudo-dark text-cloudo-text font-mono selection:bg-cloudo-accent/30">
@@ -249,6 +265,23 @@ export default function UsersPage() {
               </button>
             )}
           </div>
+          <div className="flex items-center gap-2">
+            <span className="text-[10px] font-black text-cloudo-muted uppercase tracking-widest">
+              Team
+            </span>
+            <select
+              value={teamFilter}
+              onChange={(e) => setTeamFilter(e.target.value)}
+              className="bg-cloudo-dark border border-cloudo-border text-cloudo-text text-[10px] font-black px-2 h-10 outline-none focus:border-cloudo-accent/50 transition-colors cursor-pointer uppercase"
+            >
+              <option value="all">All teams</option>
+              {teamOptions.map((team) => (
+                <option key={team} value={team}>
+                  {team}
+                </option>
+              ))}
+            </select>
+          </div>
           {!isViewer && currentUser?.role === "ADMIN" && (
             <button
               onClick={() => setModalMode("create")}
@@ -271,17 +304,32 @@ export default function UsersPage() {
             <table className="w-full text-left border-collapse text-sm">
               <thead>
                 <tr className="border-b border-cloudo-border bg-cloudo-accent/10">
-                  <th className="px-8 py-5 font-black text-cloudo-muted uppercase tracking-[0.3em] text-[11px]">
-                    Identity
+                  <th
+                    onClick={() => toggleSort("username")}
+                    className="px-8 py-5 font-black text-cloudo-muted uppercase tracking-[0.3em] text-[11px] cursor-pointer select-none hover:text-cloudo-text"
+                  >
+                    Identity{sortMark("username")}
                   </th>
-                  <th className="px-8 py-5 font-black text-cloudo-muted uppercase tracking-[0.3em] text-[11px]">
-                    Email Endpoint
+                  <th
+                    onClick={() => toggleSort("email")}
+                    className="px-8 py-5 font-black text-cloudo-muted uppercase tracking-[0.3em] text-[11px] cursor-pointer select-none hover:text-cloudo-text"
+                  >
+                    Email Endpoint{sortMark("email")}
                   </th>
-                  <th className="px-8 py-5 font-black text-cloudo-muted uppercase tracking-[0.3em] text-[11px]">
-                    System Role
+                  <th
+                    onClick={() => toggleSort("role")}
+                    className="px-8 py-5 font-black text-cloudo-muted uppercase tracking-[0.3em] text-[11px] cursor-pointer select-none hover:text-cloudo-text"
+                  >
+                    System Role{sortMark("role")}
                   </th>
                   <th className="px-8 py-5 font-black text-cloudo-muted uppercase tracking-[0.3em] text-[11px]">
                     Provider
+                  </th>
+                  <th
+                    onClick={() => toggleSort("team")}
+                    className="px-8 py-5 font-black text-cloudo-muted uppercase tracking-[0.3em] text-[11px] cursor-pointer select-none hover:text-cloudo-text"
+                  >
+                    Team{sortMark("team")}
                   </th>
                   <th className="px-8 py-5 font-black text-cloudo-muted uppercase tracking-[0.3em] text-right text-[11px]">
                     Actions
@@ -292,7 +340,7 @@ export default function UsersPage() {
                 {loading ? (
                   <tr key="loading-row">
                     <td
-                      colSpan={5}
+                      colSpan={6}
                       className="py-32 text-center text-cloudo-muted italic animate-pulse uppercase tracking-[0.5em] font-black opacity-50"
                     >
                       Syncing Identity Data...
@@ -301,7 +349,7 @@ export default function UsersPage() {
                 ) : error ? (
                   <tr key="error-row">
                     <td
-                      colSpan={5}
+                      colSpan={6}
                       className="py-32 text-center text-cloudo-err font-black uppercase tracking-[0.2em]"
                     >
                       <div className="flex flex-col items-center gap-4">
@@ -313,7 +361,7 @@ export default function UsersPage() {
                 ) : filteredUsers.length === 0 ? (
                   <tr key="empty-row">
                     <td
-                      colSpan={5}
+                      colSpan={6}
                       className="py-32 text-center text-[10px] font-black uppercase tracking-[0.5em] opacity-40 italic"
                     >
                       NO_OPERATORS_FOUND
@@ -375,6 +423,11 @@ export default function UsersPage() {
                           {user.sso_provider || "Local"}
                         </span>
                       </td>
+                      <td className="px-8 py-6">
+                        <span className="text-[10px] font-black uppercase tracking-widest text-cloudo-accent">
+                          {user.team || "default"}
+                        </span>
+                      </td>
                       <td className="px-8 py-6 text-right">
                         <div className="flex items-center justify-end gap-2">
                           {!isViewer && currentUser?.role === "ADMIN" && (
@@ -401,7 +454,7 @@ export default function UsersPage() {
                                 <HiOutlinePencil className="w-4 h-4 group-hover/btn:scale-110 transition-transform" />
                               </button>
                               <button
-                                onClick={() => deleteUser(user.username)}
+                                onClick={() => setUserToDelete(user)}
                                 className="p-2.5 bg-cloudo-accent/10 border border-cloudo-border hover:border-cloudo-err/40 text-cloudo-err hover:bg-cloudo-err hover:text-cloudo-text transition-all group/btn disabled:opacity-60 disabled:cursor-not-allowed"
                                 title="Revoke Access"
                                 disabled={user.username === "admin"}
@@ -425,6 +478,20 @@ export default function UsersPage() {
           </div>
         </div>
       </div>
+
+      {/* Delete Confirmation Modal */}
+      {userToDelete && (
+        <DeleteConfirmationModal
+          schema={{ id: userToDelete.username }}
+          type="users"
+          onClose={() => setUserToDelete(null)}
+          onSuccess={(message) => {
+            fetchUsers();
+            addNotification("success", message);
+          }}
+          onError={(message) => addNotification("error", message)}
+        />
+      )}
 
       {/* Add/Edit User Modal */}
       {modalMode && (
@@ -490,10 +557,21 @@ function UserForm({
     password: "",
     role: initialData?.role || "OPERATOR",
     sso_provider: initialData?.sso_provider || "",
+    team: initialData?.team || "default",
   });
   const [submitting, setSubmitting] = useState(false);
+  const [teams, setTeams] = useState<
+    { id: string; name: string; enabled: boolean }[]
+  >([]);
 
   const isSSOUser = formData.sso_provider === "google";
+
+  useEffect(() => {
+    cloudoFetch("/teams")
+      .then((response) => (response.ok ? response.json() : []))
+      .then((data) => setTeams(Array.isArray(data) ? data : []))
+      .catch(() => setTeams([]));
+  }, []);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -529,6 +607,26 @@ function UserForm({
     <form onSubmit={handleSubmit} className="p-5 space-y-4">
       <div className="space-y-3">
         <div className="space-y-1.5">
+          <div className="space-y-1.5">
+            <label className="text-[11px] font-black uppercase tracking-widest text-cloudo-muted ml-1 block">
+              Team
+            </label>
+            <select
+              className="input h-11 w-full"
+              value={formData.team}
+              onChange={(e) =>
+                setFormData({ ...formData, team: e.target.value })
+              }
+            >
+              {teams
+                .filter((team) => team.enabled || team.id === formData.team)
+                .map((team) => (
+                  <option key={team.id} value={team.id}>
+                    {team.name}
+                  </option>
+                ))}
+            </select>
+          </div>
           <label className="text-[11px] font-black uppercase tracking-widest text-cloudo-muted ml-1 block">
             Username
           </label>

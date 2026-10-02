@@ -5,6 +5,7 @@ import logging
 import os
 import re
 import threading
+from contextlib import asynccontextmanager
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Callable, Optional
@@ -405,7 +406,20 @@ BANNER = r"""
 """
 
 
-app = FastAPI(title="CloudDO Orchestrator", version="fastapi-migration")
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    _configure_runtime_logging()
+    print(BANNER.replace("\\033", "\033"))
+    _start_background_workers()
+    try:
+        yield
+    finally:
+        _stop_background_workers()
+
+
+app = FastAPI(
+    title="CloudDO Orchestrator", version="fastapi-migration", lifespan=lifespan
+)
 
 
 @app.get("/admin/warmup")
@@ -416,18 +430,6 @@ def _admin_warmup() -> JSONResponse:
 @app.get("/admin/host/status")
 def _admin_host_status() -> JSONResponse:
     return JSONResponse({"state": "Running"})
-
-
-@app.on_event("startup")
-def _on_startup() -> None:
-    _configure_runtime_logging()
-    print(BANNER.replace("\\033", "\033"))
-    _start_background_workers()
-
-
-@app.on_event("shutdown")
-def _on_shutdown() -> None:
-    _stop_background_workers()
 
 
 for spec in _read_route_specs():

@@ -20,8 +20,10 @@ import {
   HiCheck,
 } from "react-icons/hi";
 import { MdOutlineRouter } from "react-icons/md";
+import { SmartRoutingConsole } from "./SmartRoutingConsole";
 
 interface Rule {
+  team?: string;
   when: {
     isAlert?: string;
     statusIn?: string[];
@@ -155,7 +157,7 @@ const StatusSelector = ({
   );
 };
 
-export default function SmartRoutingPage() {
+function LegacySmartRoutingPage() {
   const router = useRouter();
   const [config, setConfig] = useState<RoutingConfig>({
     version: 1,
@@ -179,9 +181,10 @@ export default function SmartRoutingPage() {
     ruleIndex?: number;
   } | null>(null);
   const [teamToDelete, setTeamToDelete] = useState<string | null>(null);
+  const [availableTeams, setAvailableTeams] = useState<string[]>(["default"]);
 
   const addNotification = (type: "success" | "error", message: string) => {
-    const id = Date.now().toString();
+    const id = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
     setNotifications((prev) => [...prev, { id, type, message }]);
     setTimeout(() => {
       setNotifications((prev) => prev.filter((n) => n.id !== id));
@@ -198,6 +201,16 @@ export default function SmartRoutingPage() {
           return;
         }
         fetchConfig();
+        cloudoFetch("/teams")
+          .then((res) => (res.ok ? res.json() : []))
+          .then((teams) => {
+            if (Array.isArray(teams)) {
+              setAvailableTeams(
+                teams.map((team: { id: string }) => team.id).filter(Boolean),
+              );
+            }
+          })
+          .catch(() => setAvailableTeams(["default"]));
       } catch {
         router.push("/login");
       }
@@ -952,6 +965,12 @@ export default function SmartRoutingPage() {
                           </span>
                         )}
 
+                        {rule.team && (
+                          <span className="px-2 py-0.5 bg-cloudo-warn/10 border border-cloudo-warn/30 text-cloudo-warn text-[9px] font-black uppercase tracking-tighter">
+                            TEAM: {rule.team}
+                          </span>
+                        )}
+
                         <HiOutlineArrowNarrowRight className="w-3 h-3 text-cloudo-muted/40 mx-1" />
 
                         {rule.then.map((action, aIdx) => (
@@ -1211,7 +1230,13 @@ export default function SmartRoutingPage() {
                                 className="w-full bg-cloudo-dark border border-cloudo-border px-3 py-1.5 text-xs outline-none"
                               >
                                 <option value="">None (Use Default)</option>
-                                {Object.keys(config.teams).map((t) => (
+                                {Array.from(
+                                  new Set([
+                                    "default",
+                                    ...availableTeams,
+                                    ...Object.keys(config.teams),
+                                  ]),
+                                ).map((t) => (
                                   <option key={t} value={t}>
                                     {t}
                                   </option>
@@ -1274,6 +1299,13 @@ export default function SmartRoutingPage() {
         <RuleModal
           ruleIndex={ruleModal.ruleIndex}
           config={config}
+          teamOptions={Array.from(
+            new Set([
+              "default",
+              ...availableTeams,
+              ...Object.keys(config.teams),
+            ]),
+          )}
           onClose={() => setRuleModal(null)}
           onSave={saveRuleModal}
         />
@@ -1331,14 +1363,20 @@ export default function SmartRoutingPage() {
   );
 }
 
+export default function SmartRoutingPage() {
+  return <SmartRoutingConsole />;
+}
+
 function RuleModal({
   ruleIndex,
   config,
+  teamOptions,
   onClose,
   onSave,
 }: {
   ruleIndex?: number;
   config: RoutingConfig;
+  teamOptions: string[];
   onClose: () => void;
   onSave: (rule: Rule, index?: number) => void;
 }) {
@@ -1346,6 +1384,7 @@ function RuleModal({
     ruleIndex !== undefined
       ? JSON.parse(JSON.stringify(config.rules[ruleIndex]))
       : {
+          team: "",
           when: { statusIn: ["failed", "error"] },
           then: [{ type: "slack" }],
         },
@@ -1413,6 +1452,28 @@ function RuleModal({
               <HiOutlineShieldCheck className="w-4 h-4" /> Rule Condition (WHEN)
             </p>
             <div className="grid grid-cols-3 gap-6">
+              <div className="space-y-2">
+                <label className="text-[9px] font-black text-cloudo-muted uppercase tracking-widest">
+                  Scope Team
+                </label>
+                <select
+                  value={rule.team || ""}
+                  onChange={(e) =>
+                    setRule((prev) => ({
+                      ...prev,
+                      team: e.target.value || undefined,
+                    }))
+                  }
+                  className="w-full bg-cloudo-dark border border-cloudo-border px-4 py-2 text-xs outline-none focus:border-cloudo-accent"
+                >
+                  <option value="">All teams</option>
+                  {teamOptions.map((team) => (
+                    <option key={team} value={team}>
+                      {team}
+                    </option>
+                  ))}
+                </select>
+              </div>
               <div className="space-y-2 col-span-1">
                 <label className="text-[9px] font-black text-cloudo-muted uppercase tracking-widest">
                   Status In
@@ -1587,7 +1648,7 @@ function RuleModal({
                         className="w-full bg-cloudo-dark border border-cloudo-border px-3 py-1.5 text-xs outline-none focus:border-cloudo-accent"
                       >
                         <option value="">Default</option>
-                        {Object.keys(config.teams).map((t) => (
+                        {teamOptions.map((t) => (
                           <option key={t} value={t}>
                             {t}
                           </option>

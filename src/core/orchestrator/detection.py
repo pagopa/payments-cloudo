@@ -146,9 +146,16 @@ class AzureMonitorParser(AlertParser):
             if config_items and isinstance(config_items, list):
                 resource_name = config_items[0]
             resource_name = (
-                resource_name or ctx.get("resourcename") or labels.get("resourcename")
+                resource_name
+                or essentials.get("targetresourcename")
+                or ctx.get("resourcename")
+                or labels.get("resourcename")
             )
-            resource_group = ctx.get("resourcegroup") or labels.get("resourcegroup")
+            resource_group = (
+                ctx.get("resourcegroup")
+                or labels.get("resourcegroup")
+                or essentials.get("targetresourcegroup")
+            )
             resource_id = ctx.get("resourceid") or labels.get("resourceid")
 
         # --- Kubernetes fields ---
@@ -425,7 +432,6 @@ def extract_schema_id_from_req(req: func.HttpRequest) -> Optional[list[str]]:
 
     try:
         body = req.get_json()
-        logging.info("body: %s", body)
     except AttributeError:
         body = req
     except ValueError:

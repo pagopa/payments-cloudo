@@ -11,6 +11,64 @@ import requests
 
 JSM_ALERTS_URL = "https://api.atlassian.com/jsm/ops/integration/v2/alerts"
 JSM_NOTE_AUTHOR = "cloudo-ai-agent"
+_JSM_MAX_CHAIN = 4096
+
+
+def _chain_alias(alias: str, index: int) -> str:
+    return alias if index <= 1 else f"{alias}-{index}"
+
+
+def _alert_state(alias: str, headers: dict, timeout: int):
+    """'open' | 'closed' | 'missing' | None when the lookup is unavailable."""
+    try:
+        resp = requests.get(
+            f"{JSM_ALERTS_URL}/{alias}",
+            headers=headers,
+            params={"identifierType": "alias"},
+            timeout=timeout,
+        )
+        if resp.status_code == 404:
+            return "missing"
+        if resp.status_code != 200:
+            return None
+        body = resp.json() or {}
+        data = body.get("data") if isinstance(body.get("data"), dict) else body
+        status = str(data.get("status") or "").strip().lower()
+        return "closed" if status == "closed" else "open"
+    except Exception:
+        return None
+
+
+def resolve_current_alias(api_key: str, alias: str, timeout: int = 10) -> str:
+    """Alias of the latest alert opened for `alias`; falls back to `alias`."""
+    headers = {"Authorization": f"GenieKey {api_key}", "Accept": "application/json"}
+    cache: dict = {}
+
+    def state(i: int):
+        if i not in cache:
+            cache[i] = _alert_state(_chain_alias(alias, i), headers, timeout)
+        return cache[i]
+
+    if state(1) in (None, "missing"):
+        return alias
+    lo, hi = 1, 2
+    while hi <= _JSM_MAX_CHAIN:
+        s = state(hi)
+        if s is None:
+            return alias
+        if s == "missing":
+            break
+        lo, hi = hi, hi * 2
+    while hi - lo > 1:
+        mid = (lo + hi) // 2
+        s = state(mid)
+        if s is None:
+            return alias
+        if s == "missing":
+            hi = mid
+        else:
+            lo = mid
+    return _chain_alias(alias, lo)
 
 
 def format_triage_note(analysis: dict) -> str:
@@ -43,6 +101,7 @@ def add_jsm_alert_note(api_key: str, alias: str, note: str, timeout: int = 10) -
         return False
 
     api_key = str(api_key).strip().strip('"').strip("'")
+    alias = resolve_current_alias(api_key, alias, timeout=timeout)
     url = f"{JSM_ALERTS_URL}/{alias}/notes"
     headers = {
         "Authorization": f"GenieKey {api_key}",

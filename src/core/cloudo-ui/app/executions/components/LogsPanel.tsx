@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback, Suspense } from "react";
+import { useState, useEffect, useCallback, useRef, Suspense } from "react";
 import { cloudoFetch } from "@/lib/api";
 import { useSearchParams } from "next/navigation";
 import {
@@ -19,6 +19,7 @@ import {
   HiOutlineArrowsExpand,
   HiOutlineChevronLeft,
   HiOutlineChevronRight,
+  HiOutlineChevronDown,
   HiCheckCircle,
   HiXCircle,
   HiClock,
@@ -31,6 +32,7 @@ import {
   HiOutlineInformationCircle,
   HiOutlineSparkles,
   HiOutlineLightBulb,
+  HiOutlineUsers,
 } from "react-icons/hi";
 import {
   parseDate,
@@ -57,12 +59,15 @@ interface LogEntry {
   Initiator?: string;
   Worker?: string;
   Group?: string;
+  team?: string;
   ResourceInfo?: string;
+  Notifications?: string;
 }
 
 const statusPriority: Record<string, number> = {
   succeeded: 5,
   completed: 5,
+  success: 5,
   failed: 4,
   error: 4,
   running: 3,
@@ -71,7 +76,22 @@ const statusPriority: Record<string, number> = {
   stopped: 3,
   accepted: 2,
   pending: 1,
+  scheduled: 1,
 };
+
+const STATUS_OPTIONS: { value: string; label: string }[] = [
+  { value: "pending", label: "PENDING" },
+  { value: "scheduled", label: "SCHEDULED" },
+  { value: "accepted", label: "ACCEPTED" },
+  { value: "running", label: "RUNNING" },
+  { value: "succeeded", label: "SUCCEEDED" },
+  { value: "completed", label: "COMPLETED" },
+  { value: "failed", label: "FAILED" },
+  { value: "rejected", label: "REJECTED" },
+  { value: "error", label: "ERROR" },
+  { value: "stopped", label: "STOPPED" },
+  { value: "skipped", label: "SKIPPED" },
+];
 
 export function LogsPanel() {
   return (
@@ -109,21 +129,98 @@ function LogsPanelContent() {
     return today(getLocalTimeZone());
   });
   const [execId, setExecId] = useState(searchParams.get("execId") || "");
-  const [status, setStatus] = useState("");
+  const [selectedStatuses, setSelectedStatuses] = useState<string[]>(() => {
+    const raw =
+      searchParams.get("status") || searchParams.get("statuses") || "";
+    if (raw) {
+      return raw
+        .split(",")
+        .map((s) => s.trim().toLowerCase())
+        .filter(Boolean);
+    }
+    if (typeof window !== "undefined") {
+      try {
+        const saved = localStorage.getItem("cloudo_executions_statuses");
+        if (saved) {
+          const parsed = JSON.parse(saved);
+          if (Array.isArray(parsed)) return parsed;
+        }
+      } catch (e) {
+        console.error("Failed to parse saved execution statuses", e);
+      }
+    }
+    return [];
+  });
+  const [isStatusDropdownOpen, setIsStatusDropdownOpen] = useState(false);
+  const statusDropdownRef = useRef<HTMLDivElement>(null);
   const [query, setQuery] = useState("");
   const [limit, setLimit] = useState("200");
   const [logs, setLogs] = useState<LogEntry[]>([]);
   const [loading, setLoading] = useState(false);
   const [selectedLog, setSelectedLog] = useState<LogEntry | null>(null);
   const [isExpanded, setIsExpanded] = useState(false);
-  const [detailWidth, setDetailWidth] = useState(
-    typeof window !== "undefined" ? Math.floor(window.innerWidth / 2) : 600,
-  ); // Start at half-screen width
+  const [detailWidth, setDetailWidth] = useState(650);
   const [isResizing, setIsResizing] = useState(false);
   const [copied, setCopied] = useState(false);
   const [linkCopied, setLinkCopied] = useState(false);
   const [isRawExpanded, setIsRawExpanded] = useState(false);
   const [showAiModal, setShowAiModal] = useState(false);
+
+  useEffect(() => {
+    if (typeof window !== "undefined") {
+      const initial = Math.max(400, Math.floor(window.innerWidth * 0.48));
+      setDetailWidth(initial);
+    }
+  }, []);
+
+  const toggleStatus = (val: string) => {
+    setSelectedStatuses((prev) => {
+      const exists = prev.includes(val);
+      if (exists) {
+        return prev.filter((s) => s !== val);
+      } else {
+        return [...prev, val];
+      }
+    });
+  };
+
+  const selectAllStatuses = () => {
+    setSelectedStatuses(STATUS_OPTIONS.map((o) => o.value));
+  };
+
+  const clearAllStatuses = () => {
+    setSelectedStatuses([]);
+  };
+
+  useEffect(() => {
+    try {
+      if (selectedStatuses.length > 0) {
+        localStorage.setItem(
+          "cloudo_executions_statuses",
+          JSON.stringify(selectedStatuses),
+        );
+      } else {
+        localStorage.removeItem("cloudo_executions_statuses");
+      }
+    } catch (e) {
+      console.error("Failed to save execution statuses", e);
+    }
+  }, [selectedStatuses]);
+
+  useEffect(() => {
+    const handleClickOutside = (e: MouseEvent) => {
+      if (
+        statusDropdownRef.current &&
+        !statusDropdownRef.current.contains(e.target as Node)
+      ) {
+        setIsStatusDropdownOpen(false);
+      }
+    };
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => {
+      document.removeEventListener("mousedown", handleClickOutside);
+    };
+  }, []);
 
   const setTodayDate = () => {
     const t = today(getLocalTimeZone());
@@ -132,7 +229,11 @@ function LogsPanelContent() {
   };
 
   const runQuery = useCallback(
-    async (overrideParams?: { partitionKey?: string; execId?: string }) => {
+    async (overrideParams?: {
+      partitionKey?: string;
+      execId?: string;
+      statuses?: string[];
+    }) => {
       setLoading(true);
       try {
         const params = new URLSearchParams();
@@ -142,10 +243,15 @@ function LogsPanelContent() {
             : partitionKey;
         const eId =
           overrideParams?.execId !== undefined ? overrideParams.execId : execId;
+        const currentStatuses =
+          overrideParams?.statuses !== undefined
+            ? overrideParams.statuses
+            : selectedStatuses;
 
         if (pKey) params.set("partitionKey", pKey);
         if (eId) params.set("execId", eId);
-        if (status) params.set("status", status);
+        if (currentStatuses.length > 0)
+          params.set("status", currentStatuses.join(","));
         if (query) params.set("q", query);
         if (limit) params.set("limit", limit);
         params.set("latestOnly", "true");
@@ -180,7 +286,7 @@ function LogsPanelContent() {
         setLoading(false);
       }
     },
-    [partitionKey, execId, status, query, limit],
+    [partitionKey, execId, selectedStatuses, query, limit],
   );
 
   useEffect(() => {
@@ -223,7 +329,12 @@ function LogsPanelContent() {
 
   const handleReset = () => {
     setExecId("");
-    setStatus("");
+    setSelectedStatuses([]);
+    try {
+      localStorage.removeItem("cloudo_executions_statuses");
+    } catch (e) {
+      console.error("Failed to clear saved execution statuses", e);
+    }
     setQuery("");
     setLimit("200");
     setLogs([]);
@@ -251,7 +362,7 @@ function LogsPanelContent() {
 
   const getStatusIcon = (status: string) => {
     const s = status.toLowerCase();
-    if (s === "succeeded" || s === "completed")
+    if (s === "succeeded" || s === "completed" || s === "success")
       return <HiCheckCircle className="w-5 h-5 text-cloudo-ok" />;
     if (s === "accepted")
       return <HiPlay className="w-5 h-5 text-cloudo-accent" />;
@@ -261,9 +372,13 @@ function LogsPanelContent() {
       return <HiXCircle className="w-5 h-5 text-cloudo-err" />;
     if (s === "rejected")
       return <HiExclamationCircle className="w-5 h-5 text-cloudo-err" />;
-    if (s === "pending")
+    if (s === "pending" || s === "scheduled")
       return <HiClock className="w-5 h-5 text-cloudo-warn" />;
     if (s === "stopped") return <HiStop className="w-5 h-5 text-cloudo-warn" />;
+    if (s === "skipped")
+      return (
+        <HiOutlineExclamationCircle className="w-5 h-5 text-cloudo-muted" />
+      );
     if (s === "routed")
       return (
         <HiOutlineChevronDoubleRight className="w-5 h-5 text-cloudo-accent" />
@@ -273,7 +388,7 @@ function LogsPanelContent() {
 
   const getStatusBadgeClass = (status: string) => {
     const s = status.toLowerCase();
-    if (s === "succeeded" || s === "completed")
+    if (s === "succeeded" || s === "completed" || s === "success")
       return "border-cloudo-ok/30 text-cloudo-ok bg-cloudo-ok/5";
     if (s === "running" || s === "accepted")
       return "border-cloudo-accent/30 text-cloudo-accent bg-cloudo-accent/5";
@@ -281,10 +396,12 @@ function LogsPanelContent() {
       return "border-cloudo-err/30 text-cloudo-err bg-cloudo-err/5";
     if (s === "rejected")
       return "border-cloudo-err/30 text-cloudo-err bg-cloudo-err/5";
-    if (s === "pending")
+    if (s === "pending" || s === "scheduled")
       return "border-cloudo-warn/30 text-cloudo-warn bg-cloudo-warn/5";
     if (s === "stopped")
       return "border-cloudo-warn/30 text-cloudo-warn bg-cloudo-warn/5";
+    if (s === "skipped")
+      return "border-cloudo-muted/60 text-cloudo-muted bg-cloudo-muted/5";
     if (s === "routed")
       return "border-cloudo-accent/30 text-cloudo-accent bg-cloudo-accent/5";
     return "border-cloudo-muted/60 text-cloudo-muted bg-cloudo-muted/5";
@@ -319,13 +436,24 @@ function LogsPanelContent() {
     (e: MouseEvent) => {
       if (isResizing) {
         const newWidth = window.innerWidth - e.clientX;
-        if (newWidth > 300 && newWidth < window.innerWidth * 0.8) {
+        const maxWidth = Math.max(350, window.innerWidth - 300);
+        if (newWidth >= 320 && newWidth <= maxWidth) {
           setDetailWidth(newWidth);
         }
       }
     },
     [isResizing],
   );
+
+  useEffect(() => {
+    if (isResizing) {
+      document.body.style.userSelect = "none";
+      document.body.style.cursor = "col-resize";
+    } else {
+      document.body.style.userSelect = "";
+      document.body.style.cursor = "";
+    }
+  }, [isResizing]);
 
   useEffect(() => {
     window.addEventListener("mousemove", resize);
@@ -388,17 +516,15 @@ function LogsPanelContent() {
   };
 
   return (
-    <div className="flex flex-col lg:flex-row gap-4 h-full bg-cloudo-dark font-mono">
+    <div className="flex flex-col lg:flex-row gap-4 h-full min-w-0 bg-cloudo-dark font-mono">
       {/* Search & List Section */}
       <div
-        className="flex flex-col gap-4 overflow-hidden h-full"
-        style={{
-          flex: selectedLog ? "1" : "none",
-          width: selectedLog ? "auto" : "100%",
-        }}
+        className={`flex flex-col gap-4 h-full min-h-0 min-w-0 ${
+          selectedLog ? "flex-1" : "w-full"
+        }`}
       >
         {/* Filters Card */}
-        <div className="bg-cloudo-panel/40 border border-cloudo-border/80 overflow-hidden">
+        <div className="bg-cloudo-panel/40 border border-cloudo-border/80 overflow-visible relative z-30">
           <div className="px-4 sm:px-6 py-4 border-b border-cloudo-border/80 flex flex-col sm:flex-row sm:items-center gap-3 sm:justify-between">
             <div className="flex items-start sm:items-center gap-3 min-w-0">
               <HiOutlineDatabase className="text-cloudo-accent w-5 h-5 shrink-0 mt-0.5 sm:mt-0" />
@@ -474,27 +600,109 @@ function LogsPanelContent() {
                 </div>
               </div>
 
-              <div className="space-y-2 w-full sm:w-[calc(50%-0.625rem)] xl:flex-[1_1_190px] min-w-0 px-0.5 py-1">
-                <label className="text-[10px] font-black uppercase tracking-[0.22em] text-cloudo-muted block">
-                  State
-                </label>
-                <div className="relative group">
-                  <HiOutlineTag className="absolute left-3 top-1/2 -translate-y-1/2 text-cloudo-muted/70 w-4 h-4 group-focus-within:text-cloudo-accent transition-colors pointer-events-none z-10" />
-                  <select
-                    className="input input-icon pl-10 pr-8 appearance-none relative w-full bg-cloudo-dark/20 border border-cloudo-border/70 focus:border-cloudo-accent"
-                    value={status}
-                    onChange={(e) => setStatus(e.target.value)}
-                    onKeyDown={handleKeyDown}
+              <div
+                className="space-y-2 w-full sm:w-[calc(50%-0.625rem)] xl:flex-[1_1_210px] min-w-0 px-0.5 py-1 relative"
+                ref={statusDropdownRef}
+              >
+                <div className="flex items-center justify-between">
+                  <label className="text-[10px] font-black uppercase tracking-[0.22em] text-cloudo-muted block">
+                    State
+                  </label>
+                  {selectedStatuses.length > 0 && (
+                    <button
+                      type="button"
+                      onClick={clearAllStatuses}
+                      className="text-[9px] font-black uppercase tracking-wider text-cloudo-accent hover:underline cursor-pointer"
+                    >
+                      Clear ({selectedStatuses.length})
+                    </button>
+                  )}
+                </div>
+                <div className="relative">
+                  <button
+                    type="button"
+                    onClick={() => setIsStatusDropdownOpen((prev) => !prev)}
+                    className="input input-icon pl-10 pr-8 relative w-full bg-cloudo-dark/20 border border-cloudo-border/70 focus:border-cloudo-accent text-left flex items-center justify-between cursor-pointer select-none"
                   >
-                    <option value="">ALL_EVENTS</option>
-                    <option value="pending">PENDING</option>
-                    <option value="accepted">ACCEPTED</option>
-                    <option value="running">RUNNING</option>
-                    <option value="succeeded">SUCCEEDED</option>
-                    <option value="failed">FAILED</option>
-                    <option value="rejected">REJECTED</option>
-                    <option value="error">ERROR</option>
-                  </select>
+                    <HiOutlineTag className="absolute left-3 top-1/2 -translate-y-1/2 text-cloudo-muted/70 w-4 h-4 group-focus-within:text-cloudo-accent transition-colors pointer-events-none z-10" />
+                    <span className="truncate text-xs font-bold text-cloudo-text">
+                      {selectedStatuses.length === 0
+                        ? "ALL_STATES"
+                        : selectedStatuses.length === 1
+                          ? selectedStatuses[0].toUpperCase()
+                          : `${
+                              selectedStatuses.length
+                            } STATES (${selectedStatuses
+                              .map((s) => s.toUpperCase())
+                              .join(", ")})`}
+                    </span>
+                    <HiOutlineChevronDown
+                      className={`w-4 h-4 text-cloudo-muted transition-transform shrink-0 ${
+                        isStatusDropdownOpen ? "rotate-180" : ""
+                      }`}
+                    />
+                  </button>
+
+                  {isStatusDropdownOpen && (
+                    <div className="absolute left-0 top-full mt-1.5 w-full min-w-[260px] bg-cloudo-panel border border-cloudo-border shadow-2xl rounded-sm p-2 z-50">
+                      <div className="flex items-center justify-between px-2 py-1.5 border-b border-cloudo-border/60 mb-1.5">
+                        <span className="text-[9px] font-black uppercase tracking-[0.2em] text-cloudo-muted">
+                          Filter by state
+                        </span>
+                        <div className="flex items-center gap-2">
+                          <button
+                            type="button"
+                            onClick={selectAllStatuses}
+                            className="text-[9px] font-black uppercase tracking-wider text-cloudo-muted hover:text-cloudo-accent"
+                          >
+                            All
+                          </button>
+                          <span className="text-cloudo-border text-[10px]">
+                            |
+                          </span>
+                          <button
+                            type="button"
+                            onClick={clearAllStatuses}
+                            className="text-[9px] font-black uppercase tracking-wider text-cloudo-muted hover:text-cloudo-accent"
+                          >
+                            None
+                          </button>
+                        </div>
+                      </div>
+                      <div className="space-y-1 max-h-60 overflow-y-auto custom-scrollbar pr-0.5">
+                        {STATUS_OPTIONS.map((opt) => {
+                          const isChecked = selectedStatuses.includes(
+                            opt.value,
+                          );
+                          return (
+                            <label
+                              key={opt.value}
+                              className={`flex items-center gap-2.5 px-2 py-1.5 rounded-sm cursor-pointer transition-colors text-xs font-bold ${
+                                isChecked
+                                  ? "bg-cloudo-accent/10 text-cloudo-text"
+                                  : "hover:bg-cloudo-panel-2/70 text-cloudo-muted hover:text-cloudo-text"
+                              }`}
+                            >
+                              <input
+                                type="checkbox"
+                                checked={isChecked}
+                                onChange={() => toggleStatus(opt.value)}
+                                className="w-3.5 h-3.5 rounded border border-cloudo-border bg-cloudo-dark/60 text-cloudo-accent focus:ring-cloudo-accent/30 focus:ring-offset-0 cursor-pointer accent-cloudo-accent"
+                              />
+                              <div className="flex items-center gap-1.5 min-w-0 flex-1">
+                                <span className="[&_svg]:w-3.5 [&_svg]:h-3.5">
+                                  {getStatusIcon(opt.value)}
+                                </span>
+                                <span className="text-[11px] font-black uppercase tracking-wider truncate">
+                                  {opt.label}
+                                </span>
+                              </div>
+                            </label>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  )}
                 </div>
               </div>
 
@@ -585,7 +793,7 @@ function LogsPanelContent() {
         </div>
 
         {/* Results List Card */}
-        <div className="bg-cloudo-panel border border-cloudo-border flex-1 overflow-hidden flex flex-col">
+        <div className="bg-cloudo-panel border border-cloudo-border flex-1 min-h-0 min-w-0 overflow-hidden flex flex-col">
           {logs.length > 0 && (
             <div className="px-4 sm:px-6 py-2.5 border-b border-cloudo-border bg-cloudo-panel-2 flex justify-between items-center">
               <span className="text-[10px] font-black uppercase tracking-widest text-cloudo-muted/90">
@@ -595,31 +803,17 @@ function LogsPanelContent() {
               </span>
             </div>
           )}
-          <div className="overflow-x-auto overflow-y-auto custom-scrollbar">
+          <div className="overflow-x-auto overflow-y-auto flex-1 min-h-0 custom-scrollbar">
             {/* Desktop Table View */}
-            <table className="hidden md:table w-full text-xs border-separate border-spacing-0 min-w-190 xl:min-w-200">
+            <table className="hidden md:table w-full text-xs border-separate border-spacing-0">
               <thead className="bg-cloudo-panel-2/95 sticky top-0 z-10 border-b border-cloudo-border backdrop-blur-sm">
-                <tr className="text-[10px] font-black text-cloudo-muted uppercase tracking-[0.3em]">
-                  <th className="px-4 lg:px-5 py-3.5 text-left min-w-28">
-                    Timestamp
-                  </th>
-                  <th className="px-4 lg:px-5 py-3.5 text-center w-32">
-                    State
-                  </th>
-                  <th className="px-4 lg:px-5 py-3.5 text-left min-w-42">
-                    Process_Context
-                  </th>
-                  <th className="px-4 lg:px-5 py-3.5 text-left min-w-30">
-                    Asset_ID
-                  </th>
-                  <th className="hidden lg:table-cell px-4 lg:px-5 py-3.5 text-left min-w-45">
-                    Execution_Details
-                  </th>
-                  <th className="hidden xl:table-cell px-4 lg:px-5 py-3.5 text-left min-w-25">
-                    Worker
-                  </th>
-                  <th className="hidden xl:table-cell px-4 lg:px-5 py-3.5 text-center w-16">
-                    On Call
+                <tr className="text-[10px] font-black text-cloudo-muted uppercase tracking-[0.2em]">
+                  <th className="px-3 py-2.5 text-left">Time</th>
+                  <th className="px-3 py-2.5 text-left">State</th>
+                  <th className="px-3 py-2.5 text-left">Process</th>
+                  <th className="px-3 py-2.5 text-left">Asset / Team</th>
+                  <th className="hidden lg:table-cell px-3 py-2.5 text-left">
+                    Runbook / Worker
                   </th>
                 </tr>
               </thead>
@@ -645,7 +839,7 @@ function LogsPanelContent() {
                           : "hover:border-cloudo-muted/30"
                     }`}
                   >
-                    <td className="px-4 lg:px-5 py-3.5 whitespace-nowrap">
+                    <td className="px-3 py-2 whitespace-nowrap">
                       <div className="text-cloudo-text font-bold text-[11px]">
                         {log.RequestedAt?.split("T")[1]?.slice(0, 8)}
                       </div>
@@ -653,9 +847,9 @@ function LogsPanelContent() {
                         {log.RequestedAt?.split("T")[0]}
                       </div>
                     </td>
-                    <td className="px-4 lg:px-5 py-3.5">
+                    <td className="px-3 py-2">
                       <div
-                        className={`inline-flex items-center justify-center gap-1.5 w-full rounded-sm border px-2 py-1 text-[9px] font-black uppercase tracking-wider ${getStatusBadgeClass(
+                        className={`inline-flex items-center gap-1 rounded-sm border px-1.5 py-0.5 text-[9px] font-black uppercase tracking-wider [&_svg]:w-3.5 [&_svg]:h-3.5 ${getStatusBadgeClass(
                           log.Status,
                         )}`}
                         title={log.Status}
@@ -664,26 +858,43 @@ function LogsPanelContent() {
                         <span>{log.Status || "unknown"}</span>
                       </div>
                     </td>
-                    <td className="px-4 lg:px-5 py-3.5">
-                      <div className="flex flex-col gap-1">
-                        <div className="flex items-center gap-2">
-                          <div className="text-cloudo-text font-bold uppercase tracking-widest">
+                    <td className="px-3 py-2 max-w-[260px]">
+                      <div className="flex flex-col gap-0.5">
+                        <div className="flex items-center gap-1.5 min-w-0">
+                          <span
+                            className="text-cloudo-text font-bold uppercase tracking-wider truncate"
+                            title={log.Name}
+                          >
                             {log.Name || "SYS_TASK"}
-                          </div>
+                          </span>
+                          {(log.OnCall === true || log.OnCall === "true") && (
+                            <span
+                              className="w-1.5 h-1.5 bg-cloudo-err animate-pulse shrink-0"
+                              title="On Call"
+                            />
+                          )}
                         </div>
-                        <div className="text-[10px] text-cloudo-muted/60 opacity-50 font-mono break-all">
+                        <div className="text-[10px] text-cloudo-muted/60 opacity-60 font-mono truncate">
                           {log.ExecId}
                         </div>
                       </div>
                     </td>
-                    <td className="px-4 lg:px-5 py-3.5">
-                      <div className="flex flex-col gap-0.5 group/cell">
-                        <div className="text-[11px] font-black text-cloudo-accent/80 truncate max-w-60 font-mono transition-all">
-                          {log.Id || "SYSTEM"}
+                    <td className="px-3 py-2">
+                      <div className="flex flex-col gap-0.5">
+                        <div className="flex items-center gap-1.5 min-w-0">
+                          <span
+                            className="text-[11px] font-black text-cloudo-accent/80 truncate max-w-48 font-mono"
+                            title={log.Id}
+                          >
+                            {log.Id || "SYSTEM"}
+                          </span>
+                          <span className="text-[9px] px-1 border border-cloudo-border text-cloudo-accent uppercase tracking-widest shrink-0">
+                            {log.team || "default"}
+                          </span>
                         </div>
                         {log.Severity && (
                           <div
-                            className={`text-[9px] font-black uppercase tracking-tighter px-1.5 py-0.5 rounded-sm border inline-flex items-center gap-1.5 w-fit ${
+                            className={`text-[9px] font-black uppercase tracking-tighter px-1 rounded-sm border inline-flex items-center gap-1 w-fit ${
                               getSeverityStyles(log.Severity).bg
                             } ${getSeverityStyles(log.Severity).border} ${
                               getSeverityStyles(log.Severity).text
@@ -699,31 +910,25 @@ function LogsPanelContent() {
                         )}
                       </div>
                     </td>
-                    <td className="hidden lg:table-cell px-4 lg:px-5 py-3.5">
+                    <td className="hidden lg:table-cell px-3 py-2 max-w-[260px]">
                       <div className="flex flex-col gap-0.5">
-                        <div className="text-[11px] font-mono text-cloudo-accent/70 uppercase tracking-widest">
+                        <div
+                          className="text-[11px] font-mono text-cloudo-accent/70 truncate"
+                          title={log.Runbook}
+                        >
                           {log.Runbook}
                         </div>
-                        {log.Run_Args && (
-                          <div className="text-[10px] text-cloudo-muted/60 font-mono mt-0.5 break-all">
-                            {log.Run_Args}
-                          </div>
-                        )}
-                      </div>
-                    </td>
-                    <td className="hidden xl:table-cell px-4 lg:px-5 py-3.5">
-                      <div>
-                        <div className="text-[10px] font-black text-cloudo-muted uppercase tracking-widest">
-                          {log.Worker || "N/A"}
+                        <div className="flex items-center gap-1.5 text-[10px] font-mono text-cloudo-muted/60 min-w-0">
+                          <span className="font-black uppercase tracking-widest shrink-0">
+                            {log.Worker || "N/A"}
+                          </span>
+                          {log.Run_Args && (
+                            <span className="truncate" title={log.Run_Args}>
+                              {log.Run_Args}
+                            </span>
+                          )}
                         </div>
                       </div>
-                    </td>
-                    <td className="hidden xl:table-cell px-4 lg:px-5 py-3.5 text-center">
-                      {(log.OnCall === true || log.OnCall === "true") && (
-                        <div className="flex justify-center">
-                          <div className="w-1.5 h-1.5 bg-cloudo-err animate-pulse" />
-                        </div>
-                      )}
                     </td>
                   </tr>
                 ))}
@@ -776,6 +981,14 @@ function LogsPanelContent() {
                         <span className="text-cloudo-accent/50 ml-1">
                           {log.RequestedAt?.split("T")[0]}
                         </span>
+                      </div>
+                    </div>
+                    <div className="space-y-0.5">
+                      <div className="text-[9px] font-black text-cloudo-muted uppercase tracking-widest">
+                        Team
+                      </div>
+                      <div className="text-[10px] font-black text-cloudo-accent uppercase tracking-widest truncate">
+                        {log.team || "default"}
                       </div>
                     </div>
                     <div className="space-y-0.5">
@@ -850,22 +1063,32 @@ function LogsPanelContent() {
         <>
           {/* Resize Handle */}
           <div
-            className={`hidden lg:flex w-1 bg-cloudo-border hover:bg-cloudo-accent/50 cursor-col-resize transition-colors items-center justify-center group relative ${
+            className={`hidden lg:flex w-1.5 shrink-0 bg-cloudo-border hover:bg-cloudo-accent/60 cursor-col-resize transition-colors items-center justify-center group relative select-none ${
               isResizing ? "bg-cloudo-accent" : ""
             }`}
             onMouseDown={startResizing}
           >
             <div className="absolute inset-y-0 -left-2 -right-2 z-10" />
-            <div className="w-px h-8 bg-cloudo-muted/30 group-hover:bg-cloudo-accent/50" />
+            <div className="w-0.5 h-8 bg-cloudo-muted/40 group-hover:bg-cloudo-accent/60" />
           </div>
 
           <div
-            className={`bg-cloudo-panel border border-cloudo-border flex flex-col transition-all duration-500 ease-in-out overflow-hidden shadow-2xl ${
+            className={`bg-cloudo-panel border border-cloudo-border flex flex-col shrink-0 overflow-hidden shadow-2xl ${
+              isResizing ? "" : "transition-all duration-300 ease-in-out"
+            } ${
               isExpanded
-                ? "fixed inset-4 z-60 animate-in zoom-in-95 duration-500 overflow-y-auto custom-scrollbar ring-1 ring-cloudo-accent/20"
-                : "animate-in slide-in-from-right-full duration-500 relative rounded-l-md"
+                ? "fixed inset-4 z-50 animate-in zoom-in-95 duration-300 overflow-y-auto custom-scrollbar ring-1 ring-cloudo-accent/20"
+                : "relative rounded-l-md w-full lg:w-auto"
             }`}
-            style={isExpanded ? {} : { width: `${detailWidth}px` }}
+            style={
+              isExpanded
+                ? {}
+                : {
+                    width: `${detailWidth}px`,
+                    maxWidth: "100%",
+                    minWidth: "320px",
+                  }
+            }
           >
             <div className="p-5 lg:p-6 border-b border-cloudo-border bg-linear-to-r from-cloudo-panel-2 to-cloudo-panel flex justify-between items-center gap-4">
               <div className="flex items-center gap-4">
@@ -993,6 +1216,12 @@ function LogsPanelContent() {
                 />
               </div>
 
+              <ExecutionNotifications
+                execId={selectedLog.ExecId}
+                partitionKey={selectedLog.PartitionKey}
+                status={selectedLog.Status}
+              />
+
               <div className="border border-cloudo-border bg-cloudo-dark/40 p-4 space-y-3">
                 <div className="text-[10px] font-black uppercase tracking-[0.2em] text-cloudo-muted">
                   Process Identity
@@ -1017,6 +1246,11 @@ function LogsPanelContent() {
                     label="Group"
                     value={selectedLog.Group || "default"}
                     icon={<HiOutlineTag />}
+                  />
+                  <DetailItem
+                    label="Team"
+                    value={selectedLog.team || "default"}
+                    icon={<HiOutlineUsers />}
                   />
                 </div>
               </div>
@@ -1306,6 +1540,160 @@ function ExecutionTimeline({
           );
         })}
       </div>
+    </div>
+  );
+}
+
+interface NotificationTarget {
+  type: string;
+  team?: string;
+  channel?: string;
+  status: string;
+  fallback?: boolean;
+  error?: string;
+}
+
+interface NotificationBatch {
+  key: string;
+  status: string;
+  requestedAt: string;
+  reason?: string | null;
+  targets: NotificationTarget[];
+}
+
+const notificationReasonLabel: Record<string, string> = {
+  matched: "Matched routing rule",
+  fallback_jsm: "No rule matched // JSM fallback",
+  approval_request: "Approval request",
+};
+
+function ExecutionNotifications({
+  execId,
+  partitionKey,
+  status,
+}: {
+  execId: string;
+  partitionKey: string;
+  status: string;
+}) {
+  const [batches, setBatches] = useState<NotificationBatch[]>([]);
+
+  useEffect(() => {
+    let cancelled = false;
+    const fetchNotifications = async () => {
+      try {
+        const params = new URLSearchParams();
+        params.set("partitionKey", partitionKey);
+        params.set("execId", execId);
+        params.set("limit", "100");
+        params.set("latestOnly", "false");
+        params.set("includeLogContent", "false");
+        const res = await cloudoFetch(`/logs/query?${params}`);
+        const data = await res.json();
+        const next: NotificationBatch[] = [];
+        ((data.items || []) as LogEntry[])
+          .sort((a, b) => a.RequestedAt.localeCompare(b.RequestedAt))
+          .forEach((row) => {
+            if (!row.Notifications) return;
+            try {
+              const parsed = JSON.parse(row.Notifications);
+              if (Array.isArray(parsed?.targets) && parsed.targets.length > 0) {
+                next.push({
+                  key: row.RowKey,
+                  status: row.Status,
+                  requestedAt: row.RequestedAt,
+                  reason: parsed.reason,
+                  targets: parsed.targets,
+                });
+              }
+            } catch {
+              // ignore malformed notification metadata
+            }
+          });
+        if (!cancelled) setBatches(next);
+      } catch (error) {
+        console.error("Failed to fetch notifications:", error);
+      }
+    };
+    fetchNotifications();
+    return () => {
+      cancelled = true;
+    };
+  }, [execId, partitionKey, status]);
+
+  return (
+    <div className="border border-cloudo-border bg-cloudo-dark/40 p-4 space-y-3">
+      <div className="text-[10px] font-black uppercase tracking-[0.2em] text-cloudo-muted">
+        Notifications
+      </div>
+      {batches.length === 0 ? (
+        <div className="text-[11px] text-cloudo-muted/70 uppercase tracking-widest">
+          No notification sent for this execution
+        </div>
+      ) : (
+        <div className="space-y-3">
+          {batches.map((batch) => (
+            <div key={batch.key} className="border border-cloudo-border">
+              <div className="px-3 py-2 bg-cloudo-panel-2/60 border-b border-cloudo-border flex flex-wrap items-center justify-between gap-2">
+                <span className="text-[10px] font-black uppercase tracking-widest text-cloudo-text">
+                  On {batch.status}
+                  {batch.reason
+                    ? ` // ${
+                        notificationReasonLabel[batch.reason] || batch.reason
+                      }`
+                    : ""}
+                </span>
+                <span className="text-[10px] font-mono text-cloudo-muted">
+                  {batch.requestedAt?.split("T")[1]?.slice(0, 8)}
+                </span>
+              </div>
+              <div className="divide-y divide-cloudo-border/40">
+                {batch.targets.map((target, index) => (
+                  <div
+                    key={`${batch.key}-${index}`}
+                    className="px-3 py-2 grid grid-cols-[5rem_1fr_auto] gap-3 items-center text-[11px]"
+                  >
+                    <span className="font-black uppercase tracking-widest text-cloudo-accent">
+                      {target.type === "jsm" ? "JSM" : "Slack"}
+                    </span>
+                    <div className="min-w-0 font-mono text-cloudo-text truncate">
+                      <span className="uppercase">
+                        {target.team || "default"}
+                      </span>
+                      {target.channel && (
+                        <span className="text-cloudo-muted">
+                          {" "}
+                          {target.channel}
+                        </span>
+                      )}
+                      {target.fallback && (
+                        <span className="text-cloudo-warn"> fallback</span>
+                      )}
+                      {target.error && (
+                        <div
+                          className="text-[10px] text-cloudo-err truncate"
+                          title={target.error}
+                        >
+                          {target.error}
+                        </div>
+                      )}
+                    </div>
+                    <span
+                      className={`px-2 py-0.5 border text-[10px] font-black uppercase tracking-widest ${
+                        target.status === "sent"
+                          ? "border-cloudo-ok/30 text-cloudo-ok bg-cloudo-ok/5"
+                          : "border-cloudo-err/30 text-cloudo-err bg-cloudo-err/5"
+                      }`}
+                    >
+                      {target.status}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   );
 }

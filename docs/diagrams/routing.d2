@@ -1,0 +1,55 @@
+direction: down
+
+event: "Execution status change\nteam = infra" {
+  shape: oval
+}
+
+collect: "Collect rules\nglobal + the team's own"
+
+scope: "Rule bound to\nanother team?" {
+  shape: diamond
+}
+skip: "Rule ignored"
+
+when: "Conditions match?\nstatus, severity, resource,\nschema, wildcard" {
+  shape: diamond
+}
+
+resolve: "Resolve targets" {
+  slack: "Slack\nchannel + token\nof the target team"
+  jsm: "JSM\nAPI key of the\ntarget team"
+}
+
+oncall: "Execution is\non call?" {
+  shape: diamond
+}
+dropjsm: "JSM targets dropped"
+
+owner: "Owning team added\nautomatically"
+dedup: "Merge duplicates\n(type, team, channel)"
+any: "Any target?" {
+  shape: diamond
+}
+send: "Send to every target\nrecord sent / failed"
+fallback: "Final outcome and on call:\nJSM fallback to the owning team"
+none: "Nothing sent"
+detail: "Result stored on the log row\nand shown in the execution detail" {
+  shape: page
+}
+
+event -> collect -> scope
+scope -> skip: "yes"
+scope -> when: "no"
+when -> skip: "no"
+when -> resolve: "yes"
+resolve.jsm -> oncall
+oncall -> dropjsm: "no"
+oncall -> owner: "yes"
+resolve.slack -> owner
+dropjsm -> owner
+owner -> dedup -> any
+any -> send: "yes"
+any -> fallback: "no, final status"
+any -> none: "no, other status"
+send -> detail
+fallback -> detail

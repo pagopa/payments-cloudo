@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useMemo } from "react";
 import { cloudoFetch } from "@/lib/api";
+import { formatRome, romeDate } from "@/lib/time";
 import { useRouter } from "next/navigation";
 import {
   HiOutlineClipboardList,
@@ -26,6 +27,7 @@ interface AuditLog {
   action: string;
   target: string;
   details: string;
+  team?: string;
 }
 
 export default function AuditPage() {
@@ -43,6 +45,7 @@ export default function AuditPage() {
   const [toDate, setToDate] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [fetchLimit, setFetchLimit] = useState<string>("100");
+  const [teamFilter, setTeamFilter] = useState("all");
 
   // Pagination state
   const [currentPage, setCurrentPage] = useState(1);
@@ -134,8 +137,16 @@ export default function AuditPage() {
     }
   };
 
+  const teamOptions = useMemo(
+    () => Array.from(new Set(logs.map((log) => log.team || "default"))).sort(),
+    [logs],
+  );
+
   const filteredLogs = useMemo(() => {
     return logs.filter((log) => {
+      if (teamFilter !== "all" && (log.team || "default") !== teamFilter) {
+        return false;
+      }
       const matchesSearch =
         log.operator?.toLowerCase().includes(searchQuery.toLowerCase()) ||
         log.action?.toLowerCase().includes(searchQuery.toLowerCase()) ||
@@ -160,7 +171,7 @@ export default function AuditPage() {
         (actionTypeFilter === "mutation" && isMutation) ||
         (actionTypeFilter === "destruction" && isDestruction);
 
-      const logDate = log.timestamp?.split("T")[0];
+      const logDate = romeDate(log.timestamp);
       const matchesFrom = !fromDate || logDate >= fromDate;
       const matchesTo = !toDate || logDate <= toDate;
 
@@ -172,12 +183,27 @@ export default function AuditPage() {
         matchesTo
       );
     });
-  }, [logs, searchQuery, activeFilter, actionTypeFilter, fromDate, toDate]);
+  }, [
+    logs,
+    searchQuery,
+    activeFilter,
+    actionTypeFilter,
+    fromDate,
+    toDate,
+    teamFilter,
+  ]);
 
   // Reset pagination when filters change
   useEffect(() => {
     setCurrentPage(1);
-  }, [searchQuery, activeFilter, actionTypeFilter, fromDate, toDate]);
+  }, [
+    searchQuery,
+    activeFilter,
+    actionTypeFilter,
+    fromDate,
+    toDate,
+    teamFilter,
+  ]);
   const totalPages = Math.ceil(filteredLogs.length / pageSize);
   const paginatedLogs = useMemo(() => {
     const start = (currentPage - 1) * pageSize;
@@ -186,6 +212,9 @@ export default function AuditPage() {
 
   const stats = useMemo(() => {
     const baseFiltered = logs.filter((log) => {
+      if (teamFilter !== "all" && (log.team || "default") !== teamFilter) {
+        return false;
+      }
       const matchesSearch =
         log.operator?.toLowerCase().includes(searchQuery.toLowerCase()) ||
         log.action?.toLowerCase().includes(searchQuery.toLowerCase()) ||
@@ -202,7 +231,7 @@ export default function AuditPage() {
           (log.operator === "api" || log.operator?.endsWith("-api"))) ||
         (activeFilter === "action" && log.operator === "azure-action");
 
-      const logDate = log.timestamp?.split("T")[0];
+      const logDate = romeDate(log.timestamp);
       const matchesFrom = !fromDate || logDate >= fromDate;
       const matchesTo = !toDate || logDate <= toDate;
 
@@ -216,7 +245,7 @@ export default function AuditPage() {
       ).length,
       delete: baseFiltered.filter((l) => l.action?.includes("DELETE")).length,
     };
-  }, [logs, searchQuery, activeFilter, fromDate, toDate]);
+  }, [logs, searchQuery, activeFilter, fromDate, toDate, teamFilter]);
 
   const getActionColor = (action: string) => {
     if (
@@ -351,6 +380,24 @@ export default function AuditPage() {
 
           <div className="flex-1" />
 
+          <div className="flex items-center gap-2">
+            <span className="text-[9px] font-black text-cloudo-muted uppercase tracking-tighter">
+              Team
+            </span>
+            <select
+              value={teamFilter}
+              onChange={(e) => setTeamFilter(e.target.value)}
+              className="bg-cloudo-dark border border-cloudo-border text-cloudo-text text-[10px] font-black px-2 h-9 outline-none focus:border-cloudo-accent/50 transition-colors cursor-pointer uppercase"
+            >
+              <option value="all">All teams</option>
+              {teamOptions.map((team) => (
+                <option key={team} value={team}>
+                  {team}
+                </option>
+              ))}
+            </select>
+          </div>
+
           <div className="flex items-center gap-4 bg-cloudo-dark/30 px-3 py-1 border border-cloudo-border/50">
             <div className="flex items-center gap-2">
               <span className="text-[9px] font-black text-cloudo-muted uppercase tracking-tighter">
@@ -451,6 +498,9 @@ export default function AuditPage() {
                   <th className="px-8 py-5 font-black text-cloudo-muted uppercase tracking-[0.3em] w-40 text-[11px]">
                     Operator
                   </th>
+                  <th className="px-8 py-5 font-black text-cloudo-muted uppercase tracking-[0.3em] w-32 text-[11px]">
+                    Team
+                  </th>
                   <th className="px-8 py-5 font-black text-cloudo-muted uppercase tracking-[0.3em] w-48 text-[11px]">
                     Action Event
                   </th>
@@ -466,7 +516,7 @@ export default function AuditPage() {
                 {loading ? (
                   <tr key="loading-row">
                     <td
-                      colSpan={5}
+                      colSpan={6}
                       className="py-32 text-center text-cloudo-muted italic animate-pulse uppercase tracking-[0.5em] font-black opacity-50"
                     >
                       Extracting Vault Data...
@@ -475,7 +525,7 @@ export default function AuditPage() {
                 ) : error ? (
                   <tr key="error-row">
                     <td
-                      colSpan={5}
+                      colSpan={6}
                       className="py-32 text-center text-cloudo-err font-black uppercase tracking-[0.2em]"
                     >
                       <div className="flex flex-col items-center gap-4">
@@ -487,7 +537,7 @@ export default function AuditPage() {
                 ) : filteredLogs.length === 0 ? (
                   <tr key="empty-row">
                     <td
-                      colSpan={5}
+                      colSpan={6}
                       className="py-32 text-center text-sm font-black uppercase tracking-[0.5em] opacity-40 italic"
                     >
                       NO_AUDIT_EVENTS_CAPTURED
@@ -502,9 +552,7 @@ export default function AuditPage() {
                       <td className="px-8 py-6 whitespace-nowrap">
                         <div className="flex items-center gap-2 text-cloudo-text/80 font-mono">
                           <HiOutlineClock className="w-4 h-4 opacity-60" />
-                          <span>
-                            {log.timestamp?.replace("T", " ").split(".")[0]}
-                          </span>
+                          <span>{formatRome(log.timestamp)}</span>
                         </div>
                       </td>
                       <td className="px-8 py-6">
@@ -514,6 +562,11 @@ export default function AuditPage() {
                             {log.operator}
                           </span>
                         </div>
+                      </td>
+                      <td className="px-8 py-6">
+                        <span className="px-2 py-0.5 border border-cloudo-border text-[11px] font-black uppercase tracking-widest text-cloudo-muted">
+                          {log.team || "default"}
+                        </span>
                       </td>
                       <td className="px-8 py-6">
                         <span

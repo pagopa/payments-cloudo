@@ -28,7 +28,9 @@ class RoutingDecision:
     actions: list[Action]
     matched_rule_index: Optional[int]
     matched_team: Optional[str]
-    reason: str  # "matched" | "fallback_jsm"
+    reason: str  # "matched" | "fallback_jsm" | "no_action_jsm_not_oncall"
+    fallback_team: Optional[str] = None
+    jsm_allowed: bool = True
 
 
 _SAFE_TEAM_RE = re.compile(r"^[A-Za-z0-9_-]{1,64}$")
@@ -456,6 +458,8 @@ def normalize_context(raw_ctx: dict[str, Any]) -> dict[str, Any]:
     """
     Normalize the incoming alert context to a stable key set for rule matching.
     """
+    routing_info = raw_ctx.get("routing_info") or {}
+    resource_info = raw_ctx.get("resource_info") or {}
     return {
         "resourceId": raw_ctx.get("resourceId"),
         "resourceGroup": raw_ctx.get("resourceGroup"),
@@ -468,7 +472,11 @@ def normalize_context(raw_ctx: dict[str, Any]) -> dict[str, Any]:
         "execId": raw_ctx.get("execId"),
         "name": raw_ctx.get("name"),
         "id": raw_ctx.get("id"),
-        "routing_info": raw_ctx.get("routing_info") or {},
+        "team": raw_ctx.get("team")
+        or (resource_info.get("team") if isinstance(resource_info, dict) else None)
+        or (routing_info.get("team") if isinstance(routing_info, dict) else None),
+        "resource_info": resource_info,
+        "routing_info": routing_info,
     }
 
 
@@ -505,7 +513,9 @@ def route_alert(raw_ctx: dict[str, Any]) -> RoutingDecision:
         "Routing info (redacted): %s",
         {k: _safe_for_log(v) for k, v in safe_routing_info.items()},
     )
-    ri_team = _sanitize_team(routing_info.get("team"))
+    ri_team = _sanitize_team(ctx.get("team")) or _sanitize_team(
+        routing_info.get("team")
+    )
     ri_slack_channel = _sanitize_channel(routing_info.get("slack_channel"))
     # Secrets from runtime payload are disabled by default to avoid injection.
     ri_slack_token = (
@@ -533,9 +543,28 @@ def route_alert(raw_ctx: dict[str, Any]) -> RoutingDecision:
     status = safe_status if safe_status in allowed_statuses else "unknown"
 
     log_correlation_id = uuid.uuid4().hex[:12]
-    logging.info(f"[{log_correlation_id}] Routing: evaluating {len(rules)} rules")
+    # JSM alerts page people: only on-call executions may reach it.
+    jsm_allowed = _as_bool(ctx.get("oncall"), default=False)
+    context_team = ri_team
+    team_rules = (
+        (teams_cfg.get(context_team, {}) or {}).get("rules", []) if context_team else []
+    )
+    rules_to_evaluate = list(rules)
+    if isinstance(team_rules, list):
+        rules_to_evaluate.extend(team_rules)
 
-    for idx, rule in enumerate(rules):
+    logging.info(
+        f"[{log_correlation_id}] Routing: evaluating {len(rules_to_evaluate)} rules"
+    )
+
+    all_actions: list[Action] = []
+    first_matched_rule_index: Optional[int] = None
+    matched_team: Optional[str] = None
+
+    for idx, rule in enumerate(rules_to_evaluate):
+        rule_team = _sanitize_team(rule.get("team"))
+        if rule_team and rule_team != context_team:
+            continue
         when = rule.get("when", {})
         if not _match_when(when, ctx):
             continue
@@ -550,6 +579,11 @@ def route_alert(raw_ctx: dict[str, Any]) -> RoutingDecision:
                 atype = "jsm"
             if atype not in ("slack", "jsm"):
                 logging.warning(f"Ignoring unsupported action type: {atype}")
+                continue
+            if atype == "jsm" and not jsm_allowed:
+                logging.info(
+                    f"[{log_correlation_id}] Routing: JSM target skipped (execution is not on-call)"
+                )
                 continue
             logging.info(
                 "Executing action: %s for %s",
@@ -646,26 +680,61 @@ def route_alert(raw_ctx: dict[str, Any]) -> RoutingDecision:
             logging.info(
                 f"[{log_correlation_id}] Routing: matched rule #{idx} with {len(resolved_actions)} action(s)"
             )
-            return RoutingDecision(
-                actions=resolved_actions,
-                matched_rule_index=idx,
-                matched_team=matched_team,
-                reason="matched",
-            )
+            if first_matched_rule_index is None:
+                first_matched_rule_index = idx
+            matched_team = matched_team or context_team
+            for action in resolved_actions:
+                duplicate = any(
+                    existing.type == action.type
+                    and existing.team == action.team
+                    and existing.channel == action.channel
+                    for existing in all_actions
+                )
+                if not duplicate:
+                    all_actions.append(action)
+
+    if all_actions:
+        logging.info(
+            f"[{log_correlation_id}] Routing: matched {len(all_actions)} unique action(s) across all matching rules"
+        )
+        return RoutingDecision(
+            actions=all_actions,
+            matched_rule_index=first_matched_rule_index,
+            matched_team=matched_team,
+            reason="matched",
+            fallback_team=context_team,
+            jsm_allowed=jsm_allowed,
+        )
 
     # Fallback only for final outcomes
     final_statuses = {"error", "failed", "timeout", "routed", "scheduled"}
+    if status in final_statuses and not jsm_allowed:
+        logging.info(
+            f"[{log_correlation_id}] Routing: no action and execution is not on-call, JSM fallback skipped"
+        )
+        return RoutingDecision(
+            actions=[],
+            matched_rule_index=None,
+            matched_team=None,
+            reason="no_action_jsm_not_oncall",
+            fallback_team=ri_team,
+            jsm_allowed=False,
+        )
     if status in final_statuses:
         jsm_team = ri_team or (defaults.get("jsm", {}) or {}).get("team")
         api_key = ri_jsm_token or resolve_jsm_apikey(jsm_team)
-        logging.info(
-            f"[{log_correlation_id}] Routing: no rule matched, using JSM fallback (final outcome)"
+        logging.warning(
+            f"[{log_correlation_id}] Routing FALLBACK: no rule matched "
+            f"(evaluated={len(rules_to_evaluate)}, status={_safe_for_log(status, 16)}, "
+            f"team={_safe_for_log(ri_team, 64)}) -> JSM fallback "
+            f"(jsm_team={_safe_for_log(jsm_team, 64)}, api_key_resolved={bool(api_key)})"
         )
         return RoutingDecision(
             actions=[Action(type="jsm", team=jsm_team, apiKey=api_key)],
             matched_rule_index=None,
             matched_team=None,
             reason="fallback_jsm",
+            fallback_team=jsm_team,
         )
 
     logging.warning(
@@ -676,6 +745,7 @@ def route_alert(raw_ctx: dict[str, Any]) -> RoutingDecision:
         matched_rule_index=None,
         matched_team=None,
         reason="no_action_non_final",
+        fallback_team=ri_team,
     )
 
 
@@ -684,17 +754,32 @@ def route_alert(raw_ctx: dict[str, Any]) -> RoutingDecision:
 # =========================
 
 
+def _delivery(action: Action, ok: bool, error: Optional[str] = None) -> dict[str, Any]:
+    record: dict[str, Any] = {
+        "type": action.type,
+        "team": action.team,
+        "status": "sent" if ok else "failed",
+    }
+    if action.type == "slack" and action.channel:
+        record["channel"] = action.channel
+    if error:
+        record["error"] = error[:200]
+    return record
+
+
 def execute_actions(
     decision: RoutingDecision,
     payload: dict[str, Any],
     send_slack_fn: Optional[Callable[..., Any]] = None,
     send_jsm_fn: Optional[Callable[..., Any]] = None,
-) -> None:
+) -> list[dict[str, Any]]:
     """
     Execute the decided actions in order.
     - If any action succeeds, continue executing others (fan-out).
     - If all actions fail, attempt a final JSM fallback using a default env key.
+    Returns one delivery record per attempted target (type, team, channel, status).
     """
+    results: list[dict[str, Any]] = []
     any_success = False
     jsm_payload_key = "jsm"
 
@@ -707,6 +792,8 @@ def execute_actions(
 
     slack_sender = send_slack_fn
     jsm_sender = send_jsm_fn
+
+    failed_actions = 0
 
     for a in decision.actions:
         try:
@@ -721,8 +808,11 @@ def execute_actions(
                 slack_payload = payload.get("slack")
                 if not isinstance(slack_payload, dict):
                     raise ValueError("Missing/invalid Slack payload")
-                slack_sender_safe(token=a.token, channel=a.channel, **slack_payload)
+                slack_ok = slack_sender_safe(
+                    token=a.token, channel=a.channel, **slack_payload
+                )
                 any_success = True
+                results.append(_delivery(a, slack_ok is not False))
 
             elif a.type in ("jsm"):
                 if jsm_sender is None:
@@ -733,35 +823,70 @@ def execute_actions(
                 jsm_payload = payload.get(jsm_payload_key)
                 if not isinstance(jsm_payload, dict):
                     raise ValueError("Missing/invalid JSM payload")
-                jsm_sender_safe(api_key=a.apiKey, **jsm_payload)
+                jsm_ok = jsm_sender_safe(api_key=a.apiKey, **jsm_payload)
                 any_success = True
+                results.append(_delivery(a, jsm_ok is not False))
 
         except Exception as e:
+            failed_actions += 1
+            results.append(_delivery(a, False, str(e)))
             logging.error(f"Routing action failed (type={a.type}, team={a.team}): {e}")
             continue
 
-    if not any_success and decision.reason != "no_action_non_final":
+    if (
+        not any_success
+        and decision.jsm_allowed
+        and decision.reason != "no_action_non_final"
+    ):
+        logging.warning(
+            f"Routing: all actions failed ({failed_actions}/{len(decision.actions)}, "
+            f"reason={decision.reason}, fallback_team={_safe_for_log(decision.fallback_team, 64)})"
+            " -> final JSM fallback"
+        )
         try:
             if jsm_sender is None:
                 logging.error("Final fallback skipped: JSM sender not configured")
-                return
+                return results
             jsm_sender_safe = cast(Callable[..., Any], jsm_sender)
-            api_key = resolve_jsm_apikey(None)
+            api_key = resolve_jsm_apikey(decision.fallback_team)
             if api_key:
                 logging.info(
-                    f"Attempting final JSM fallback (reason={decision.reason})"
+                    f"Attempting final JSM fallback (reason={decision.reason}, team={decision.fallback_team})"
                 )
                 try:
                     jsm_payload = payload.get(jsm_payload_key)
                     if not isinstance(jsm_payload, dict):
                         raise ValueError("Missing/invalid JSM payload")
                     ok = jsm_sender_safe(api_key=api_key, **jsm_payload)
-                    if not ok:
+                    results.append(
+                        {
+                            "type": "jsm",
+                            "team": decision.fallback_team,
+                            "status": "sent" if ok else "failed",
+                            "fallback": True,
+                        }
+                    )
+                    if ok:
+                        logging.info(
+                            f"Final JSM fallback sent (team={_safe_for_log(decision.fallback_team, 64)})"
+                        )
+                    else:
                         logging.error("Final JSM fallback did not confirm success")
                 except Exception as send_err:
+                    results.append(
+                        {
+                            "type": "jsm",
+                            "team": decision.fallback_team,
+                            "status": "failed",
+                            "fallback": True,
+                            "error": str(send_err)[:200],
+                        }
+                    )
                     logging.error(f"Final JSM fallback failed during send: {send_err}")
             else:
-                logging.error("Final fallback skipped: JSM_API_KEY not set")
+                logging.error(
+                    f"Final fallback skipped: no JSM API key resolved for team={_safe_for_log(decision.fallback_team, 64)}"
+                )
 
             status_msg = (
                 "Escalation finished with errors; JSM fallback attempted"
@@ -774,3 +899,4 @@ def execute_actions(
             logging.warning(
                 "Escalation finished with errors; fallback handling error was logged"
             )
+    return results

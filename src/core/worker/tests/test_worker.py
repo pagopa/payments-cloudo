@@ -73,3 +73,24 @@ def test_is_authorized_request_rejects_everything_when_no_secret_configured(
         body=b"",
     )
     assert worker._is_authorized_request(req) is False
+
+
+def test_post_status_propagates_team_to_receiver_payload():
+    worker = importlib.import_module("function_app")
+
+    message = json.loads(
+        worker._post_status(
+            {
+                "requestedAt": "2026-10-01T10:00:00+00:00",
+                "id": "schema-1",
+                "name": "Team Runbook",
+                "exec_id": "exec-1",
+                "runbook": "run.sh",
+                "team": "payments",
+            },
+            status="running",
+            log_message="started",
+        )
+    )
+
+    assert message["team"] == "payments"

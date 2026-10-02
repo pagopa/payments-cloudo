@@ -2,6 +2,8 @@
 
 import React, { useState, useEffect, useMemo } from "react";
 import { cloudoFetch } from "@/lib/api";
+import { nextCronRun } from "@/lib/cron";
+import { formatRome } from "@/lib/time";
 import { DeleteConfirmationModal } from "../utils/modals";
 import { parseRunbookIntoCells } from "../utils/parser";
 
@@ -38,6 +40,7 @@ interface Schedule {
   last_run?: string;
   managed_by?: string;
   locked?: boolean;
+  team?: string;
 }
 
 interface Notification {
@@ -59,7 +62,9 @@ export default function SchedulesPage() {
   );
   const [notifications, setNotifications] = useState<Notification[]>([]);
   const [togglingId, setTogglingId] = useState<string | null>(null);
-  const [user, setUser] = useState<{ role: string } | null>(null);
+  const [user, setUser] = useState<{ role: string; team?: string } | null>(
+    null,
+  );
   const [codeSourceSelector, setCodeSourceSelector] = useState<
     "parsed" | "source"
   >("parsed");
@@ -71,7 +76,7 @@ export default function SchedulesPage() {
   const [availableWorkers, setAvailableWorkers] = useState<string[]>([]);
 
   const addNotification = (type: "success" | "error", message: string) => {
-    const id = Date.now().toString();
+    const id = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
     setNotifications((prev) => [...prev, { id, type, message }]);
     setTimeout(() => {
       setNotifications((prev) => prev.filter((n) => n.id !== id));
@@ -335,25 +340,22 @@ export default function SchedulesPage() {
             <div className="absolute bottom-0 right-0 w-8 h-8 border-b border-r border-cloudo-accent/20 pointer-events-none z-10" />
 
             <div className="overflow-x-auto">
-              <table className="w-full min-w-[640px] text-left border-collapse text-sm">
+              <table className="w-full text-left border-collapse text-xs">
                 <thead>
                   <tr className="border-b border-cloudo-border bg-cloudo-accent/10">
-                    <th className="px-4 lg:px-8 py-5 font-black text-cloudo-muted uppercase tracking-[0.3em] text-[11px]">
-                      Task Name
+                    <th className="px-3 py-3 font-black text-cloudo-muted uppercase tracking-[0.2em] text-[10px]">
+                      Task
                     </th>
-                    <th className="px-4 lg:px-8 py-5 font-black text-cloudo-muted uppercase tracking-[0.3em] text-[11px]">
-                      Cron Expression
+                    <th className="px-3 py-3 font-black text-cloudo-muted uppercase tracking-[0.2em] text-[10px]">
+                      Cron
                     </th>
-                    <th className="hidden md:table-cell px-4 lg:px-8 py-5 font-black text-cloudo-muted uppercase tracking-[0.3em] text-[11px]">
-                      Runbook Path
+                    <th className="hidden md:table-cell px-3 py-3 font-black text-cloudo-muted uppercase tracking-[0.2em] text-[10px]">
+                      Runbook
                     </th>
-                    <th className="hidden lg:table-cell px-4 lg:px-8 py-5 font-black text-cloudo-muted uppercase tracking-[0.3em] text-[11px]">
-                      Last Execution
+                    <th className="hidden md:table-cell px-3 py-3 font-black text-cloudo-muted uppercase tracking-[0.2em] text-[10px]">
+                      Last / Next (Rome)
                     </th>
-                    <th className="hidden lg:table-cell px-4 lg:px-8 py-5 font-black text-cloudo-muted uppercase tracking-[0.3em] text-[11px]">
-                      On Call
-                    </th>
-                    <th className="px-4 lg:px-8 py-5 font-black text-cloudo-muted uppercase tracking-[0.3em] text-right text-[11px]">
+                    <th className="px-3 py-3 font-black text-cloudo-muted uppercase tracking-[0.2em] text-right text-[10px]">
                       Actions
                     </th>
                   </tr>
@@ -362,7 +364,7 @@ export default function SchedulesPage() {
                   {loading ? (
                     <tr>
                       <td
-                        colSpan={6}
+                        colSpan={5}
                         className="py-32 text-center text-cloudo-muted italic animate-pulse uppercase tracking-[0.5em] font-black opacity-50"
                       >
                         Syncing Cron Registry...
@@ -371,7 +373,7 @@ export default function SchedulesPage() {
                   ) : filteredSchedules.length === 0 ? (
                     <tr>
                       <td
-                        colSpan={6}
+                        colSpan={5}
                         className="py-32 text-center text-sm font-black uppercase tracking-[0.5em] opacity-40 italic"
                       >
                         NO_SCHEDULES_FOUND
@@ -383,13 +385,16 @@ export default function SchedulesPage() {
                         const isTerraformSchedule =
                           s.locked === true ||
                           (s.managed_by || "").toLowerCase() === "terraform";
+                        const canModify =
+                          user?.role === "ADMIN" ||
+                          (s.team || "default") === (user?.team || "default");
                         return (
                           <tr
                             key={s.id}
                             className="group hover:bg-cloudo-accent/[0.02] transition-colors relative border-l-2 border-l-transparent hover:border-l-cloudo-accent/40"
                           >
-                            <td className="px-4 lg:px-8 py-4 lg:py-6">
-                              <div className="flex items-center gap-3">
+                            <td className="px-3 py-2.5 max-w-[260px]">
+                              <div className="flex items-center gap-2">
                                 <div
                                   className={`w-2 h-2 rounded-full flex-shrink-0 ${
                                     s.enabled
@@ -398,15 +403,32 @@ export default function SchedulesPage() {
                                   }`}
                                 />
                                 <div className="flex flex-col min-w-0">
-                                  <span className="text-sm font-black text-cloudo-text tracking-[0.1em] uppercase group-hover:text-cloudo-accent transition-colors truncate">
-                                    {s.name}
-                                  </span>
-                                  <div className="flex items-center gap-2 mt-0.5 min-w-0">
-                                    <span className="text-[11px] text-cloudo-muted/70 font-mono truncate">
-                                      ID: {s.id}
+                                  <div className="flex items-center gap-1.5 min-w-0">
+                                    <span
+                                      className="text-xs font-black text-cloudo-text tracking-[0.05em] uppercase group-hover:text-cloudo-accent transition-colors truncate"
+                                      title={s.name}
+                                    >
+                                      {s.name}
+                                    </span>
+                                    {s.oncall && (
+                                      <span
+                                        className="w-1.5 h-1.5 bg-cloudo-err animate-pulse flex-shrink-0"
+                                        title="On call"
+                                      />
+                                    )}
+                                  </div>
+                                  <div className="flex items-center gap-1.5 mt-0.5 min-w-0">
+                                    <span
+                                      className="text-[10px] text-cloudo-muted/70 font-mono truncate"
+                                      title={s.id}
+                                    >
+                                      {s.id}
+                                    </span>
+                                    <span className="text-[9px] px-1 border border-cloudo-border text-cloudo-accent uppercase tracking-widest flex-shrink-0">
+                                      {s.team || "default"}
                                     </span>
                                     <span
-                                      className={`text-[9px] px-1.5 py-0.5 border font-black uppercase tracking-widest ${
+                                      className={`text-[9px] px-1 border font-black uppercase tracking-widest flex-shrink-0 ${
                                         isTerraformSchedule
                                           ? "text-violet-300 border-violet-400/40 bg-violet-500/15"
                                           : "text-cloudo-ok border-cloudo-ok/30 bg-cloudo-ok/10"
@@ -417,54 +439,57 @@ export default function SchedulesPage() {
                                           : "Managed manually"
                                       }
                                     >
-                                      {isTerraformSchedule
-                                        ? "Terraform"
-                                        : "Manual"}
+                                      {isTerraformSchedule ? "TF" : "Manual"}
                                     </span>
                                   </div>
                                 </div>
                               </div>
                             </td>
-                            <td className="px-4 lg:px-8 py-4 lg:py-6">
-                              <div className="bg-cloudo-accent/10 border border-cloudo-border px-3 py-1.5 font-mono text-cloudo-accent/80 text-xs w-fit whitespace-nowrap">
+                            <td className="px-3 py-2.5">
+                              <span className="bg-cloudo-accent/10 border border-cloudo-border px-2 py-1 font-mono text-cloudo-accent/80 text-[11px] whitespace-nowrap">
                                 {s.cron}
-                              </div>
+                              </span>
                             </td>
-                            <td className="hidden md:table-cell px-4 lg:px-8 py-4 lg:py-6 text-cloudo-text/70 font-mono">
-                              <div className="flex items-center gap-3">
-                                <button
-                                  onClick={() => fetchRunbookContent(s.runbook)}
-                                  className="p-1.5 bg-cloudo-accent/10 border border-cloudo-border hover:bg-cloudo-accent/20 transition-all cursor-pointer flex-shrink-0"
-                                  title="View Source Code"
-                                >
-                                  <HiOutlineTerminal className="opacity-150 w-4 h-4" />
-                                </button>
-                                <span
-                                  className="truncate cursor-pointer hover:text-cloudo-accent transition-colors max-w-[200px] xl:max-w-none"
-                                  onClick={() => fetchRunbookContent(s.runbook)}
-                                >
-                                  {s.runbook}
+                            <td className="hidden md:table-cell px-3 py-2.5 text-cloudo-text/70 font-mono max-w-[200px]">
+                              <button
+                                onClick={() => fetchRunbookContent(s.runbook)}
+                                className="flex items-center gap-1.5 max-w-full hover:text-cloudo-accent transition-colors cursor-pointer"
+                                title={`View source: ${s.runbook}`}
+                              >
+                                <HiOutlineTerminal className="w-3.5 h-3.5 flex-shrink-0" />
+                                <span className="truncate">{s.runbook}</span>
+                              </button>
+                            </td>
+                            <td className="hidden md:table-cell px-3 py-2.5 font-mono text-[11px] whitespace-nowrap">
+                              <div className="text-cloudo-muted opacity-70">
+                                <span className="inline-block w-9 text-[9px] uppercase tracking-widest">
+                                  Last
                                 </span>
+                                {s.last_run
+                                  ? formatRome(s.last_run)
+                                  : "NEVER_EXECUTED"}
+                              </div>
+                              <div>
+                                <span className="inline-block w-9 text-[9px] uppercase tracking-widest text-cloudo-muted opacity-70">
+                                  Next
+                                </span>
+                                {s.enabled ? (
+                                  <span className="text-cloudo-accent/80">
+                                    {nextCronRun(s.cron) || "NOT_SCHEDULED"}
+                                  </span>
+                                ) : (
+                                  <span className="text-cloudo-muted opacity-60">
+                                    DISABLED
+                                  </span>
+                                )}
                               </div>
                             </td>
-                            <td className="hidden lg:table-cell px-4 lg:px-8 py-4 lg:py-6 text-cloudo-muted opacity-70 font-mono whitespace-nowrap">
-                              {s.last_run
-                                ? new Date(s.last_run).toLocaleString()
-                                : "NEVER_EXECUTED"}
-                            </td>
-                            <td className="hidden lg:table-cell px-4 py-4 text-center">
-                              {s.oncall && (
-                                <div className="flex justify-center">
-                                  <div className="w-2 h-2 bg-cloudo-err animate-pulse" />
-                                </div>
-                              )}
-                            </td>
-                            <td className="px-4 lg:px-8 py-4 lg:py-6 text-right">
-                              <div className="flex items-center justify-end gap-2">
+                            <td className="px-3 py-2.5 text-right">
+                              <div className="flex items-center justify-end gap-1">
                                 <button
                                   onClick={() => toggleSchedule(s)}
                                   disabled={togglingId === s.id}
-                                  className={`p-2.5 border transition-all ${
+                                  className={`p-1.5 border transition-all ${
                                     s.enabled
                                       ? "bg-cloudo-accent/10 border-cloudo-border text-cloudo-muted hover:border-cloudo-muted/40"
                                       : "bg-cloudo-accent/10 border-cloudo-border text-cloudo-ok hover:border-white/20"
@@ -507,13 +532,14 @@ export default function SchedulesPage() {
                                     fetchWorkers();
                                   }}
                                   disabled={isTerraformSchedule}
-                                  className={`p-2.5 bg-cloudo-accent/10 border border-cloudo-border hover:border-white/20 text-cloudo-muted hover:text-cloudo-text transition-all group/btn ${
+                                  className={`p-1.5 bg-cloudo-accent/10 border border-cloudo-border hover:border-white/20 text-cloudo-muted hover:text-cloudo-text transition-all group/btn ${
                                     isTerraformSchedule
                                       ? "opacity-50 cursor-not-allowed"
                                       : ""
                                   } ${
-                                    user?.role !== "ADMIN" &&
-                                    user?.role !== "OPERATOR"
+                                    !canModify ||
+                                    (user?.role !== "ADMIN" &&
+                                      user?.role !== "OPERATOR")
                                       ? "hidden"
                                       : ""
                                   }`}
@@ -537,13 +563,14 @@ export default function SchedulesPage() {
                                     setScheduleToDelete(s);
                                   }}
                                   disabled={isTerraformSchedule}
-                                  className={`p-2.5 bg-cloudo-accent/10 border border-cloudo-border hover:border-cloudo-err/40 text-cloudo-err hover:bg-cloudo-err hover:text-cloudo-text transition-all group/btn ${
+                                  className={`p-1.5 bg-cloudo-accent/10 border border-cloudo-border hover:border-cloudo-err/40 text-cloudo-err hover:bg-cloudo-err hover:text-cloudo-text transition-all group/btn ${
                                     isTerraformSchedule
                                       ? "opacity-50 cursor-not-allowed hover:bg-cloudo-accent/10 hover:text-cloudo-err"
                                       : ""
                                   } ${
-                                    user?.role !== "ADMIN" &&
-                                    user?.role !== "OPERATOR"
+                                    !canModify ||
+                                    (user?.role !== "ADMIN" &&
+                                      user?.role !== "OPERATOR")
                                       ? "hidden"
                                       : ""
                                   }`}
@@ -741,6 +768,28 @@ function ScheduleForm({
   onCancel: () => void;
   onError: (msg: string) => void;
 }) {
+  const currentUserTeam = (() => {
+    if (typeof window === "undefined") return "default";
+    try {
+      return (
+        JSON.parse(localStorage.getItem("cloudo_user") || "null")?.team ||
+        "default"
+      );
+    } catch {
+      return "default";
+    }
+  })();
+  const isAdmin = (() => {
+    if (typeof window === "undefined") return false;
+    try {
+      return (
+        JSON.parse(localStorage.getItem("cloudo_user") || "null")?.role ===
+        "ADMIN"
+      );
+    } catch {
+      return false;
+    }
+  })();
   const [formData, setFormData] = useState({
     id: initialData?.id || "",
     name: initialData?.name || "",
@@ -750,8 +799,19 @@ function ScheduleForm({
     worker_pool: initialData?.worker_pool || "",
     enabled: initialData?.enabled ?? true,
     oncall: initialData?.oncall ?? false,
+    team: initialData?.team || (isAdmin ? "default" : currentUserTeam),
   });
   const [submitting, setSubmitting] = useState(false);
+  const [teams, setTeams] = useState<
+    { id: string; name: string; enabled: boolean }[]
+  >([]);
+
+  useEffect(() => {
+    cloudoFetch("/teams")
+      .then((response) => (response.ok ? response.json() : []))
+      .then((data) => setTeams(Array.isArray(data) ? data : []))
+      .catch(() => setTeams([]));
+  }, []);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -794,6 +854,32 @@ function ScheduleForm({
             onChange={(e) => setFormData({ ...formData, name: e.target.value })}
             placeholder="NIGHTLY_CLEANUP"
           />
+        </div>
+
+        <div className="space-y-1.5">
+          <label className="text-[11px] font-black uppercase tracking-widest text-cloudo-muted ml-1 block">
+            Team
+          </label>
+          <select
+            disabled={!isAdmin}
+            className="input h-11 w-full disabled:opacity-50"
+            value={formData.team}
+            onChange={(e) => setFormData({ ...formData, team: e.target.value })}
+          >
+            {teams
+              .filter(
+                (team) =>
+                  (team.enabled || team.id === formData.team) &&
+                  (isAdmin ||
+                    team.id === currentUserTeam ||
+                    team.id === formData.team),
+              )
+              .map((team) => (
+                <option key={team.id} value={team.id}>
+                  {team.name}
+                </option>
+              ))}
+          </select>
         </div>
         <div className="space-y-1.5">
           <label className="text-[11px] font-black uppercase tracking-widest text-cloudo-muted ml-1 block">

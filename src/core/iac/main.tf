@@ -6,6 +6,11 @@ resource "random_password" "internal_auth_token" {
   special = false
 }
 
+resource "random_password" "session_secret" {
+  length  = 32
+  special = false
+}
+
 # Orchestrator Function
 module "cloudo_orchestrator" {
   source                                   = "git::https://github.com/pagopa/terraform-azurerm-v4//IDH/app_service_function?ref=3063d95b6d1836d006da8d0f198285f122ea8510" #v10.12.0
@@ -44,6 +49,7 @@ module "cloudo_orchestrator" {
       "APPROVAL_TTL_MIN"                        = var.approval_runbook.ttl_min
       "APPROVAL_SECRET"                         = var.approval_runbook.secret
       "CLOUDO_SECRET_KEY"                       = random_password.internal_auth_token.result
+      "SESSION_SECRET"                          = random_password.session_secret.result
       "NEXTJS_URL"                              = "${var.prefix}-cloudo-ui.azurewebsites.net"
       "FEATURE_DEV"                             = var.env == "dev" ? "true" : "false"
       "CLOUDO_ENVIRONMENT"                      = var.env
@@ -112,6 +118,7 @@ module "cloudo_agent" {
     "JSM_API_KEY_DEFAULT"                 = var.jsm_api_key
     "WEBSITES_ENABLE_APP_SERVICE_STORAGE" = false
     "WEBSITES_PORT"                       = "80"
+    "SESSION_SECRET"                      = random_password.session_secret.result
     "API_PREFIX"                          = var.fastapi_api_prefix
     "FASTAPI_QUEUE_BATCH_SIZE"            = tostring(var.agent_fastapi_queue_batch_size)
     "FASTAPI_QUEUE_POLL_SECONDS"          = tostring(var.agent_fastapi_queue_poll_seconds)
@@ -239,6 +246,7 @@ module "cloudo_worker" {
     "API_PREFIX"                          = var.fastapi_api_prefix
     "ORCHESTRATOR_URL"                    = "https://${module.cloudo_orchestrator.default_hostname}/api/workers/register"
     "RECEIVER_URL"                        = "https://${module.cloudo_orchestrator.default_hostname}/api/receiver"
+    "SESSION_SECRET"                      = random_password.session_secret.result
     "CLOUDO_SECRET_KEY"                   = random_password.internal_auth_token.result
     "WORKER_CAPABILITY"                   = each.value
     "FASTAPI_QUEUE_CONCURRENCY"           = tostring(var.worker_fastapi_queue_concurrency)
@@ -350,6 +358,11 @@ resource "azurerm_storage_table" "cloudo_users" {
   storage_account_name = module.storage_account.name
 }
 
+resource "azurerm_storage_table" "cloudo_teams" {
+  name                 = "CloudoTeams"
+  storage_account_name = module.storage_account.name
+}
+
 resource "azurerm_storage_table" "cloudo_ai_analysis" {
   count = var.cloudo_agent_enabled ? 1 : 0
 
@@ -368,7 +381,7 @@ resource "azurerm_storage_table_entity" "admin_user" {
   storage_table_id = azurerm_storage_table.cloudo_users.id
   partition_key    = "Operator"
   row_key          = "admin"
-  entity           = { password = random_password.admin_password.result, role = "ADMIN", email = "admin@cloudo.local" }
+  entity           = { password = random_password.admin_password.result, role = "ADMIN", email = "admin@cloudo.local", team = "default" }
 }
 
 module "cloudo_seed" {

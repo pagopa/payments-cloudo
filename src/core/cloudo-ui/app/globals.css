@@ -17,16 +17,16 @@
 }
 
 .light {
-  --color-cloudo-dark: #f0f4f8;
+  --color-cloudo-dark: #edf2f7;
   --color-cloudo-panel: #ffffff;
-  --color-cloudo-panel-2: #e5eaf1;
-  --color-cloudo-text: #020617;
-  --color-cloudo-muted: #475569;
-  --color-cloudo-border: #cbd5e1;
-  --color-cloudo-accent: #3730a3;
-  --color-cloudo-ok: #065f46;
-  --color-cloudo-warn: #9a3412;
-  --color-cloudo-err: #9f1239;
+  --color-cloudo-panel-2: #e2e8f0;
+  --color-cloudo-text: #050b14;
+  --color-cloudo-muted: #334155;
+  --color-cloudo-border: #475569;
+  --color-cloudo-accent: #6b21a8;
+  --color-cloudo-ok: #00875a;
+  --color-cloudo-warn: #e05600;
+  --color-cloudo-err: #d92525;
 }
 
 @theme inline {
@@ -69,11 +69,11 @@ input[type="reset"]:disabled {
 }
 
 .card-header {
-  @apply p-4 border-b border-cloudo-border bg-cloudo-accent/5;
+  @apply p-4 border-b border-cloudo-border bg-cloudo-accent/10;
 }
 
 .btn {
-  @apply inline-flex items-center gap-2 rounded-none px-4 py-2 font-bold border border-cloudo-border bg-transparent text-cloudo-text cursor-pointer transition-all active:translate-y-0.5 uppercase tracking-widest text-sm hover:border-cloudo-accent hover:bg-cloudo-accent/5;
+  @apply inline-flex items-center gap-2 rounded-none px-4 py-2 font-bold border border-cloudo-border bg-transparent text-cloudo-text cursor-pointer transition-all active:translate-y-0.5 uppercase tracking-widest text-sm hover:border-cloudo-accent hover:bg-cloudo-accent/10;
 }
 
 .btn-primary {
@@ -81,7 +81,7 @@ input[type="reset"]:disabled {
 }
 
 .btn-ghost {
-  @apply bg-transparent border-cloudo-border hover:bg-cloudo-accent/5 hover:border-cloudo-muted;
+  @apply bg-transparent border-cloudo-border hover:bg-cloudo-accent/10 hover:border-cloudo-muted;
 }
 
 .input {
@@ -104,19 +104,19 @@ input[type="reset"]:disabled {
 }
 
 .status-running {
-  @apply bg-cloudo-accent/10 text-cloudo-accent border-cloudo-accent/50;
+  @apply bg-cloudo-accent/15 text-cloudo-accent border-cloudo-accent/60;
 }
 
 .status-succeeded {
-  @apply bg-cloudo-ok/5 text-cloudo-ok border-cloudo-ok/30;
+  @apply bg-cloudo-ok/15 text-cloudo-ok border-cloudo-ok/60;
 }
 
 .status-failed {
-  @apply bg-cloudo-err/5 text-cloudo-err border-cloudo-err/30;
+  @apply bg-cloudo-err/15 text-cloudo-err border-cloudo-err/60;
 }
 
 .status-pending {
-  @apply bg-cloudo-warn/5 text-cloudo-warn border-cloudo-warn/30;
+  @apply bg-cloudo-warn/15 text-cloudo-warn border-cloudo-warn/60;
 }
 
 /* Custom Scrollbar for Solid Technical Style */

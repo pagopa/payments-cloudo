@@ -10,6 +10,7 @@ declare -a TABLE_NAME=(
   "CloudoSchedules"
   "CloudoSettings"
   "CloudoUsers"
+  "CloudoTeams"
   "CloudoAiAnalysis"
   "CloudoAIRunbookStory"
 )

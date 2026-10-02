@@ -17,6 +17,7 @@ import { MdOutlineSpaceDashboard } from "react-icons/md";
 
 interface DashboardStats {
   totalExecutions: number;
+  totalFinished: number;
   successRate: number;
   activeWorkers: number;
   pendingApprovals: number;
@@ -64,6 +65,7 @@ function greeting(d: Date): string {
 export default function DashboardPage() {
   const [stats, setStats] = useState<DashboardStats>({
     totalExecutions: 0,
+    totalFinished: 0,
     successRate: 0,
     activeWorkers: 0,
     pendingApprovals: 0,
@@ -80,7 +82,7 @@ export default function DashboardPage() {
   const [isBackendDown, setIsBackendDown] = useState(false);
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
 
-  const [user, setUser] = useState<{ role: string } | null>(null);
+  const [user, setUser] = useState<{ role: string; team: string } | null>(null);
 
   useEffect(() => {
     const userData = localStorage.getItem("cloudo_user");
@@ -287,6 +289,7 @@ export default function DashboardPage() {
       const totalFinished = succeeded + failed;
       setStats({
         totalExecutions: finalExecutions.length,
+        totalFinished: totalFinished,
         successRate:
           totalFinished > 0
             ? +((succeeded / totalFinished) * 100).toFixed(2)
@@ -388,6 +391,7 @@ export default function DashboardPage() {
                 <p className="text-[11px] font-black uppercase tracking-[0.3em] text-cloudo-accent">
                   {greeting(new Date())}
                   {user?.role ? ` // ${user.role}` : ""}
+                  {user?.team ? ` // ${user.team}` : ""}
                 </p>
                 <h2 className="text-xl font-black tracking-tight text-cloudo-text">
                   Welcome back to Cloudo
@@ -556,7 +560,7 @@ export default function DashboardPage() {
                       const rate = rb.count ? (rb.success / rb.count) * 100 : 0;
                       return (
                         <div key={rb.name} className="space-y-1.5">
-                          <div className="flex items-center justify-between text-[11px] font-bold uppercase tracking-widest">
+                          <div className="flex items-center justify-between text-[11px] uppercase tracking-widest">
                             <span className="text-cloudo-text truncate max-w-[60%]">
                               {rb.name}
                             </span>

@@ -45,7 +45,7 @@ variable "schemas" {
         alltrue([
           for item in v.entity : (
             length(setsubtract(keys(item), [
-              "id", "name", "description", "runbook", "run_args", "worker", "oncall", "enabled", "tags", "require_approval", "group"
+              "id", "name", "description", "runbook", "run_args", "worker", "oncall", "enabled", "tags", "require_approval", "group", "team"
             ])) == 0 &&
             item.id != "" && item.name != "" && item.runbook != "" && item.worker != "" &&
             contains([true, false], lookup(item, "oncall", "")) &&
@@ -69,7 +69,7 @@ variable "schedules" {
         alltrue([
           for item in v.entity : (
             length(setsubtract(keys(item), [
-              "name", "cron", "runbook", "run_args", "queue", "worker_pool", "enabled", "oncall"
+              "name", "cron", "runbook", "run_args", "queue", "worker_pool", "enabled", "oncall", "team"
             ])) == 0 &&
             item.name != "" && item.cron != "" && item.runbook != "" &&
             contains([true, false], lookup(item, "enabled", true)) &&
