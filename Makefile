@@ -45,6 +45,11 @@ help:
 	@echo "  make test-orchestrator             - Run orchestrator unit tests only"
 	@echo "  make test-worker                   - Run worker unit tests only"
 	@echo "  make test-agent                    - Run agent unit tests only"
+	@echo "  make coverage                      - Run unit tests with coverage for orchestrator, worker and agent"
+	@echo "  make coverage-orchestrator         - Run orchestrator unit tests with coverage"
+	@echo "  make coverage-worker               - Run worker unit tests with coverage"
+	@echo "  make coverage-agent                - Run agent unit tests with coverage"
+	@echo "  make test-coverage                 - Alias for coverage"
 	@echo ""
 	@echo "Overridable variables:"
 	@echo "  VERSION=<tag>                      (default: latest)"
@@ -186,3 +191,37 @@ test-agent:
 	cd $(AGENT_PATH) && \
 	  ( [ -x .venv/bin/pytest ] || (python3 -m venv .venv && .venv/bin/pip install -q -r requirements.txt pytest) ) && \
 	  .venv/bin/python -m pytest -q
+
+.PHONY: coverage test-coverage
+coverage: coverage-orchestrator coverage-worker coverage-agent
+test-coverage: coverage
+
+.PHONY: coverage-orchestrator test-coverage-orchestrator
+coverage-orchestrator:
+	@echo "Running orchestrator unit tests with coverage..."
+	cd $(ORCH_PATH) && \
+	  ( [ -x .venv/bin/pytest ] || (python3 -m venv .venv && .venv/bin/pip install -q -r requirements.txt pytest pytest-cov) ) && \
+	  ( .venv/bin/python -c "import pytest_cov" 2>/dev/null || .venv/bin/pip install -q pytest-cov ) && \
+	  .venv/bin/python -m pytest --cov=. --cov-report=term-missing
+
+test-coverage-orchestrator: coverage-orchestrator
+
+.PHONY: coverage-worker test-coverage-worker
+coverage-worker:
+	@echo "Running worker unit tests with coverage..."
+	cd $(WORKER_PATH) && \
+	  ( [ -x .venv/bin/pytest ] || (python3 -m venv .venv && .venv/bin/pip install -q -r requirements.txt pytest pytest-cov) ) && \
+	  ( .venv/bin/python -c "import pytest_cov" 2>/dev/null || .venv/bin/pip install -q pytest-cov ) && \
+	  .venv/bin/python -m pytest --cov=. --cov-report=term-missing
+
+test-coverage-worker: coverage-worker
+
+.PHONY: coverage-agent test-coverage-agent
+coverage-agent:
+	@echo "Running agent unit tests with coverage..."
+	cd $(AGENT_PATH) && \
+	  ( [ -x .venv/bin/pytest ] || (python3 -m venv .venv && .venv/bin/pip install -q -r requirements.txt pytest pytest-cov) ) && \
+	  ( .venv/bin/python -c "import pytest_cov" 2>/dev/null || .venv/bin/pip install -q pytest-cov ) && \
+	  .venv/bin/python -m pytest --cov=. --cov-report=term-missing
+
+test-coverage-agent: coverage-agent

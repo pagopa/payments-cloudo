@@ -1,6 +1,7 @@
 import logging
 import os
 import threading
+from contextlib import asynccontextmanager
 from typing import Any
 
 import azure.functions as func
@@ -144,7 +145,18 @@ BANNER = r"""
 """
 
 
-app = FastAPI(title="CloudDO Agent", version="fastapi-migration")
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    _configure_runtime_logging()
+    print(BANNER.replace("\\033", "\033"))
+    _start_background_workers()
+    try:
+        yield
+    finally:
+        _stop_background_workers()
+
+
+app = FastAPI(title="CloudDO Agent", version="fastapi-migration", lifespan=lifespan)
 
 
 @app.get("/admin/warmup")
@@ -155,18 +167,6 @@ def _admin_warmup() -> JSONResponse:
 @app.get("/admin/host/status")
 def _admin_host_status() -> JSONResponse:
     return JSONResponse({"state": "Running"})
-
-
-@app.on_event("startup")
-def _on_startup() -> None:
-    _configure_runtime_logging()
-    print(BANNER.replace("\\033", "\033"))
-    _start_background_workers()
-
-
-@app.on_event("shutdown")
-def _on_shutdown() -> None:
-    _stop_background_workers()
 
 
 async def _analyze_endpoint(request: Request):

@@ -60,3 +60,10 @@ def test_extract_text_joins_list_content_blocks():
         data = _Data()
 
     assert copilot_provider._CopilotRuntime._extract_text(_Event()) == "foobar"
+
+
+def test_copilot_runtime_close_safe():
+    runtime = copilot_provider.get_runtime(token="tok", model="m1")
+    # safe to call close even if not started
+    runtime.close()
+    runtime.close()
