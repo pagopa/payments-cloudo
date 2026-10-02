@@ -3626,7 +3626,12 @@ def logs_query(req: func.HttpRequest) -> func.HttpResponse:
             )
 
         exec_id = (req.params.get("execId") or "").strip()
-        status = (req.params.get("status") or "").strip().lower()
+        status_param = (
+            (req.params.get("status") or req.params.get("statuses") or "")
+            .strip()
+            .lower()
+        )
+        statuses = {s.strip() for s in status_param.split(",") if s.strip()}
         latest_only_raw = (
             req.params.get("latestOnly") or req.params.get("latest_only") or "true"
         )
@@ -3664,8 +3669,16 @@ def logs_query(req: func.HttpRequest) -> func.HttpResponse:
         filter_parts = [f"PartitionKey eq '{_odata_escape(partition_key)}'"]
         if exec_id:
             filter_parts.append(f"ExecId eq '{_odata_escape(exec_id)}'")
-        if (not latest_only) and status:
-            filter_parts.append(f"Status eq '{_odata_escape(status)}'")
+        if (not latest_only) and statuses:
+            if len(statuses) == 1:
+                filter_parts.append(
+                    f"Status eq '{_odata_escape(next(iter(statuses)))}'"
+                )
+            else:
+                status_filter = " or ".join(
+                    f"Status eq '{_odata_escape(s)}'" for s in sorted(statuses)
+                )
+                filter_parts.append(f"({status_filter})")
 
         f_dt = parse_dt_local(from_dt)
         t_dt = parse_dt_local(to_dt)
@@ -3747,8 +3760,8 @@ def logs_query(req: func.HttpRequest) -> func.HttpResponse:
             if (
                 ok
                 and (not latest_only)
-                and status
-                and str(e.get("Status") or "").strip().lower() != status
+                and statuses
+                and str(e.get("Status") or "").strip().lower() not in statuses
             ):
                 ok = False
             if ok and q and not contains_any(e, q):
@@ -3807,11 +3820,11 @@ def logs_query(req: func.HttpRequest) -> func.HttpResponse:
 
             filtered = list(grouped.values())
 
-            if status:
+            if statuses:
                 filtered = [
                     e
                     for e in filtered
-                    if str(e.get("Status") or "").strip().lower() == status
+                    if str(e.get("Status") or "").strip().lower() in statuses
                 ]
 
         # Order by RequestedAt
