@@ -560,7 +560,7 @@ export default function DashboardPage() {
                       const rate = rb.count ? (rb.success / rb.count) * 100 : 0;
                       return (
                         <div key={rb.name} className="space-y-1.5">
-                          <div className="flex items-center justify-between text-[11px] font-bold uppercase tracking-widest">
+                          <div className="flex items-center justify-between text-[11px] uppercase tracking-widest">
                             <span className="text-cloudo-text truncate max-w-[60%]">
                               {rb.name}
                             </span>

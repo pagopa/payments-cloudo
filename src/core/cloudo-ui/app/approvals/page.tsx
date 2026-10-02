@@ -46,7 +46,7 @@ export default function ApprovalsPage() {
     <Suspense
       fallback={
         <div className="flex h-full items-center justify-center">
-          <HiOutlineRefresh className="animate-spin w-8 h-8 text-cloudo-warn" />
+          <HiOutlineRefresh className="animate-spin w-8 h-8 text-cloudo-accent" />
         </div>
       }
     >
@@ -299,8 +299,8 @@ function ApprovalsPageContent() {
       {/* Header Bar - Solid Technical Style */}
       <div className="flex items-center justify-between px-8 py-4 border-b border-cloudo-border bg-cloudo-panel sticky top-0 z-20">
         <div className="flex items-center gap-4 shrink-0">
-          <div className="p-2 bg-cloudo-warn/5 border border-cloudo-warn/20 shrink-0">
-            <HiOutlineShieldCheck className="text-cloudo-warn w-4 h-4" />
+          <div className="p-2 bg-cloudo-accent/10 border border-cloudo-accent/30 shrink-0">
+            <HiOutlineShieldCheck className="text-cloudo-accent w-4 h-4" />
           </div>
           <div>
             <h1 className="text-sm font-black tracking-[0.2em] text-cloudo-text uppercase">
@@ -312,7 +312,7 @@ function ApprovalsPageContent() {
           </div>
         </div>
         <div className="flex items-center gap-4">
-          <div className="text-[11px] font-black uppercase tracking-widest text-cloudo-muted bg-cloudo-accent/10 px-3 py-1.5 border border-cloudo-border">
+          <div className="text-[11px] font-black uppercase tracking-widest text-cloudo-text bg-cloudo-accent/15 px-3 py-1.5 border border-cloudo-accent/30">
             {pendingList.length} Requests Pending Signature
           </div>
           <button onClick={fetchPendingApprovals} className="btn btn-primary">
@@ -328,7 +328,7 @@ function ApprovalsPageContent() {
         <div className="max-w-350 mx-auto">
           {loading ? (
             <div className="py-24 text-center flex flex-col items-center gap-4">
-              <div className="w-8 h-8 border-2 border-cloudo-warn/30 border-t-cloudo-warn rounded-full animate-spin" />
+              <div className="w-8 h-8 border-2 border-cloudo-accent/30 border-t-cloudo-accent rounded-full animate-spin" />
               <span className="text-[11px] font-black uppercase tracking-[0.3em] text-cloudo-muted">
                 Verifying Registry Compliance...
               </span>
@@ -348,7 +348,7 @@ function ApprovalsPageContent() {
               {/* Left Column: List */}
               <div className="space-y-4">
                 <div className="flex items-center gap-3 mb-6">
-                  <div className="w-1.5 h-4 bg-cloudo-warn" />
+                  <div className="w-1.5 h-4 bg-cloudo-accent" />
                   <h2 className="text-sm font-black uppercase tracking-[0.4em] text-cloudo-text">
                     Pending Requests
                   </h2>
@@ -360,7 +360,7 @@ function ApprovalsPageContent() {
                       onClick={() => setSelectedExec(item)}
                       className={`p-4 border transition-all cursor-pointer group relative ${
                         selectedExec?.ExecId === item.ExecId
-                          ? "bg-cloudo-warn/5 border-cloudo-warn/40"
+                          ? "bg-cloudo-accent/10 border-cloudo-accent/60"
                           : "bg-cloudo-panel border-cloudo-border hover:border-cloudo-muted/70"
                       }`}
                     >
@@ -398,7 +398,7 @@ function ApprovalsPageContent() {
                         </span>
                       </div>
                       {selectedExec?.ExecId === item.ExecId && (
-                        <div className="absolute -left-px top-0 w-0.5 h-full bg-cloudo-warn" />
+                        <div className="absolute -left-px top-0 w-0.5 h-full bg-cloudo-accent" />
                       )}
                     </div>
                   ))}
@@ -417,13 +417,13 @@ function ApprovalsPageContent() {
                   <div
                     className={`bg-cloudo-panel border border-cloudo-border flex flex-col transition-all duration-500 ease-in-out overflow-hidden ${
                       isExpanded
-                        ? "fixed inset-4 z-60 shadow-2xl animate-in zoom-in-95 fade-in duration-500 overflow-y-auto custom-scrollbar ring-1 ring-cloudo-warn/20"
+                        ? "fixed inset-4 z-60 shadow-2xl animate-in zoom-in-95 fade-in duration-500 overflow-y-auto custom-scrollbar ring-1 ring-cloudo-accent/30"
                         : "sticky top-8 animate-in fade-in slide-in-from-right-4 duration-300"
                     }`}
                   >
                     <div className="p-6 border-b border-cloudo-border bg-cloudo-accent/5 flex justify-between items-center">
                       <div className="flex items-center gap-4">
-                        <div className="w-12 h-12 bg-cloudo-warn/10 border border-cloudo-warn/20 flex items-center justify-center text-cloudo-warn">
+                        <div className="w-12 h-12 bg-cloudo-accent/10 border border-cloudo-accent/30 flex items-center justify-center text-cloudo-accent">
                           <HiOutlineFingerPrint className="w-6 h-6" />
                         </div>
                         <div>
@@ -438,7 +438,7 @@ function ApprovalsPageContent() {
                       <div className="flex items-center gap-2">
                         <button
                           onClick={() => setIsExpanded(!isExpanded)}
-                          className="p-2 text-cloudo-muted hover:text-cloudo-warn border border-cloudo-border transition-colors group/expand"
+                          className="p-2 text-cloudo-muted hover:text-cloudo-accent border border-cloudo-border transition-colors group/expand"
                           title={isExpanded ? "Collapse" : "Expand"}
                         >
                           <HiOutlineArrowsExpand
@@ -451,8 +451,8 @@ function ApprovalsPageContent() {
                           onClick={copyShareLink}
                           className={`flex items-center gap-2 px-3 py-1.5 border text-[10px] font-black uppercase tracking-widest transition-all ${
                             linkCopied
-                              ? "bg-cloudo-ok border-cloudo-ok text-cloudo-dark"
-                              : "bg-cloudo-warn/10 border-cloudo-warn/20 text-cloudo-warn hover:bg-cloudo-warn hover:text-cloudo-dark"
+                              ? "bg-cloudo-ok border-cloudo-ok text-white"
+                              : "bg-cloudo-accent/10 border-cloudo-accent/30 text-cloudo-accent hover:bg-cloudo-accent hover:text-white"
                           }`}
                         >
                           {linkCopied ? (
@@ -483,7 +483,7 @@ function ApprovalsPageContent() {
                       {/* Section: Identity & Routing */}
                       <div className="space-y-4">
                         <div className="flex items-center gap-2">
-                          <div className="w-1 h-3 bg-cloudo-warn" />
+                          <div className="w-1 h-3 bg-cloudo-accent" />
                           <h3 className="text-[10px] font-black uppercase tracking-[0.2em] text-cloudo-muted">
                             Request Identity & Routing
                           </h3>
@@ -597,7 +597,7 @@ function ApprovalsPageContent() {
                           return (
                             <div className="space-y-4">
                               <div className="flex items-center gap-2">
-                                <div className="w-1 h-3 bg-cloudo-warn" />
+                                <div className="w-1 h-3 bg-cloudo-accent" />
                                 <h3 className="text-[10px] font-black uppercase tracking-[0.2em] text-cloudo-muted">
                                   Compliance Manifest & Resource Info
                                 </h3>
@@ -664,7 +664,7 @@ function ApprovalsPageContent() {
                         <button
                           onClick={() => handleAction(approvalLinks?.reject)}
                           disabled={isProcessing || !approvalLinks?.reject}
-                          className="flex items-center justify-center gap-2 bg-cloudo-err/10 hover:bg-cloudo-err hover:text-cloudo-text text-cloudo-err border border-cloudo-err/30 py-4 text-[11px] font-black uppercase tracking-[0.3em] transition-all disabled:opacity-60"
+                          className="flex items-center justify-center gap-2 bg-cloudo-err/10 hover:bg-cloudo-err hover:text-white text-cloudo-err border border-cloudo-err/30 py-4 text-[11px] font-black uppercase tracking-[0.3em] transition-all disabled:opacity-60"
                         >
                           <HiOutlineX className="w-5 h-5" />
                           Reject Request
@@ -672,7 +672,7 @@ function ApprovalsPageContent() {
                         <button
                           onClick={() => handleAction(approvalLinks?.approve)}
                           disabled={isProcessing || !approvalLinks?.approve}
-                          className="flex items-center justify-center gap-2 bg-cloudo-warn hover:bg-cloudo-warn/90 text-cloudo-dark py-4 text-[11px] font-black uppercase tracking-[0.3em] transition-all disabled:opacity-60"
+                          className="flex items-center justify-center gap-2 bg-cloudo-ok hover:bg-cloudo-ok/90 text-white py-4 text-[11px] font-black uppercase tracking-[0.3em] transition-all disabled:opacity-60 shadow-sm"
                         >
                           <HiOutlineCheck className="w-5 h-5" />
                           Sign and Authorize
@@ -759,10 +759,10 @@ function DetailItem({
 }) {
   return (
     <div
-      className={`bg-cloudo-warn/5 border border-cloudo-border p-3 space-y-2 overflow-hidden ${className}`}
+      className={`bg-cloudo-panel-2/50 border border-cloudo-border p-3 space-y-2 overflow-hidden ${className}`}
     >
-      <div className="flex items-center gap-2 text-cloudo-muted/60">
-        <span className="text-sm">{icon}</span>
+      <div className="flex items-center gap-2 text-cloudo-muted">
+        <span className="text-sm text-cloudo-accent">{icon}</span>
         <span className="text-[10px] font-black uppercase tracking-widest whitespace-nowrap">
           {label}
         </span>
