@@ -1172,7 +1172,7 @@ def Trigger(
         severity
     ) = ""
     route_params = getattr(req, "route_params", {}) or {}
-    logging.debug(route_params)
+
     # Pre-compute logging fields
     requested_at = utils.format_requested_at()
     partition_key = utils.today_partition_key()
