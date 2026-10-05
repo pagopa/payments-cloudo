@@ -1,5 +1,5 @@
 # Official base image for Azure Functions Python (Functions v4, Python 3.11)
-FROM mcr.microsoft.com/azure-functions/python:4-python3.11
+FROM mcr.microsoft.com/azure-functions/python:4-python3.11@sha256:6d9a3073fae3f3b1deca765638fcf78740005aa81069d7ac7312dcb25b53d1ef
 
 ARG APP_PATH=.
 ARG TERRAFORM_VERSION=1.14.8
