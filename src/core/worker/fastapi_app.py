@@ -5,6 +5,7 @@ import logging
 import os
 import re
 import threading
+from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Any, Callable, Optional
 
@@ -25,7 +26,27 @@ _BACKGROUND_THREADS: list[threading.Thread] = []
 _QUEUE_CLIENTS: dict[tuple[str, str], Any] = {}
 
 
+_LOG_FORMAT = "%(asctime)s | %(levelname)-8s | worker       | %(name)s | %(message)s"
+_LOG_DATEFMT = "%Y-%m-%dT%H:%M:%S%z"
+# Third-party SDKs are chatty at INFO (full HTTP request/response dumps);
+# keep them quiet so application logs aren't drowned out.
+_NOISY_LOGGERS = ("azure", "urllib3", "openai", "httpx", "httpcore")
+
+
 def _configure_runtime_logging() -> None:
+    """Configure structured, leveled logging for the worker service."""
+    level_name = os.getenv("WORKER_LOG_LEVEL", os.getenv("LOG_LEVEL", "INFO")).upper()
+    level = getattr(logging, level_name, logging.INFO)
+    logging.basicConfig(
+        level=level,
+        format=_LOG_FORMAT,
+        datefmt=_LOG_DATEFMT,
+        force=True,
+    )
+
+    for noisy_logger in _NOISY_LOGGERS:
+        logging.getLogger(noisy_logger).setLevel(logging.WARNING)
+
     # Disable per-request access logs (GET/POST lines) to reduce noise.
     access_logger = logging.getLogger("uvicorn.access")
     access_logger.handlers.clear()
@@ -390,7 +411,18 @@ BANNER = r"""
 """
 
 
-app = FastAPI(title="CloudDO Worker", version="fastapi-migration")
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    _configure_runtime_logging()
+    print(BANNER.replace("\\033", "\033"))
+    _start_background_workers()
+    try:
+        yield
+    finally:
+        _stop_background_workers()
+
+
+app = FastAPI(title="CloudDO Worker", version="fastapi-migration", lifespan=lifespan)
 
 
 @app.get("/admin/warmup")
@@ -401,18 +433,6 @@ def _admin_warmup() -> JSONResponse:
 @app.get("/admin/host/status")
 def _admin_host_status() -> JSONResponse:
     return JSONResponse({"state": "Running"})
-
-
-@app.on_event("startup")
-def _on_startup() -> None:
-    _configure_runtime_logging()
-    print(BANNER.replace("\\033", "\033"))
-    _start_background_workers()
-
-
-@app.on_event("shutdown")
-def _on_shutdown() -> None:
-    _stop_background_workers()
 
 
 for spec in _read_route_specs():

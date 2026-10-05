@@ -1,0 +1,13 @@
+{
+  "IsEncrypted": false,
+  "Values": {
+    "FUNCTIONS_WORKER_RUNTIME": "python",
+    "AzureWebJobsStorage": "DefaultEndpointsProtocol=http;AccountName=devstoreaccount1;AccountKey=Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==;BlobEndpoint=http://localhost:10000/devstoreaccount1;QueueEndpoint=http://localhost:10001/devstoreaccount1;TableEndpoint=http://localhost:10002/devstoreaccount1",
+    "AI_ANALYSIS_QUEUE_NAME": "cloudo-ai-analysis",
+    "AGENT_LLM_PROVIDER": "openai",
+    "AGENT_LLM_MODEL": "gpt-4o-mini"
+  },
+  "Host": {
+    "CORS": "*"
+  }
+}

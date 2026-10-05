@@ -45,7 +45,7 @@ variable "schemas" {
         alltrue([
           for item in v.entity : (
             length(setsubtract(keys(item), [
-              "id", "name", "description", "runbook", "run_args", "worker", "oncall", "enabled", "tags", "require_approval", "group"
+              "id", "name", "description", "runbook", "run_args", "worker", "oncall", "enabled", "tags", "require_approval", "group", "team"
             ])) == 0 &&
             item.id != "" && item.name != "" && item.runbook != "" && item.worker != "" &&
             contains([true, false], lookup(item, "oncall", "")) &&
@@ -69,7 +69,7 @@ variable "schedules" {
         alltrue([
           for item in v.entity : (
             length(setsubtract(keys(item), [
-              "name", "cron", "runbook", "run_args", "queue", "worker_pool", "enabled", "oncall"
+              "name", "cron", "runbook", "run_args", "queue", "worker_pool", "enabled", "oncall", "team"
             ])) == 0 &&
             item.name != "" && item.cron != "" && item.runbook != "" &&
             contains([true, false], lookup(item, "enabled", true)) &&
@@ -182,6 +182,24 @@ variable "ui_image" {
   })
 }
 
+variable "cloudo_agent_enabled" {
+  type        = bool
+  description = "Enable Cloudo AI Agent"
+  default     = false
+}
+
+variable "agent_image" {
+  description = "Docker image configuration for the Cloudo AI Agent (async runbook/alert triage via LLM). Only required when cloudo_agent_enabled = true."
+  type = object({
+    image_name        = optional(string, "")
+    image_tag         = optional(string, "")
+    registry_url      = optional(string, "")
+    registry_username = optional(string)
+    registry_password = optional(string)
+  })
+  default = {}
+}
+
 variable "cloudo_ui_tier" {
   type    = string
   default = "basic"
@@ -257,6 +275,24 @@ variable "worker_fastapi_queue_visibility_timeout" {
   type        = number
   description = "Visibility timeout in seconds for worker queue messages."
   default     = 3600
+}
+
+variable "agent_fastapi_queue_batch_size" {
+  type        = number
+  description = "Max batch size per AI agent analysis queue poll."
+  default     = 4
+}
+
+variable "agent_fastapi_queue_poll_seconds" {
+  type        = number
+  description = "Polling interval in seconds for the AI agent analysis queue."
+  default     = 5
+}
+
+variable "agent_fastapi_queue_visibility_timeout" {
+  type        = number
+  description = "Visibility timeout in seconds for AI agent analysis queue messages."
+  default     = 300
 }
 
 variable "autoscale_max_capacity" {

@@ -5,6 +5,7 @@ import logging
 import os
 import re
 import threading
+from contextlib import asynccontextmanager
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Callable, Optional
@@ -29,7 +30,34 @@ _STOP_EVENT = threading.Event()
 _BACKGROUND_THREADS: list[threading.Thread] = []
 
 
+_LOG_FORMAT = "%(asctime)s | %(levelname)-8s | orchestrator | %(name)s | %(message)s"
+_LOG_DATEFMT = "%Y-%m-%dT%H:%M:%S%z"
+# Third-party SDKs are chatty at INFO (full HTTP request/response dumps);
+# keep them quiet so application logs aren't drowned out.
+_NOISY_LOGGERS = ("azure", "urllib3", "openai", "httpx", "httpcore")
+
+
 def _configure_runtime_logging() -> None:
+    """Configure structured, leveled logging for the orchestrator service.
+
+    Without an explicit basicConfig() call the root logger defaults to
+    WARNING with no handler attached, so every logging.info()/debug() call
+    in the codebase is silently dropped and only errors/warnings show up.
+    """
+    level_name = os.getenv(
+        "ORCHESTRATOR_LOG_LEVEL", os.getenv("LOG_LEVEL", "INFO")
+    ).upper()
+    level = getattr(logging, level_name, logging.INFO)
+    logging.basicConfig(
+        level=level,
+        format=_LOG_FORMAT,
+        datefmt=_LOG_DATEFMT,
+        force=True,
+    )
+
+    for noisy_logger in _NOISY_LOGGERS:
+        logging.getLogger(noisy_logger).setLevel(logging.WARNING)
+
     # Disable per-request access logs (GET/POST lines) to reduce noise.
     access_logger = logging.getLogger("uvicorn.access")
     access_logger.handlers.clear()
@@ -259,6 +287,11 @@ def _process_notification_message(msg: Any) -> None:
     if isinstance(payload, bytes):
         payload = payload.decode("utf-8", errors="replace")
     if payload:
+        # The SDK queue client already applies TextBase64DecodePolicy, so
+        # `payload` should be plain JSON text here. Still route through the
+        # legacy Receiver's own resilient decode (JSON first, base64 fallback)
+        # so both consumption paths (classic host trigger / FastAPI polling)
+        # behave identically even if the message wasn't decoded upstream.
         out = _OutBinding()
         legacy.Receiver(_queue_message_to_legacy(payload), out)
         _flush_table_output({"table_name": legacy.TABLE_NAME}, out)
@@ -373,7 +406,20 @@ BANNER = r"""
 """
 
 
-app = FastAPI(title="CloudDO Orchestrator", version="fastapi-migration")
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    _configure_runtime_logging()
+    print(BANNER.replace("\\033", "\033"))
+    _start_background_workers()
+    try:
+        yield
+    finally:
+        _stop_background_workers()
+
+
+app = FastAPI(
+    title="CloudDO Orchestrator", version="fastapi-migration", lifespan=lifespan
+)
 
 
 @app.get("/admin/warmup")
@@ -384,18 +430,6 @@ def _admin_warmup() -> JSONResponse:
 @app.get("/admin/host/status")
 def _admin_host_status() -> JSONResponse:
     return JSONResponse({"state": "Running"})
-
-
-@app.on_event("startup")
-def _on_startup() -> None:
-    _configure_runtime_logging()
-    print(BANNER.replace("\\033", "\033"))
-    _start_background_workers()
-
-
-@app.on_event("shutdown")
-def _on_shutdown() -> None:
-    _stop_background_workers()
 
 
 for spec in _read_route_specs():

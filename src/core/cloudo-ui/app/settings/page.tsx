@@ -48,7 +48,7 @@ export default function SettingsPage() {
   const [notifications, setNotifications] = useState<Notification[]>([]);
 
   const addNotification = (type: "success" | "error", message: string) => {
-    const id = Date.now().toString();
+    const id = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
     setNotifications((prev) => [...prev, { id, type, message }]);
     setTimeout(() => {
       setNotifications((prev) => prev.filter((n) => n.id !== id));

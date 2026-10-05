@@ -1,0 +1,62 @@
+direction: right
+
+users: "People" {
+  admin: "Admin"
+  operator: "Operator"
+  viewer: "Viewer"
+}
+
+sources: "Run sources" {
+  azure: "Azure Monitor\nalerts"
+  api: "API call"
+  sched: "Schedules"
+}
+
+ui: "ClouDO UI\n(Next.js)"
+
+orch: "Orchestrator" {
+  api: "Management API\nteams, users, schemas,\nschedules, settings"
+  trigger: "Trigger\n+ approval gate"
+  receiver: "Receiver"
+  routing: "Smart routing"
+}
+
+storage: "Azure Storage" {
+  tables: "Tables\nlogs, schemas, schedules,\nusers, teams, settings,\naudit, workers, AI analysis" {
+    shape: cylinder
+  }
+  queues: "Queues\nworker, notification, AI" {
+    shape: queue
+  }
+  blobs: "Blob\nrunbook output" {
+    shape: cylinder
+  }
+}
+
+workers: "Workers\nper pool and team"
+agent: "AI agent\n(optional)"
+slack: "Slack"
+jsm: "Jira Service\nManagement"
+
+users.admin -> ui
+users.operator -> ui
+users.viewer -> ui
+ui -> orch.api: "HTTPS + session token"
+orch.api -> storage.tables
+
+sources.azure -> orch.trigger
+sources.api -> orch.trigger
+sources.sched -> orch.trigger
+
+orch.trigger -> storage.queues: "enqueue run"
+storage.queues -> workers: "pick up"
+workers -> orch.receiver: "status + output"
+workers -> storage.tables: "heartbeat"
+orch.receiver -> storage.tables: "log rows"
+orch.receiver -> storage.blobs: "output"
+orch.receiver -> orch.routing
+orch.routing -> slack: "team channels"
+orch.routing -> jsm: "on-call only"
+orch.receiver -> agent: "failed runs"
+agent -> jsm: "triage note"
+agent -> storage.tables: "analysis"

@@ -21,6 +21,7 @@ class Schema:
     require_approval: bool = False
     enabled: bool = True
     tags: Optional[list] = ""
+    team: str = "default"
 
     def __post_init__(self):
         if not self.id or not isinstance(self.id, str):
@@ -46,3 +47,38 @@ class Schema:
         )
         self.enabled = str(e.get("enabled", "true")).strip().lower() == "true"
         self.tags = (e.get("tags") or "").strip() or ""
+        self.team = (e.get("team") or "default").strip() or "default"
+
+
+# =========================
+# Schema Model
+# =========================
+@dataclass
+class User:
+    username: str
+    password: str
+    email: Optional[str] = None
+    role: Optional[str] = "VIEWER"
+    team: Optional[str] = "default"
+    is_active: bool = True
+    created_at: Optional[str] = None
+    sso_provider: Optional[str] = None
+    picture: Optional[str] = None
+    api_token: Optional[str] = None
+
+    def __post_init__(self):
+        if not self.username or not isinstance(self.username, str):
+            raise ValueError("Username must be a non-empty string")
+        if not self.password or not isinstance(self.password, str):
+            raise ValueError("Password must be a non-empty string")
+
+        self.username = self.username.strip()
+        self.password = self.password.strip()
+        self.email = (self.email or "").strip() or None
+        self.role = (self.role or "VIEWER").strip().upper() or "VIEWER"
+        self.team = (self.team or "default").strip() or "default"
+        self.is_active = bool(self.is_active)
+        self.created_at = (self.created_at or "").strip() or None
+        self.sso_provider = (self.sso_provider or "").strip() or None
+        self.picture = (self.picture or "").strip() or None
+        self.api_token = (self.api_token or "").strip() or None

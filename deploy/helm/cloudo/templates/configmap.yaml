@@ -16,6 +16,8 @@ data:
   LOGS_BLOB_CONTAINER: {{ .Values.config.logsBlobContainer | quote }}
   WEBSITES_PORT: {{ .Values.config.websitesPort | quote }}
   AKS_INTEGRATION_ENABLED: {{ .Values.config.aksIntegrationEnabled | quote }}
+  AI_AGENT_ENABLED: {{ .Values.config.aiAgentEnabled | quote }}
+  AI_ANALYSIS_QUEUE_NAME: {{ .Values.agent.queue | quote }}
   FASTAPI_NOTIFICATION_CONCURRENCY: {{ .Values.fastapi.notification.concurrency | quote }}
   FASTAPI_NOTIFICATION_BATCH_SIZE: {{ .Values.fastapi.notification.batchSize | quote }}
   FASTAPI_NOTIFICATION_VISIBILITY_TIMEOUT: {{ .Values.fastapi.notification.visibilityTimeout | quote }}
@@ -49,3 +51,16 @@ metadata:
 data:
   API_URL: {{ .Values.ui.apiUrl | quote }}
   ORCHESTRATOR_URL: {{ .Values.ui.orchestratorUrl | quote }}
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: cloudo-agent-config
+  namespace: {{ include "cloudo.namespace" . }}
+  labels:
+    {{- include "cloudo.labels" . | nindent 4 }}
+data:
+  AI_ANALYSIS_QUEUE_NAME: {{ .Values.agent.queue | quote }}
+  AGENT_LLM_PROVIDER: {{ .Values.agent.llm.provider | quote }}
+  AGENT_LLM_MODEL: {{ .Values.agent.llm.model | quote }}
+  AZURE_OPENAI_ENDPOINT: {{ .Values.agent.llm.azureEndpoint | quote }}

@@ -1,0 +1,42 @@
+{
+  "version": "2.0",
+  "logging": {
+    "logLevel": {
+      "Default": "Warning",
+      "Function": "Warning",
+      "Function.AnalyzeFailedRunbook": "Information",
+      "Function.Analyze": "Information",
+      "Function.Healthz": "Information",
+      "Host": "Error",
+      "Host.Results": "Error",
+      "Microsoft": "Error",
+      "Azure": "Error",
+      "Azure.Core": "Error",
+      "Azure.Storage": "Error"
+    },
+    "applicationInsights": {
+      "samplingSettings": {
+        "isEnabled": false,
+        "maxTelemetryItemsPerSecond": 5
+      }
+    }
+  },
+  "extensions": {
+    "http": {
+      "routePrefix": "api",
+      "maxOutstandingRequests": 200,
+      "maxConcurrentRequests": 100,
+      "dynamicThrottlesEnabled": true
+    },
+    "queues": {
+      "batchSize": 4,
+      "newBatchThreshold": 2,
+      "maxDequeueCount": 3,
+      "messageEncoding": "base64"
+    }
+  },
+  "extensionBundle": {
+    "id": "Microsoft.Azure.Functions.ExtensionBundle",
+    "version": "[4.*, 5.0.0)"
+  }
+}

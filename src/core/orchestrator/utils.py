@@ -38,12 +38,7 @@ def today_partition_key() -> str:
 
 
 def utc_now_iso() -> str:
-    # ISO-like UTC timestamp used in health endpoint
-    return (
-        datetime.now(timezone.utc)
-        .astimezone(ZoneInfo("Europe/Rome"))
-        .strftime("%Y-%m-%dT%H:%M:%SZ")
-    )
+    return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
 def utc_now_iso_seconds() -> str:

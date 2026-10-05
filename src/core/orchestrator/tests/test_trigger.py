@@ -37,6 +37,9 @@ class FakeOut(func.Out):
 def test_trigger_happy_path(monkeypatch):
     # Ensure anonymous auth in tests
     os.environ["FEATURE_DEV"] = "true"
+    # Authenticate via the global secret key (simplest path through
+    # _get_authenticated_user for an OPERATOR-level caller).
+    os.environ["CLOUDO_SECRET_KEY"] = "test-secret"
 
     # Table binding mocked content: a single schema row
     schema_row = {
@@ -51,29 +54,37 @@ def test_trigger_happy_path(monkeypatch):
     }
     entities = json.dumps([schema_row])
 
-    # Mock downstream runbook HTTP call
-    fake_resp = MagicMock()
-    fake_resp.status_code = 202
-    fake_resp.json.return_value = {"ok": True}
+    import function_app
 
-    # Patch external dependencies before importing the function to test
-    with patch("function_app.request", return_value=fake_resp):
-        # Routing is not executed for status 202 ("accepted"), but we patch defensively
-        with patch("function_app.route_alert", return_value=MagicMock(actions=[])):
-            with patch("function_app.execute_actions") as exec_actions:
+    # Trigger's execution path is fully queue-based (no direct HTTP call to
+    # the worker): it (1) ensures the notification queue exists, (2) asks
+    # worker_routing for a target queue, then (3) enqueues the payload.
+    # Mock all three so the test never touches real Azure Storage.
+    monkeypatch.setattr(
+        function_app, "_get_queue_client", MagicMock(return_value=MagicMock())
+    )
+    monkeypatch.setattr(function_app, "_enqueue_queue_payload", MagicMock())
+
+    with patch("worker_routing.worker_routing", return_value="worker-a-queue"):
+        # Routing is not executed for status 202 ("accepted"), but we patch
+        # defensively in case that assumption ever changes.
+        with patch("smart_routing.route_alert", return_value=MagicMock(actions=[])):
+            with patch("smart_routing.execute_actions") as exec_actions:
                 from function_app import Trigger
 
                 # Build request and fake table output
-                req = make_request(params={"id": "schema-1"})
+                req = make_request(
+                    params={"id": "schema-1"},
+                    headers={"x-cloudo-key": "test-secret"},
+                )
                 out = FakeOut()
 
                 # Invoke function
-                res = Trigger(req, out, entities)
+                res = Trigger(req, out, entities, workers="[]")
 
                 # Assert HTTP response
                 assert res.status_code == 202
                 body = json.loads(res.get_body())
-                assert body["status"] == 202
                 assert body["schema"]["id"] == "schema-1"
 
                 # Assert a coherent log entity is written
@@ -84,3 +95,13 @@ def test_trigger_happy_path(monkeypatch):
 
                 # Ensure routing actions are not executed on "accepted"
                 exec_actions.assert_not_called()
+
+                # The payload was handed off to the worker via the queue,
+                # not via a direct HTTP call.
+                function_app._enqueue_queue_payload.assert_called_once()
+                queue_name, queue_payload = (
+                    function_app._enqueue_queue_payload.call_args.args
+                )
+                assert queue_name == "worker-a-queue"
+                assert queue_payload["id"] == "schema-1"
+                assert queue_payload["runbook"] == "rb.sh"

@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback } from "react";
 import { cloudoFetch } from "@/lib/api";
+import { formatRome } from "@/lib/time";
 import {
   HiOutlineRefresh,
   HiOutlinePlay,
@@ -26,6 +27,8 @@ interface WorkerProcess {
   startedAt?: string;
   requestedAt?: string;
   workerNode?: string;
+  team?: string;
+  can_stop?: boolean;
 }
 
 interface Worker {
@@ -35,6 +38,7 @@ interface Worker {
   LastSeen: string;
   Region: string;
   Load: number;
+  team?: string;
 }
 
 interface Notification {
@@ -59,7 +63,7 @@ export function WorkersPanel() {
   } | null>(null);
 
   const addNotification = (type: "success" | "error", message: string) => {
-    const id = Date.now().toString();
+    const id = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
     setNotifications((prev) => [...prev, { id, type, message }]);
     setTimeout(() => {
       setNotifications((prev) => prev.filter((n) => n.id !== id));
@@ -75,7 +79,7 @@ export function WorkersPanel() {
   const fetchWorkers = async () => {
     setLoadingWorkers(true);
     try {
-      const res = await cloudoFetch(`/workers`);
+      const res = await cloudoFetch(`/workers?for=monitoring`);
       const data = await res.json();
       setWorkers(Array.isArray(data) ? data : []);
     } catch (error) {
@@ -243,7 +247,7 @@ export function WorkersPanel() {
   const formatLastSeen = (value?: string) => {
     const parsed = parseLastSeen(value);
     if (!parsed) return value || "-";
-    return parsed.toLocaleString();
+    return formatRome(parsed);
   };
 
   const formatHeartbeatAge = (value?: string) => {
@@ -517,6 +521,7 @@ export function WorkersPanel() {
                         <th className="px-6 py-4">Instance_Task</th>
                         <th className="px-6 py-4">Asset_Path</th>
                         <th className="px-6 py-4 text-center">Status</th>
+                        <th className="px-6 py-4">Team</th>
                         <th className="px-6 py-4 text-right">Timestamp</th>
                         <th className="px-6 py-4 text-right w-24">Actions</th>
                       </tr>
@@ -565,16 +570,17 @@ export function WorkersPanel() {
                               </span>
                             </div>
                           </td>
+                          <td className="px-6 py-4">
+                            <span className="px-2 py-0.5 border border-cloudo-border text-[11px] font-black uppercase tracking-widest text-cloudo-muted">
+                              {proc.team || "default"}
+                            </span>
+                          </td>
                           <td className="px-6 py-4 text-right text-cloudo-muted font-mono opacity-50">
-                            {
-                              (proc.startedAt || proc.requestedAt || "-")
-                                .replace("T", " ")
-                                .split(".")[0]
-                            }
+                            {formatRome(proc.startedAt || proc.requestedAt)}
                           </td>
                           <td className="px-6 py-4 text-right">
                             {proc.status.toLowerCase() === "running" &&
-                              user?.role === "ADMIN" &&
+                              proc.can_stop &&
                               !isViewer && (
                                 <button
                                   onClick={() =>
@@ -696,6 +702,7 @@ export function WorkersPanel() {
                           <thead>
                             <tr className="text-[10px] uppercase tracking-[0.2em] font-black text-cloudo-muted border-b border-cloudo-border/60">
                               <th className="px-5 py-3">Worker</th>
+                              <th className="px-5 py-3">Team</th>
                               <th className="px-5 py-3">Queue</th>
                               <th className="px-5 py-3">Region</th>
                               <th className="px-5 py-3">Seen Ago</th>
@@ -717,6 +724,9 @@ export function WorkersPanel() {
                                   >
                                     <td className="px-5 py-3 text-sm font-mono text-cloudo-text">
                                       {worker.RowKey}
+                                    </td>
+                                    <td className="px-5 py-3 text-[11px] font-black uppercase tracking-widest text-cloudo-muted">
+                                      {worker.team || "default"}
                                     </td>
                                     <td className="px-5 py-3 text-[12px] font-mono text-cloudo-accent/80">
                                       {worker.Queue || "-"}

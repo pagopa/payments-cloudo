@@ -59,6 +59,8 @@ secrets:
   githubToken: ""
   googleClientId: ""
   functionKey: ""
+  # -- API key for the LLM provider used by the Agent (OpenAI or Azure OpenAI).
+  agentLlmApiKey: ""
 
 # ---------------------------------------------------------------------------
 # Application config
@@ -74,6 +76,10 @@ config:
   logsBlobContainer: "runbook-logs"
   websitesPort: "80"
   aksIntegrationEnabled: "true"
+  # -- Enable the orchestrator hook that forwards failed/errored executions
+  # to the Agent's AI_ANALYSIS_QUEUE_NAME queue. Leave false if the `agent`
+  # service is not deployed (agent.enabled=false).
+  aiAgentEnabled: "false"
 
 # ---------------------------------------------------------------------------
 # FastAPI / queue tuning
@@ -95,6 +101,35 @@ orchestrator:
   replicas: 1
   # -- In-cluster base URL used by workers to reach the orchestrator.
   serviceUrl: "http://orchestrator"
+  podAnnotations: {}
+  podSecurityContext: {}
+  securityContext: {}
+  nodeSelector: {}
+  tolerations: []
+  affinity: {}
+  resources:
+    requests:
+      cpu: 100m
+      memory: 256Mi
+    limits:
+      cpu: 500m
+      memory: 512Mi
+
+# ---------------------------------------------------------------------------
+# Agent — AI triage of failed/errored runbook executions.
+# Consumes the AI_ANALYSIS_QUEUE_NAME queue populated by the orchestrator
+# (only when config.aiAgentEnabled is true) and posts an asynchronous note
+# on the matching JSM Ops alert.
+# ---------------------------------------------------------------------------
+agent:
+  enabled: false
+  replicas: 1
+  queue: cloudo-ai-analysis
+  llm:
+    provider: openai
+    model: gpt-4o-mini
+    # -- Required only when llm.provider is "azure_openai".
+    azureEndpoint: ""
   podAnnotations: {}
   podSecurityContext: {}
   securityContext: {}

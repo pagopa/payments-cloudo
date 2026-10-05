@@ -16,6 +16,7 @@ export interface Schema {
   severity?: string;
   monitor_condition?: string;
   tags?: string;
+  team?: string;
 }
 
 export interface Notification {

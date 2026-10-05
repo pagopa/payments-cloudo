@@ -40,6 +40,19 @@ export async function cloudoFetch(url: string, options: RequestInit = {}) {
     ...Object.fromEntries(Object.entries(options.headers || {})),
   };
 
+  const storedUser =
+    typeof window !== "undefined" ? localStorage.getItem("cloudo_user") : null;
+  const showAllTeams =
+    typeof window !== "undefined" &&
+    localStorage.getItem("cloudo_include_all_teams") === "true" &&
+    (() => {
+      try {
+        return JSON.parse(storedUser || "null")?.role === "ADMIN";
+      } catch {
+        return false;
+      }
+    })();
+
   if (sessionToken && !headers["Authorization"]) {
     headers["Authorization"] = `Bearer ${sessionToken}`;
   }
@@ -54,6 +67,9 @@ export async function cloudoFetch(url: string, options: RequestInit = {}) {
     : urlObj.search;
   if (queryString) {
     finalProxyUrl += `&${queryString}`;
+  }
+  if (showAllTeams) {
+    finalProxyUrl += "&includeAllTeams=true";
   }
 
   return fetch(finalProxyUrl, {

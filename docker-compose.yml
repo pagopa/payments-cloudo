@@ -142,6 +142,39 @@ services:
     networks:
       - azure-functions
 
+  agent:
+    platform: linux/amd64
+    build:
+      context: ./src/core/agent
+      dockerfile: Dockerfile
+    restart: on-failure
+    env_file:
+      - path: .env.local
+        required: false
+    environment:
+      - AzureWebJobsStorage=DefaultEndpointsProtocol=http;AccountName=devstoreaccount1;AccountKey=Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==;BlobEndpoint=http://azurite:10000/devstoreaccount1;QueueEndpoint=http://azurite:10001/devstoreaccount1;TableEndpoint=http://azurite:10002/devstoreaccount1
+      - LOCAL_DEV=true
+      - API_PREFIX=/api
+      - AzureWebJobsFeatureFlags=EnableWorkerIndexing
+      - FUNCTIONS_WORKER_PROCESS_COUNT=1
+      - FUNCTIONS_WORKER_RUNTIME=python
+      - DOTNET_RUNNING_IN_CONTAINER=true
+      - AI_ANALYSIS_QUEUE_NAME=cloudo-ai-analysis
+      - AGENT_LLM_PROVIDER=openai
+      - AGENT_LLM_MODEL=gpt-4o-mini
+      - OPENAI_API_KEY=${OPENAI_API_KEY:-}
+      - JSM_API_KEY_DEFAULT=${JSM_API_KEY_DEFAULT:-}
+      - FASTAPI_QUEUE_POLL_SECONDS=5
+      - FASTAPI_QUEUE_BATCH_SIZE=4
+      - FASTAPI_QUEUE_VISIBILITY_TIMEOUT=300
+    volumes:
+      - ./src/core/agent:/home/site/wwwroot/
+    depends_on:
+      - azurite
+      - orchestrator
+    networks:
+      - azure-functions
+
 
 networks:
   azure-functions:

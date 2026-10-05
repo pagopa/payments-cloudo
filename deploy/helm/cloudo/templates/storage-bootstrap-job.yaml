@@ -84,7 +84,7 @@ spec:
                   "CloudoAuditLogs",
                   "CloudoSchedules",
               ]
-              queues = ["local", "alert", "cloudo-notification"]
+              queues = ["local", "alert", "cloudo-notification", "cloudo-ai-analysis"]
 
               for name in tables:
                   table_service.create_table_if_not_exists(name)
