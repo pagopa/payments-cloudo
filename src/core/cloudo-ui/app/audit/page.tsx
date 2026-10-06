@@ -58,6 +58,7 @@ export default function AuditPage() {
     if (savedFilters) {
       try {
         const filters = JSON.parse(savedFilters);
+        // eslint-disable-next-line react-hooks/set-state-in-effect -- localStorage is only readable after hydration
         if (filters.searchQuery) setSearchQuery(filters.searchQuery);
         if (filters.activeFilter) setActiveFilter(filters.activeFilter);
         if (filters.actionTypeFilter)
@@ -98,27 +99,6 @@ export default function AuditPage() {
     isInitialized,
   ]);
 
-  useEffect(() => {
-    const userData = localStorage.getItem("cloudo_user");
-    if (userData) {
-      try {
-        const user = JSON.parse(userData);
-        if (user.role !== "ADMIN") {
-          router.push("/");
-          return;
-        }
-      } catch {
-        router.push("/login");
-        return;
-      }
-    } else {
-      router.push("/login");
-      return;
-    }
-    fetchLogs();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [router, fetchLimit]);
-
   const fetchLogs = async () => {
     setLoading(true);
     setError(null);
@@ -136,6 +116,28 @@ export default function AuditPage() {
       setLoading(false);
     }
   };
+
+  useEffect(() => {
+    const userData = localStorage.getItem("cloudo_user");
+    if (userData) {
+      try {
+        const user = JSON.parse(userData);
+        if (user.role !== "ADMIN") {
+          router.push("/");
+          return;
+        }
+      } catch {
+        router.push("/login");
+        return;
+      }
+    } else {
+      router.push("/login");
+      return;
+    }
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- refetch when the fetch limit changes
+    fetchLogs();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [router, fetchLimit]);
 
   const teamOptions = useMemo(
     () => Array.from(new Set(logs.map((log) => log.team || "default"))).sort(),
@@ -195,6 +197,7 @@ export default function AuditPage() {
 
   // Reset pagination when filters change
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- reset page when any filter changes
     setCurrentPage(1);
   }, [
     searchQuery,

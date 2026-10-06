@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect, useMemo, useRef } from "react";
+import React, { useState, useEffect, useMemo } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { cloudoFetch } from "@/lib/api";
 import {
@@ -65,6 +65,7 @@ export default function SchemasPage() {
     if (savedFilters) {
       try {
         const filters = JSON.parse(savedFilters);
+        // eslint-disable-next-line react-hooks/set-state-in-effect -- localStorage is only readable after hydration
         if (filters.searchQuery) setSearchQuery(filters.searchQuery);
         if (filters.activeFilter) setActiveFilter(filters.activeFilter);
         if (filters.workerFilter) setWorkerFilter(filters.workerFilter);
@@ -138,24 +139,13 @@ export default function SchemasPage() {
     setNotifications((prev) => prev.filter((n) => n.id !== id));
   };
 
-  useEffect(() => {
-    fetchSchemas();
-    const userData = localStorage.getItem("cloudo_user");
-    if (userData) {
-      try {
-        setUser(JSON.parse(userData));
-      } catch (e) {
-        console.error("Failed to parse user data", e);
-      }
-    }
-  }, []);
-
   // Surface a one-off notification forwarded from the dedicated
   // create/edit schema page, then strip it from the URL.
   useEffect(() => {
     const notice = searchParams.get("notice");
     const msg = searchParams.get("msg");
     if (notice && msg) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- notice comes from the URL after navigation
       addNotification(notice === "error" ? "error" : "success", msg);
       router.replace("/schemas");
     }
@@ -163,6 +153,20 @@ export default function SchemasPage() {
   }, [searchParams]);
 
   const isViewer = user?.role === "VIEWER";
+
+  const extractAvailableTags = (schemasList: Schema[]) => {
+    const tags = new Set<string>();
+    schemasList.forEach((s) => {
+      if (s.tags) {
+        s.tags
+          .split(",")
+          .map((t) => t.trim().toLowerCase())
+          .filter((t) => t !== "" && t !== "terraform" && t !== "ui")
+          .forEach((t) => tags.add(t));
+      }
+    });
+    setAvailableTags(Array.from(tags).sort());
+  };
 
   const fetchSchemas = async () => {
     setLoading(true);
@@ -178,6 +182,20 @@ export default function SchemasPage() {
       setLoading(false);
     }
   };
+
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- initial data fetch on mount
+    fetchSchemas();
+    const userData = localStorage.getItem("cloudo_user");
+    if (userData) {
+      try {
+        setUser(JSON.parse(userData));
+      } catch (e) {
+        console.error("Failed to parse user data", e);
+      }
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const fetchWorkers = async () => {
     try {
@@ -196,20 +214,6 @@ export default function SchemasPage() {
     } catch {
       console.error("Failed to fetch available workers");
     }
-  };
-
-  const extractAvailableTags = (schemasList: Schema[]) => {
-    const tags = new Set<string>();
-    schemasList.forEach((s) => {
-      if (s.tags) {
-        s.tags
-          .split(",")
-          .map((t) => t.trim().toLowerCase())
-          .filter((t) => t !== "" && t !== "terraform" && t !== "ui")
-          .forEach((t) => tags.add(t));
-      }
-    });
-    setAvailableTags(Array.from(tags).sort());
   };
 
   const copyToClipboard = (id: string) => {
@@ -373,6 +377,7 @@ export default function SchemasPage() {
 
   // Reset pagination when filters change
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- reset page when any filter changes
     setCurrentPage(1);
   }, [
     searchQuery,
@@ -384,6 +389,7 @@ export default function SchemasPage() {
   ]);
 
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- refresh workers when schemas change
     fetchWorkers();
   }, [schemas]);
 

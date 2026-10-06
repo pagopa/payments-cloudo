@@ -59,25 +59,6 @@ export default function SettingsPage() {
     setNotifications((prev) => prev.filter((n) => n.id !== id));
   };
 
-  useEffect(() => {
-    const userData = localStorage.getItem("cloudo_user");
-    if (userData) {
-      try {
-        const parsedUser = JSON.parse(userData);
-        if (parsedUser.role !== "ADMIN" && parsedUser.role !== "OPERATOR") {
-          router.push("/profile");
-          return;
-        }
-        setUser(parsedUser);
-        fetchSettings();
-      } catch {
-        router.push("/login");
-      }
-    } else {
-      router.push("/login");
-    }
-  }, [router]);
-
   const fetchSettings = async () => {
     setLoading(true);
     try {
@@ -95,6 +76,26 @@ export default function SettingsPage() {
       setLoading(false);
     }
   };
+
+  useEffect(() => {
+    const userData = localStorage.getItem("cloudo_user");
+    if (userData) {
+      try {
+        const parsedUser = JSON.parse(userData);
+        if (parsedUser.role !== "ADMIN" && parsedUser.role !== "OPERATOR") {
+          router.push("/profile");
+          return;
+        }
+        // eslint-disable-next-line react-hooks/set-state-in-effect -- localStorage is only readable after hydration
+        setUser(parsedUser);
+        fetchSettings();
+      } catch {
+        router.push("/login");
+      }
+    } else {
+      router.push("/login");
+    }
+  }, [router]);
 
   const saveSettings = async () => {
     setSaving(true);

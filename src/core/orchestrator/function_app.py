@@ -145,6 +145,34 @@ def _status_priority(status: Any) -> int:
     return STATUS_PRIORITY.get(str(status or "").strip().lower(), 0)
 
 
+def _parse_dt_local(v: str) -> Optional[datetime]:
+    if not v:
+        return None
+    try:
+        return datetime.fromisoformat(v)
+    except Exception:
+        try:
+            return datetime.strptime(v.replace(" ", "T"), "%Y-%m-%dT%H:%M:%S")
+        except Exception:
+            return None
+
+
+def _latest_log_entity(entities: list[dict]) -> Optional[dict]:
+    """Pick the row representing the current state of an execution:
+    highest status priority, then most recent RequestedAt, then RowKey"""
+
+    def _key(e: dict):
+        dt = _parse_dt_local(str(e.get("RequestedAt") or ""))
+        return (
+            _status_priority(e.get("Status")),
+            dt is not None,
+            dt or datetime.min,
+            str(e.get("RowKey") or ""),
+        )
+
+    return max(entities, key=_key, default=None)
+
+
 def _as_bool(value: Any, default: bool = False) -> bool:
     if isinstance(value, bool):
         return value
@@ -3604,18 +3632,7 @@ def logs_query(req: func.HttpRequest) -> func.HttpResponse:
         def _odata_escape(value: str) -> str:
             return str(value or "").replace("'", "''")
 
-        def parse_dt_local(v: str) -> Optional[datetime]:
-            if not v:
-                return None
-            try:
-                return datetime.fromisoformat(v)
-            except Exception:
-                try:
-                    from datetime import datetime as dt
-
-                    return dt.strptime(v.replace(" ", "T"), "%Y-%m-%dT%H:%M:%S")
-                except Exception:
-                    return None
+        parse_dt_local = _parse_dt_local
 
         partition_key = (req.params.get("partitionKey") or "").strip()
         if not partition_key:
@@ -3780,45 +3797,13 @@ def logs_query(req: func.HttpRequest) -> func.HttpResponse:
 
         # Keep one entity per ExecId based on status priority and recency.
         if latest_only:
-            grouped: dict[str, dict[str, Any]] = {}
+            grouped: dict[str, list[dict[str, Any]]] = {}
             for e in filtered:
                 e_exec_id = str(e.get("ExecId") or "").strip()
-                if not e_exec_id:
-                    continue
+                if e_exec_id:
+                    grouped.setdefault(e_exec_id, []).append(e)
 
-                existing = grouped.get(e_exec_id)
-                if not existing:
-                    grouped[e_exec_id] = e
-                    continue
-
-                current_priority = _status_priority(e.get("Status"))
-                existing_priority = _status_priority(existing.get("Status"))
-                if current_priority > existing_priority:
-                    grouped[e_exec_id] = e
-                    continue
-                if current_priority < existing_priority:
-                    continue
-
-                current_dt = parse_dt_local(str(e.get("RequestedAt") or ""))
-                existing_dt = parse_dt_local(str(existing.get("RequestedAt") or ""))
-
-                if current_dt and existing_dt:
-                    if current_dt > existing_dt:
-                        grouped[e_exec_id] = e
-                        continue
-                    if current_dt < existing_dt:
-                        continue
-                elif current_dt and not existing_dt:
-                    grouped[e_exec_id] = e
-                    continue
-                elif existing_dt and not current_dt:
-                    continue
-
-                # Deterministic tie-breaker when priority/time are equal.
-                if str(e.get("RowKey") or "") > str(existing.get("RowKey") or ""):
-                    grouped[e_exec_id] = e
-
-            filtered = list(grouped.values())
+            filtered = [_latest_log_entity(rows) for rows in grouped.values()]
 
             if statuses:
                 filtered = [

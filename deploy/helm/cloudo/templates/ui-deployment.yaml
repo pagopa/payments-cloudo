@@ -65,6 +65,11 @@ spec:
                 configMapKeyRef:
                   name: cloudo-ui-config
                   key: ORCHESTRATOR_URL
+            - name: STREAM_WS_URL
+              valueFrom:
+                configMapKeyRef:
+                  name: cloudo-ui-config
+                  key: STREAM_WS_URL
             - name: FEATURE_DEV
               valueFrom:
                 configMapKeyRef:

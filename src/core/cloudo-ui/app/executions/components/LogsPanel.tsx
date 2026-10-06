@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback, useRef, Suspense } from "react";
 import { cloudoFetch } from "@/lib/api";
+import { useExecutionLogStream, useExecutionsStream } from "@/lib/logStream";
 import { useSearchParams } from "next/navigation";
 import {
   HiOutlineSearch,
@@ -169,6 +170,7 @@ function LogsPanelContent() {
   useEffect(() => {
     if (typeof window !== "undefined") {
       const initial = Math.max(400, Math.floor(window.innerWidth * 0.48));
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- window is only readable after hydration
       setDetailWidth(initial);
     }
   }, []);
@@ -293,6 +295,7 @@ function LogsPanelContent() {
     const initialExecId = searchParams.get("execId");
     const initialPK = searchParams.get("partitionKey");
     if (initialExecId || initialPK) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- initial query on mount
       runQuery({
         execId: initialExecId || execId,
         partitionKey: initialPK || partitionKey,
@@ -303,7 +306,64 @@ function LogsPanelContent() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []); // Run only on mount
 
+  // Re-run the query shortly after any filter changes (runQuery is rebuilt).
+  const filtersInitialized = useRef(false);
   useEffect(() => {
+    if (!filtersInitialized.current) {
+      filtersInitialized.current = true;
+      return;
+    }
+    const timeoutId = window.setTimeout(() => runQuery(), 400);
+    return () => window.clearTimeout(timeoutId);
+  }, [runQuery]);
+
+  // Merge rows pushed by the executions stream into the table
+  const mergeStreamItems = useCallback(
+    (items: LogEntry[]) => {
+      // Free-text search is evaluated server-side
+      if (query) {
+        runQuery();
+        return;
+      }
+      const matches = (l: LogEntry) =>
+        (!execId || l.ExecId === execId) &&
+        (selectedStatuses.length === 0 ||
+          selectedStatuses.includes((l.Status || "").toLowerCase()));
+
+      setLogs((prev) => {
+        const byExecId = new Map(prev.map((l) => [l.ExecId, l]));
+        for (const item of items) {
+          if (matches(item)) {
+            byExecId.set(item.ExecId, {
+              ...byExecId.get(item.ExecId),
+              ...item,
+            });
+          } else {
+            byExecId.delete(item.ExecId);
+          }
+        }
+        return [...byExecId.values()]
+          .sort((a, b) => b.RequestedAt.localeCompare(a.RequestedAt))
+          .slice(0, Number(limit) || 200);
+      });
+      setSelectedLog((prev) => {
+        const updated = prev && items.find((i) => i.ExecId === prev.ExecId);
+        return updated ? { ...prev, ...updated } : prev;
+      });
+    },
+    [query, execId, selectedStatuses, limit, runQuery],
+  );
+
+  const executionsStream = useExecutionsStream<LogEntry>(
+    partitionKey,
+    true,
+    mergeStreamItems,
+  );
+
+  // Fallback when the executions stream cannot be established
+  useEffect(() => {
+    if (executionsStream !== "unavailable") return;
+
     const intervalId = window.setInterval(() => {
       runQuery();
     }, 10_000);
@@ -311,12 +371,28 @@ function LogsPanelContent() {
     return () => {
       window.clearInterval(intervalId);
     };
-  }, [runQuery]);
+  }, [executionsStream, runQuery]);
+
+  const selectedStatus = (selectedLog?.Status || "").toLowerCase();
+  const isSelectedLive =
+    selectedStatus === "running" || selectedStatus === "accepted";
+  const logStream = useExecutionLogStream<LogEntry>(
+    selectedLog?.PartitionKey,
+    selectedLog?.ExecId,
+    isSelectedLive,
+    executionsStream === "live" ? undefined : runQuery,
+  );
+  const detailLog =
+    selectedLog && logStream.entry
+      ? {
+          ...selectedLog,
+          ...logStream.entry,
+          Log: logStream.log ?? selectedLog.Log,
+        }
+      : selectedLog;
 
   useEffect(() => {
-    const status = (selectedLog?.Status || "").toLowerCase();
-    const isLive = status === "running" || status === "accepted";
-    if (!selectedLog || !isLive) return;
+    if (!isSelectedLive || logStream.status !== "unavailable") return;
 
     const intervalId = window.setInterval(() => {
       runQuery();
@@ -325,7 +401,7 @@ function LogsPanelContent() {
     return () => {
       window.clearInterval(intervalId);
     };
-  }, [selectedLog, runQuery]);
+  }, [isSelectedLive, logStream.status, runQuery]);
 
   const handleReset = () => {
     setExecId("");
@@ -347,7 +423,6 @@ function LogsPanelContent() {
     if (val) {
       const pk = val.toString().replace(/-/g, "");
       setPartitionKey(pk);
-      runQuery({ partitionKey: pk });
     } else {
       setPartitionKey("");
     }
@@ -1059,7 +1134,7 @@ function LogsPanelContent() {
       </div>
 
       {/* Detail Panel Section */}
-      {selectedLog && (
+      {detailLog && (
         <>
           {/* Resize Handle */}
           <div
@@ -1094,18 +1169,18 @@ function LogsPanelContent() {
               <div className="flex items-center gap-4">
                 <div>
                   <h3 className="text-xs font-black text-cloudo-text uppercase tracking-[0.2em]">
-                    {selectedLog.Name || "Runtime Process"}
+                    {detailLog.Name || "Runtime Process"}
                   </h3>
                   <div className="flex items-center gap-2 mt-1 flex-wrap">
                     <code className="text-[10px] text-cloudo-muted font-mono border border-cloudo-border px-2 py-0.5 bg-cloudo-dark/40">
-                      {selectedLog.ExecId}
+                      {detailLog.ExecId}
                     </code>
                     <span
                       className={`text-[9px] font-black uppercase tracking-widest px-2 py-0.5 border ${getStatusBadgeClass(
-                        selectedLog.Status,
+                        detailLog.Status,
                       )}`}
                     >
-                      {selectedLog.Status || "unknown"}
+                      {detailLog.Status || "unknown"}
                     </span>
                   </div>
                 </div>
@@ -1162,43 +1237,41 @@ function LogsPanelContent() {
                 <div className="grid grid-cols-2 xl:grid-cols-4 gap-2">
                   <div
                     className={`px-3 py-2 border text-[10px] font-black uppercase tracking-widest ${getStatusBadgeClass(
-                      selectedLog.Status,
+                      detailLog.Status,
                     )}`}
                   >
-                    {selectedLog.Status || "unknown"}
+                    {detailLog.Status || "unknown"}
                   </div>
                   <div className="px-3 py-2 border border-cloudo-border text-[10px] font-black uppercase tracking-widest text-cloudo-muted">
                     Worker:{" "}
                     <span className="text-cloudo-text">
-                      {selectedLog.Worker || "N/A"}
+                      {detailLog.Worker || "N/A"}
                     </span>
                   </div>
                   <div className="px-3 py-2 border border-cloudo-border text-[10px] font-black uppercase tracking-widest text-cloudo-muted">
                     On Call:{" "}
                     <span
                       className={
-                        selectedLog.OnCall === true ||
-                        selectedLog.OnCall === "true"
+                        detailLog.OnCall === true || detailLog.OnCall === "true"
                           ? "text-cloudo-err"
                           : "text-cloudo-text"
                       }
                     >
-                      {selectedLog.OnCall === true ||
-                      selectedLog.OnCall === "true"
+                      {detailLog.OnCall === true || detailLog.OnCall === "true"
                         ? "ACTIVE"
                         : "INACTIVE"}
                     </span>
                   </div>
                   <button
                     className="px-3 py-2 border border-cloudo-border text-[10px] font-black uppercase tracking-widest text-cloudo-accent hover:border-cloudo-accent/40 transition-colors text-left"
-                    onClick={() => copyToClipboard(selectedLog.ExecId)}
+                    onClick={() => copyToClipboard(detailLog.ExecId)}
                   >
                     {copied ? "ID COPIED" : "COPY EXEC ID"}
                   </button>
                 </div>
 
-                {(selectedLog.Status?.toLowerCase() === "failed" ||
-                  selectedLog.Status?.toLowerCase() === "error") && (
+                {(detailLog.Status?.toLowerCase() === "failed" ||
+                  detailLog.Status?.toLowerCase() === "error") && (
                   <button
                     onClick={() => setShowAiModal(true)}
                     className="w-full flex items-center justify-center gap-2 px-3 py-2.5 border border-cloudo-accent/30 bg-cloudo-accent/10 text-cloudo-accent text-[10px] font-black uppercase tracking-widest hover:bg-cloudo-accent hover:text-cloudo-dark transition-colors"
@@ -1211,15 +1284,15 @@ function LogsPanelContent() {
 
               <div className="border border-cloudo-border bg-cloudo-dark/40 p-4">
                 <ExecutionTimeline
-                  execId={selectedLog.ExecId}
-                  partitionKey={selectedLog.PartitionKey}
+                  execId={detailLog.ExecId}
+                  partitionKey={detailLog.PartitionKey}
                 />
               </div>
 
               <ExecutionNotifications
-                execId={selectedLog.ExecId}
-                partitionKey={selectedLog.PartitionKey}
-                status={selectedLog.Status}
+                execId={detailLog.ExecId}
+                partitionKey={detailLog.PartitionKey}
+                status={detailLog.Status}
               />
 
               <div className="border border-cloudo-border bg-cloudo-dark/40 p-4 space-y-3">
@@ -1229,27 +1302,27 @@ function LogsPanelContent() {
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
                   <DetailItem
                     label="Asset_Path"
-                    value={selectedLog.Runbook}
+                    value={detailLog.Runbook}
                     icon={<HiOutlineTerminal className="text-cloudo-accent" />}
                   />
                   <DetailItem
                     label="Initiator"
-                    value={selectedLog.Initiator || "SYSTEM"}
+                    value={detailLog.Initiator || "SYSTEM"}
                     icon={<HiOutlineTag />}
                   />
                   <DetailItem
                     label="Node"
-                    value={selectedLog.Worker || "DYNAMIC"}
+                    value={detailLog.Worker || "DYNAMIC"}
                     icon={<HiOutlineDatabase />}
                   />
                   <DetailItem
                     label="Group"
-                    value={selectedLog.Group || "default"}
+                    value={detailLog.Group || "default"}
                     icon={<HiOutlineTag />}
                   />
                   <DetailItem
                     label="Team"
-                    value={selectedLog.team || "default"}
+                    value={detailLog.team || "default"}
                     icon={<HiOutlineUsers />}
                   />
                 </div>
@@ -1260,23 +1333,23 @@ function LogsPanelContent() {
                   Runtime Arguments
                 </div>
                 <div className="bg-cloudo-dark/70 border border-cloudo-border px-4 py-3 font-mono text-[11px] text-cloudo-accent whitespace-pre-wrap break-all leading-relaxed">
-                  {selectedLog.Run_Args || "EMPTY_ARGS"}
+                  {detailLog.Run_Args || "EMPTY_ARGS"}
                 </div>
               </div>
 
               {(() => {
                 let info: Record<string, unknown> = {};
-                if (selectedLog.ResourceInfo) {
+                if (detailLog.ResourceInfo) {
                   try {
-                    const parsed = JSON.parse(selectedLog.ResourceInfo);
+                    const parsed = JSON.parse(detailLog.ResourceInfo);
                     if (parsed && typeof parsed === "object") {
                       info = parsed as Record<string, unknown>;
                     } else {
-                      info = { _raw: selectedLog.ResourceInfo };
+                      info = { _raw: detailLog.ResourceInfo };
                     }
                   } catch (e) {
                     console.warn("Failed to parse ResourceInfo:", e);
-                    info = { _raw: selectedLog.ResourceInfo };
+                    info = { _raw: detailLog.ResourceInfo };
                   }
                 }
 
@@ -1358,7 +1431,7 @@ function LogsPanelContent() {
                     Standard Output Stream
                   </div>
                   <button
-                    onClick={() => copyToClipboard(selectedLog.Log)}
+                    onClick={() => copyToClipboard(detailLog.Log)}
                     className="flex items-center gap-2 text-[9px] font-black uppercase tracking-widest text-cloudo-accent hover:text-white transition-colors"
                     title="Copy all logs"
                   >
@@ -1378,17 +1451,24 @@ function LogsPanelContent() {
                 <div className="bg-cloudo-dark/80 border border-cloudo-border overflow-hidden">
                   <div className="px-4 py-2 border-b border-cloudo-border bg-cloudo-panel-2/70 flex items-center justify-between">
                     <span className="text-[9px] font-black uppercase tracking-widest text-cloudo-muted/90">
-                      {selectedLog.Log
+                      {detailLog.Log
                         ? `${
-                            selectedLog.Log.split("\n").filter(Boolean).length
+                            detailLog.Log.split("\n").filter(Boolean).length
                           } linee`
                         : "0 linee"}
                     </span>
-                    <span className="text-[9px] font-black uppercase tracking-widest text-cloudo-muted/60">
-                      terminal stream
-                    </span>
+                    {logStream.status === "live" ? (
+                      <span className="flex items-center gap-1.5 text-[9px] font-black uppercase tracking-widest text-cloudo-accent">
+                        <span className="w-1.5 h-1.5 rounded-full bg-cloudo-accent animate-pulse" />
+                        live stream
+                      </span>
+                    ) : (
+                      <span className="text-[9px] font-black uppercase tracking-widest text-cloudo-muted/60">
+                        terminal stream
+                      </span>
+                    )}
                   </div>
-                  <ExecutionLogOutput content={selectedLog.Log} />
+                  <ExecutionLogOutput content={detailLog.Log} />
                 </div>
               </div>
             </div>
@@ -1396,7 +1476,7 @@ function LogsPanelContent() {
 
           {showAiModal && (
             <AiAnalysisModal
-              execId={selectedLog.ExecId}
+              execId={detailLog.ExecId}
               onClose={() => setShowAiModal(false)}
             />
           )}

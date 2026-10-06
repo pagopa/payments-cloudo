@@ -49,6 +49,9 @@ interface Notification {
   message: string;
 }
 
+const createNotificationId = () =>
+  `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+
 export default function SchedulesPage() {
   const [schedules, setSchedules] = useState<Schedule[]>([]);
   const [loading, setLoading] = useState(true);
@@ -76,7 +79,7 @@ export default function SchedulesPage() {
   const [availableWorkers, setAvailableWorkers] = useState<string[]>([]);
 
   const addNotification = (type: "success" | "error", message: string) => {
-    const id = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+    const id = createNotificationId();
     setNotifications((prev) => [...prev, { id, type, message }]);
     setTimeout(() => {
       setNotifications((prev) => prev.filter((n) => n.id !== id));
@@ -86,18 +89,6 @@ export default function SchedulesPage() {
   const removeNotification = (id: string) => {
     setNotifications((prev) => prev.filter((n) => n.id !== id));
   };
-
-  useEffect(() => {
-    fetchSchedules();
-    const userData = localStorage.getItem("cloudo_user");
-    if (userData) {
-      try {
-        setUser(JSON.parse(userData));
-      } catch (e) {
-        console.error("Failed to parse user data", e);
-      }
-    }
-  }, []);
 
   const isViewer = user?.role === "VIEWER";
 
@@ -113,6 +104,19 @@ export default function SchedulesPage() {
       setLoading(false);
     }
   };
+
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- initial data fetch on mount
+    fetchSchedules();
+    const userData = localStorage.getItem("cloudo_user");
+    if (userData) {
+      try {
+        setUser(JSON.parse(userData));
+      } catch (e) {
+        console.error("Failed to parse user data", e);
+      }
+    }
+  }, []);
 
   const fetchAvailableRunbooks = async () => {
     try {

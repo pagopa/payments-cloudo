@@ -51,6 +51,7 @@ metadata:
 data:
   API_URL: {{ .Values.ui.apiUrl | quote }}
   ORCHESTRATOR_URL: {{ .Values.ui.orchestratorUrl | quote }}
+  STREAM_WS_URL: {{ .Values.ui.streamWsUrl | default "" | quote }}
 ---
 apiVersion: v1
 kind: ConfigMap

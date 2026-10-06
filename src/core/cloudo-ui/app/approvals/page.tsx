@@ -605,7 +605,7 @@ function ApprovalsPageContent() {
                               <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                                 {Object.entries(display_info)
                                   .filter(
-                                    ([__unused, v]) =>
+                                    ([, v]) =>
                                       v !== null &&
                                       v !== undefined &&
                                       String(v).trim() !== "",

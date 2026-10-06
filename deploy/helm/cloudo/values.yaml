@@ -198,6 +198,9 @@ ui:
   apiUrl: "http://orchestrator/api"
   # -- Base URL used by the UI server to reach the orchestrator (in-cluster).
   orchestratorUrl: "http://orchestrator"
+  # -- Browser-reachable WebSocket base for live executions/logs
+  # (e.g. wss://cloudo.example.internal/api/ws). Empty = same-origin /api/ws.
+  streamWsUrl: ""
   podAnnotations: {}
   podSecurityContext: {}
   securityContext: {}
