@@ -22,6 +22,7 @@ services:
     environment:
       - NODE_ENV=development
       - API_URL=http://orchestrator:80/api
+      - STREAM_WS_URL=ws://localhost:7071/api/ws
     networks:
       - azure-functions
     volumes:

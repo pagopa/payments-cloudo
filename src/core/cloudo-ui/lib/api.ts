@@ -1,5 +1,18 @@
 export const API_URL = "/api/proxy";
 
+export function shouldIncludeAllTeams(): boolean {
+  if (typeof window === "undefined") return false;
+  if (localStorage.getItem("cloudo_include_all_teams") !== "true") return false;
+  try {
+    return (
+      JSON.parse(localStorage.getItem("cloudo_user") || "null")?.role ===
+      "ADMIN"
+    );
+  } catch {
+    return false;
+  }
+}
+
 export async function cloudoFetch(url: string, options: RequestInit = {}) {
   let sessionToken = null;
   if (typeof window !== "undefined") {
@@ -40,18 +53,7 @@ export async function cloudoFetch(url: string, options: RequestInit = {}) {
     ...Object.fromEntries(Object.entries(options.headers || {})),
   };
 
-  const storedUser =
-    typeof window !== "undefined" ? localStorage.getItem("cloudo_user") : null;
-  const showAllTeams =
-    typeof window !== "undefined" &&
-    localStorage.getItem("cloudo_include_all_teams") === "true" &&
-    (() => {
-      try {
-        return JSON.parse(storedUser || "null")?.role === "ADMIN";
-      } catch {
-        return false;
-      }
-    })();
+  const showAllTeams = shouldIncludeAllTeams();
 
   if (sessionToken && !headers["Authorization"]) {
     headers["Authorization"] = `Bearer ${sessionToken}`;

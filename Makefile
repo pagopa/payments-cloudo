@@ -148,7 +148,7 @@ dev:
 	trap 'echo "Stopping dev processes..."; kill -9 -P $$; exit 0' INT TERM; \
 	( cd $(ORCH_PATH) && FEATURE_DEV=true DEV_SCRIPT_PATH=src/runbooks/ API_PREFIX=/api exec python -m uvicorn fastapi_app:app --host 0.0.0.0 --port 7071 ) & \
 	( cd $(WORKER_PATH) && FEATURE_DEV=true DEV_SCRIPT_PATH=src/runbooks/ API_PREFIX=/api exec python -m uvicorn fastapi_app:app --host 0.0.0.0 --port 7072 ) & \
-	( cd $(FE_PATH) && API_URL=http://localhost:7071/api exec npm run dev ) & \
+	( cd $(FE_PATH) && API_URL=http://localhost:7071/api STREAM_WS_URL=ws://localhost:7071/api/ws exec npm run dev ) & \
 	wait
 
 .PHONY: test-env-build
@@ -175,7 +175,7 @@ test: test-orchestrator test-worker test-agent
 test-orchestrator:
 	@echo "Running orchestrator unit tests..."
 	cd $(ORCH_PATH) && \
-	  ( [ -x .venv/bin/pytest ] || (python3 -m venv .venv && .venv/bin/pip install -q -r requirements.txt pytest) ) && \
+	  ( [ -x .venv/bin/pytest ] || (python3 -m venv .venv && .venv/bin/pip install -q -r requirements.txt pytest httpx) ) && \
 	  .venv/bin/python -m pytest -q
 
 .PHONY: test-worker
@@ -200,7 +200,7 @@ test-coverage: coverage
 coverage-orchestrator:
 	@echo "Running orchestrator unit tests with coverage..."
 	cd $(ORCH_PATH) && \
-	  ( [ -x .venv/bin/pytest ] || (python3 -m venv .venv && .venv/bin/pip install -q -r requirements.txt pytest pytest-cov) ) && \
+	  ( [ -x .venv/bin/pytest ] || (python3 -m venv .venv && .venv/bin/pip install -q -r requirements.txt pytest pytest-cov httpx) ) && \
 	  ( .venv/bin/python -c "import pytest_cov" 2>/dev/null || .venv/bin/pip install -q pytest-cov ) && \
 	  .venv/bin/python -m pytest --cov=. --cov-report=term-missing
 

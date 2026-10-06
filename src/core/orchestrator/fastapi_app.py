@@ -14,6 +14,7 @@ import azure.functions as func
 import function_app as legacy
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse, Response
+from log_stream import stream_execution_logs, stream_executions
 
 API_PREFIX = os.getenv("API_PREFIX", "/api")
 POLL_SECONDS = float(os.getenv("FASTAPI_QUEUE_POLL_SECONDS", "2"))
@@ -430,6 +431,18 @@ def _admin_warmup() -> JSONResponse:
 @app.get("/admin/host/status")
 def _admin_host_status() -> JSONResponse:
     return JSONResponse({"state": "Running"})
+
+
+app.add_api_websocket_route(
+    f"{API_PREFIX}/ws/logs/{{partitionKey}}/{{execId}}",
+    stream_execution_logs,
+    name="stream_execution_logs",
+)
+app.add_api_websocket_route(
+    f"{API_PREFIX}/ws/executions/{{partitionKey}}",
+    stream_executions,
+    name="stream_executions",
+)
 
 
 for spec in _read_route_specs():

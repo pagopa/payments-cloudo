@@ -175,6 +175,7 @@ module "cloudo_ui" {
   app_settings = {
     "ORCHESTRATOR_URL"                    = "https://${module.cloudo_orchestrator.default_hostname}"
     "API_URL"                             = "https://${module.cloudo_orchestrator.default_hostname}/api"
+    "STREAM_WS_URL"                       = "wss://${module.cloudo_orchestrator.default_hostname}/api/ws"
     "FUNCTION_KEY"                        = module.cloudo_orchestrator.default_key
     "CLOUDO_KEY"                          = random_password.internal_auth_token.result
     "GOOGLE_CLIENT_ID"                    = var.cloudo_google_sso_integration_client_id
