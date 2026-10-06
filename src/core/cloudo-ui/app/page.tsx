@@ -84,20 +84,6 @@ export default function DashboardPage() {
 
   const [user, setUser] = useState<{ role: string; team: string } | null>(null);
 
-  useEffect(() => {
-    const userData = localStorage.getItem("cloudo_user");
-    if (userData) {
-      try {
-        setUser(JSON.parse(userData));
-      } catch (e) {
-        console.error("Failed to parse user data", e);
-      }
-    }
-    fetchDashboardData();
-    const interval = setInterval(fetchDashboardData, 30000);
-    return () => clearInterval(interval);
-  }, []);
-
   const fetchDashboardData = async () => {
     try {
       const workersRes = await cloudoFetch(`/workers`);
@@ -314,6 +300,21 @@ export default function DashboardPage() {
       setLoading(false);
     }
   };
+
+  useEffect(() => {
+    const userData = localStorage.getItem("cloudo_user");
+    if (userData) {
+      try {
+        // eslint-disable-next-line react-hooks/set-state-in-effect -- localStorage is only readable after hydration
+        setUser(JSON.parse(userData));
+      } catch (e) {
+        console.error("Failed to parse user data", e);
+      }
+    }
+    fetchDashboardData();
+    const interval = setInterval(fetchDashboardData, 30000);
+    return () => clearInterval(interval);
+  }, []);
 
   if (loading) {
     return (

@@ -1,23 +1,23 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useEffect, useState } from "react";
 import { cloudoFetch } from "@/lib/api";
 import { useRouter } from "next/navigation";
 import {
-  HiOutlineShieldCheck,
-  HiOutlineSave,
-  HiOutlinePlus,
-  HiOutlineTrash,
-  HiOutlineArrowNarrowRight,
-  HiOutlineChevronUp,
-  HiOutlineChevronDown,
-  HiOutlineX,
-  HiOutlineUserGroup,
-  HiOutlineAdjustments,
-  HiOutlineTerminal,
-  HiOutlineCheckCircle,
-  HiOutlineExclamationCircle,
   HiCheck,
+  HiOutlineAdjustments,
+  HiOutlineArrowNarrowRight,
+  HiOutlineCheckCircle,
+  HiOutlineChevronDown,
+  HiOutlineChevronUp,
+  HiOutlineExclamationCircle,
+  HiOutlinePlus,
+  HiOutlineSave,
+  HiOutlineShieldCheck,
+  HiOutlineTerminal,
+  HiOutlineTrash,
+  HiOutlineUserGroup,
+  HiOutlineX,
 } from "react-icons/hi";
 import { MdOutlineRouter } from "react-icons/md";
 import { SmartRoutingConsole } from "./SmartRoutingConsole";
@@ -191,34 +191,6 @@ function LegacySmartRoutingPage() {
     }, 4000);
   };
 
-  useEffect(() => {
-    const userData = localStorage.getItem("cloudo_user");
-    if (userData) {
-      try {
-        const parsedUser = JSON.parse(userData);
-        if (parsedUser.role !== "ADMIN") {
-          router.push("/profile");
-          return;
-        }
-        fetchConfig();
-        cloudoFetch("/teams")
-          .then((res) => (res.ok ? res.json() : []))
-          .then((teams) => {
-            if (Array.isArray(teams)) {
-              setAvailableTeams(
-                teams.map((team: { id: string }) => team.id).filter(Boolean),
-              );
-            }
-          })
-          .catch(() => setAvailableTeams(["default"]));
-      } catch {
-        router.push("/login");
-      }
-    } else {
-      router.push("/login");
-    }
-  }, [router]);
-
   const fetchConfig = async () => {
     setLoading(true);
     try {
@@ -364,6 +336,35 @@ function LegacySmartRoutingPage() {
     }
   };
 
+  useEffect(() => {
+    const userData = localStorage.getItem("cloudo_user");
+    if (userData) {
+      try {
+        const parsedUser = JSON.parse(userData);
+        if (parsedUser.role !== "ADMIN") {
+          router.push("/profile");
+          return;
+        }
+        // eslint-disable-next-line react-hooks/set-state-in-effect -- initial data fetch on mount
+        fetchConfig();
+        cloudoFetch("/teams")
+          .then((res) => (res.ok ? res.json() : []))
+          .then((teams) => {
+            if (Array.isArray(teams)) {
+              setAvailableTeams(
+                teams.map((team: { id: string }) => team.id).filter(Boolean),
+              );
+            }
+          })
+          .catch(() => setAvailableTeams(["default"]));
+      } catch {
+        router.push("/login");
+      }
+    } else {
+      router.push("/login");
+    }
+  }, [router]);
+
   const saveConfig = async () => {
     setSaving(true);
     try {
@@ -407,10 +408,9 @@ function LegacySmartRoutingPage() {
 
               // Special handling for arrays: filter out empty strings (e.g., from trailing commas in UI)
               if (Array.isArray(val)) {
-                const cleanedVal = val
+                (rule.when as Record<string, unknown>)[key] = val
                   .map((s: unknown) => (typeof s === "string" ? s.trim() : s))
                   .filter((s) => s !== "") as string[];
-                (rule.when as Record<string, unknown>)[key] = cleanedVal;
               }
 
               if (

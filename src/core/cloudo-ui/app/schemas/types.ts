@@ -1,5 +1,3 @@
-import { ReactNode } from "react";
-
 export interface Schema {
   PartitionKey: string;
   RowKey: string;

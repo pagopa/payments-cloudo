@@ -59,6 +59,7 @@ export function SchemaConfigPage({ schemaId }: SchemaConfigPageProps) {
     const userData = localStorage.getItem("cloudo_user");
     if (userData) {
       try {
+        // eslint-disable-next-line react-hooks/set-state-in-effect -- localStorage is only readable after hydration
         setUser(JSON.parse(userData));
       } catch (e) {
         console.error("Failed to parse user data", e);

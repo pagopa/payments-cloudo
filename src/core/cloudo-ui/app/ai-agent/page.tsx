@@ -69,24 +69,6 @@ export default function AiAgentSettingsPage() {
     setNotifications((prev) => prev.filter((n) => n.id !== id));
   };
 
-  useEffect(() => {
-    const userData = localStorage.getItem("cloudo_user");
-    if (userData) {
-      try {
-        const parsedUser = JSON.parse(userData);
-        if (parsedUser.role !== "ADMIN") {
-          router.push("/profile");
-          return;
-        }
-        fetchSettings();
-      } catch {
-        router.push("/login");
-      }
-    } else {
-      router.push("/login");
-    }
-  }, [router]);
-
   const fetchSettings = async () => {
     setLoading(true);
     try {
@@ -108,6 +90,45 @@ export default function AiAgentSettingsPage() {
       setLoading(false);
     }
   };
+
+  useEffect(() => {
+    const userData = localStorage.getItem("cloudo_user");
+    if (userData) {
+      try {
+        const parsedUser = JSON.parse(userData);
+        if (parsedUser.role !== "ADMIN") {
+          router.push("/profile");
+          return;
+        }
+        cloudoFetch(`/settings`)
+          .then(async (res) => {
+            if (res.ok) {
+              const data = await res.json();
+              setSettings((prev) => ({
+                ...prev,
+                ...Object.fromEntries(
+                  Object.keys(DEFAULT_SETTINGS)
+                    .filter(
+                      (key) => data[key] !== undefined && data[key] !== null,
+                    )
+                    .map((key) => [key, data[key]]),
+                ),
+              }));
+            }
+          })
+          .catch(() => {
+            console.error("Failed to fetch AI agent settings");
+          })
+          .finally(() => {
+            setLoading(false);
+          });
+      } catch {
+        router.push("/login");
+      }
+    } else {
+      router.push("/login");
+    }
+  }, [router]);
 
   const saveSettings = async () => {
     setSaving(true);

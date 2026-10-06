@@ -61,6 +61,12 @@ export function WorkersPanel() {
     id: string;
     name: string;
   } | null>(null);
+  const [now, setNow] = useState(() => Date.now());
+
+  useEffect(() => {
+    const interval = setInterval(() => setNow(Date.now()), 30000);
+    return () => clearInterval(interval);
+  }, []);
 
   const addNotification = (type: "success" | "error", message: string) => {
     const id = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
@@ -91,6 +97,7 @@ export function WorkersPanel() {
   };
 
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- initial data fetch on mount
     fetchWorkers();
     const userData = localStorage.getItem("cloudo_user");
     if (userData) {
@@ -158,6 +165,7 @@ export function WorkersPanel() {
 
   useEffect(() => {
     if (workers.length > 0 && selectedWorker === "all") {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- load processes once workers are known
       fetchProcesses("all");
     }
   }, [workers, selectedWorker, fetchProcesses]);
@@ -240,7 +248,7 @@ export function WorkersPanel() {
   ): "online" | "stale" | "unknown" => {
     const parsed = parseLastSeen(value);
     if (!parsed) return "unknown";
-    const diffMinutes = (Date.now() - parsed.getTime()) / (1000 * 60);
+    const diffMinutes = (now - parsed.getTime()) / (1000 * 60);
     return diffMinutes <= 2 ? "online" : "stale";
   };
 
@@ -253,7 +261,7 @@ export function WorkersPanel() {
   const formatHeartbeatAge = (value?: string) => {
     const parsed = parseLastSeen(value);
     if (!parsed) return "-";
-    const diffMs = Date.now() - parsed.getTime();
+    const diffMs = now - parsed.getTime();
     if (diffMs < 60 * 1000) return "now";
     const minutes = Math.floor(diffMs / (60 * 1000));
     if (minutes < 60) return `${minutes}m ago`;

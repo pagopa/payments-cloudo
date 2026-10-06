@@ -52,11 +52,6 @@ export default function CollectionPage() {
     setNotifications((prev) => prev.filter((n) => n.id !== id));
   };
 
-  useEffect(() => {
-    fetchRunbooks();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
   const fetchRunbooks = useCallback(async () => {
     setLoading(true);
     try {
@@ -74,6 +69,11 @@ export default function CollectionPage() {
       setLoading(false);
     }
   }, []);
+
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- initial data fetch on mount
+    fetchRunbooks();
+  }, [fetchRunbooks]);
 
   const fetchRunbookContent = async (name: string) => {
     setFetchingContent(true);

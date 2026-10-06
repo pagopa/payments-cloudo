@@ -68,21 +68,6 @@ export default function ProfilePage() {
     setNotifications((prev) => prev.filter((n) => n.id !== id));
   };
 
-  useEffect(() => {
-    const userData = localStorage.getItem("cloudo_user");
-    if (userData) {
-      try {
-        const parsedUser = JSON.parse(userData);
-        setUser(parsedUser);
-        fetchProfile();
-      } catch {
-        router.push("/login");
-      }
-    } else {
-      router.push("/login");
-    }
-  }, [router]);
-
   const fetchProfile = async () => {
     setLoading(true);
     try {
@@ -135,6 +120,22 @@ export default function ProfilePage() {
       setLoading(false);
     }
   };
+
+  useEffect(() => {
+    const userData = localStorage.getItem("cloudo_user");
+    if (userData) {
+      try {
+        const parsedUser = JSON.parse(userData);
+        // eslint-disable-next-line react-hooks/set-state-in-effect -- localStorage is only readable after hydration
+        setUser(parsedUser);
+        fetchProfile();
+      } catch {
+        router.push("/login");
+      }
+    } else {
+      router.push("/login");
+    }
+  }, [router]);
 
   const isGoogleUser =
     profile.sso_provider === "google" || user?.sso_provider === "google";

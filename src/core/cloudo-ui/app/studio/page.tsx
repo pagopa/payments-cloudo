@@ -29,13 +29,9 @@ import {
 import { cloudoFetch } from "@/lib/api";
 import {
   IconLabel,
-  SectionHeader,
   FormField,
   CollapsibleSection,
-  IconBox,
-  InfoGrid,
   ResizeHandle,
-  TruncatedText,
 } from "./components";
 
 const TEMPLATES = [
@@ -948,8 +944,6 @@ function TestScriptForm({
   });
   const [isBodyOpen, setIsBodyOpen] = useState(false);
   const [submitting, setSubmitting] = useState(false);
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const [workers, setWorkers] = useState<any[]>([]);
   const [capabilities, setCapabilities] = useState<string[]>([]);
   const [loadingWorkers, setLoadingWorkers] = useState(true);
   const scriptInputRef = useRef<HTMLInputElement>(null);
@@ -966,7 +960,6 @@ function TestScriptForm({
         const response = await cloudoFetch("/api/workers");
         if (response.ok) {
           const data = await response.json();
-          setWorkers(Array.isArray(data) ? data : []);
 
           // Extract unique capabilities (PartitionKey)
           const uniqueCapabilities = Array.from(
@@ -986,7 +979,7 @@ function TestScriptForm({
             }));
           }
         }
-      } catch (err) {
+      } catch {
         onError("Failed to fetch workers");
       } finally {
         setLoadingWorkers(false);
@@ -1032,7 +1025,7 @@ function TestScriptForm({
     try {
       const formatted = JSON.stringify(JSON.parse(formData.body), null, 2);
       setFormData({ ...formData, body: formatted });
-    } catch (err) {
+    } catch {
       onError("Invalid JSON format");
     }
   };

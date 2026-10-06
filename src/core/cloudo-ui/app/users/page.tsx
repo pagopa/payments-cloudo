@@ -38,6 +38,9 @@ interface Notification {
 
 type SortKey = "username" | "email" | "role" | "team";
 
+const createNotificationId = () =>
+  `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+
 export default function UsersPage() {
   const router = useRouter();
   const [users, setUsers] = useState<User[]>([]);
@@ -59,6 +62,7 @@ export default function UsersPage() {
     const userData = localStorage.getItem("cloudo_user");
     if (userData) {
       try {
+        // eslint-disable-next-line react-hooks/set-state-in-effect -- localStorage is only readable after hydration
         setCurrentUser(JSON.parse(userData));
       } catch (e) {
         console.error("Error parsing user data", e);
@@ -67,7 +71,7 @@ export default function UsersPage() {
   }, []);
 
   const addNotification = (type: "success" | "error", message: string) => {
-    const id = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+    const id = createNotificationId();
     setNotifications((prev) => [...prev, { id, type, message }]);
     setTimeout(() => {
       setNotifications((prev) => prev.filter((n) => n.id !== id));
@@ -76,6 +80,28 @@ export default function UsersPage() {
 
   const removeNotification = (id: string) => {
     setNotifications((prev) => prev.filter((n) => n.id !== id));
+  };
+
+  const isViewer = currentUser?.role === "VIEWER";
+
+  const fetchUsers = async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const res = await cloudoFetch(`/users`);
+
+      if (!res.ok) {
+        throw new Error(`HTTP Error: ${res.status} ${res.statusText}`);
+      }
+
+      const data = await res.json();
+      setUsers(Array.isArray(data) ? data : []);
+    } catch {
+      setError("Uplink to Identity Gate failed. Check backend status.");
+      setUsers([]);
+    } finally {
+      setLoading(false);
+    }
   };
 
   useEffect(() => {
@@ -99,30 +125,9 @@ export default function UsersPage() {
       router.push("/login");
       return;
     }
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- initial data fetch on mount
     fetchUsers();
   }, [router]);
-
-  const isViewer = currentUser?.role === "VIEWER";
-
-  const fetchUsers = async () => {
-    setLoading(true);
-    setError(null);
-    try {
-      const res = await cloudoFetch(`/users`);
-
-      if (!res.ok) {
-        throw new Error(`HTTP Error: ${res.status} ${res.statusText}`);
-      }
-
-      const data = await res.json();
-      setUsers(Array.isArray(data) ? data : []);
-    } catch {
-      setError("Uplink to Identity Gate failed. Check backend status.");
-      setUsers([]);
-    } finally {
-      setLoading(false);
-    }
-  };
 
   const approveUser = async (username: string, email: string) => {
     try {

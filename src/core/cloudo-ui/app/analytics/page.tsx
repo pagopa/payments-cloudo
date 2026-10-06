@@ -364,6 +364,7 @@ export default function AnalyticsPage() {
   }, [timeRange, customStart, customEnd]);
 
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- refetch when the time range changes
     fetchAnalytics();
     return () => abortRef.current?.abort();
   }, [fetchAnalytics]);

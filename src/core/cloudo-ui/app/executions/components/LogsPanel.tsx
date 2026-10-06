@@ -170,6 +170,7 @@ function LogsPanelContent() {
   useEffect(() => {
     if (typeof window !== "undefined") {
       const initial = Math.max(400, Math.floor(window.innerWidth * 0.48));
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- window is only readable after hydration
       setDetailWidth(initial);
     }
   }, []);
@@ -294,6 +295,7 @@ function LogsPanelContent() {
     const initialExecId = searchParams.get("execId");
     const initialPK = searchParams.get("partitionKey");
     if (initialExecId || initialPK) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- initial query on mount
       runQuery({
         execId: initialExecId || execId,
         partitionKey: initialPK || partitionKey,
