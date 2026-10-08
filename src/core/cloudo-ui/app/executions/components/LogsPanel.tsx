@@ -76,6 +76,7 @@ const statusPriority: Record<string, number> = {
   rejected: 3,
   stopped: 3,
   accepted: 2,
+  routed: 2,
   pending: 1,
   scheduled: 1,
 };
@@ -90,6 +91,7 @@ const STATUS_OPTIONS: { value: string; label: string }[] = [
   { value: "failed", label: "FAILED" },
   { value: "rejected", label: "REJECTED" },
   { value: "error", label: "ERROR" },
+  { value: "routed", label: "ROUTED" },
   { value: "stopped", label: "STOPPED" },
   { value: "skipped", label: "SKIPPED" },
 ];
@@ -590,6 +592,33 @@ function LogsPanelContent() {
     };
   };
 
+  const getAlertMonitorConditionStyles = (monitor_condition: string) => {
+    const s = monitor_condition?.toUpperCase();
+    if (s === "FIRED")
+      return {
+        bg: "bg-red-300/10",
+        border: "border-red-300/30",
+        text: "text-red-300",
+        dot: "bg-red-300",
+        label: "Fired",
+      };
+    if (s === "RESOLVED")
+      return {
+        bg: "bg-green-300/10",
+        border: "border-green-300/30",
+        text: "text-green-300",
+        dot: "bg-green-300",
+        label: "Resolved",
+      };
+    return {
+      bg: "bg-cloudo-ok/10",
+      border: "border-cloudo-ok/30",
+      text: "text-cloudo-ok",
+      dot: "bg-cloudo-ok",
+      label: s || "UNKNOWN",
+    };
+  };
+
   return (
     <div className="flex flex-col lg:flex-row gap-4 h-full min-w-0 bg-cloudo-dark font-mono">
       {/* Search & List Section */}
@@ -967,22 +996,54 @@ function LogsPanelContent() {
                             {log.team || "default"}
                           </span>
                         </div>
-                        {log.Severity && (
-                          <div
-                            className={`text-[9px] font-black uppercase tracking-tighter px-1 rounded-sm border inline-flex items-center gap-1 w-fit ${
-                              getSeverityStyles(log.Severity).bg
-                            } ${getSeverityStyles(log.Severity).border} ${
-                              getSeverityStyles(log.Severity).text
-                            }`}
-                          >
-                            <span
-                              className={`w-1 h-1 rounded-full animate-pulse ${
-                                getSeverityStyles(log.Severity).dot
+                        <div className="flex items-center gap-1.5">
+                          {log.Severity && (
+                            <div
+                              className={`text-[9px] font-black uppercase tracking-tighter px-1 rounded-sm border inline-flex items-center gap-1 w-fit ${
+                                getSeverityStyles(log.Severity).bg
+                              } ${getSeverityStyles(log.Severity).border} ${
+                                getSeverityStyles(log.Severity).text
                               }`}
-                            />
-                            {log.Severity}
-                          </div>
-                        )}
+                            >
+                              <span
+                                className={`w-1 h-1 rounded-full animate-pulse ${
+                                  getSeverityStyles(log.Severity).dot
+                                }`}
+                              />
+                              {log.Severity}
+                            </div>
+                          )}
+                          {log.MonitorCondition && (
+                            <div
+                              className={`text-[9px] font-black uppercase tracking-tighter px-1 rounded-sm border inline-flex items-center gap-1 w-fit ${
+                                getAlertMonitorConditionStyles(
+                                  log.MonitorCondition,
+                                ).bg
+                              } ${
+                                getAlertMonitorConditionStyles(
+                                  log.MonitorCondition,
+                                ).border
+                              } ${
+                                getAlertMonitorConditionStyles(
+                                  log.MonitorCondition,
+                                ).text
+                              }`}
+                            >
+                              <span
+                                className={`w-1 h-1 rounded-full animate-pulse ${
+                                  getAlertMonitorConditionStyles(
+                                    log.MonitorCondition,
+                                  ).dot
+                                }`}
+                              />
+                              {
+                                getAlertMonitorConditionStyles(
+                                  log.MonitorCondition,
+                                ).label
+                              }
+                            </div>
+                          )}
+                        </div>
                       </div>
                     </td>
                     <td className="hidden lg:table-cell px-3 py-2 max-w-[260px]">
@@ -2033,7 +2094,7 @@ function ExecutionLogOutput({ content }: { content: string }) {
     );
   }
 
-  const lines = content.split("\n").filter((line) => line.trim() !== "");
+  const lines = content.split("\n");
 
   return (
     <div className="max-h-[26rem] overflow-auto custom-scrollbar font-mono text-xs">
@@ -2051,12 +2112,14 @@ function ExecutionLogOutput({ content }: { content: string }) {
         return (
           <div
             key={`${index}-${line.slice(0, 12)}`}
-            className="grid grid-cols-[3.5rem_1fr] gap-3 px-4 py-1.5 border-b border-cloudo-border/40 hover:bg-cloudo-panel-2/40 transition-colors"
+            className="grid min-w-max w-full grid-cols-[3.5rem_1fr] gap-3 px-4 py-1.5 border-b border-cloudo-border/40 hover:bg-cloudo-panel-2/40 transition-colors"
           >
             <span className="text-[10px] text-cloudo-muted/70 text-right select-none">
               {String(index + 1).padStart(4, "0")}
             </span>
-            <span className={`${tone} break-all leading-relaxed`}>{line}</span>
+            <span className={`${tone} whitespace-pre leading-relaxed`}>
+              {line || " "}
+            </span>
           </div>
         );
       })}

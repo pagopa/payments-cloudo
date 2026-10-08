@@ -1257,16 +1257,16 @@ def Trigger(
     }
 
     routing_info = {
-        "team": route_params.get("team") or "",
+        "team": route_params.get("team") or "default",
         "slack_token": req.params.get("slack_token")
-        or resolve_slack_token(route_params.get("team") or "")
+        or resolve_slack_token(route_params.get("team") or "default")
         or token,
         "slack_channel": req.params.get("slack_channel")
         or channel
         or (os.environ.get("SLACK_CHANNEL") or "#cloudo-test").strip(),
         "jsm_token": req.params.get("jsm_api_key")
         or req.params.get("opsgenie_api_key")
-        or resolve_jsm_apikey(route_params.get("team") or ""),
+        or resolve_jsm_apikey(route_params.get("team") or "default"),
     }
     logging.debug(f"{log_prefix} Resource info: %s", resource_info)
 
