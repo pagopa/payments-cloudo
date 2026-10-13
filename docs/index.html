@@ -614,8 +614,9 @@
               </li>
               <li>
                 <strong>Run.</strong> The message is enqueued. The worker picks
-                it up, reports <code>running</code>, executes the script with
-                the resource information as environment variables, then reports
+                it up, reports <code>running</code>, optionally connects to AKS
+                when the schema requires it, executes the script with the
+                resource information as environment variables, then reports
                 <code>succeeded</code> or <code>failed</code> with the output.
               </li>
               <li>
@@ -951,8 +952,8 @@
             <h2>Writing runbooks</h2>
             <p>
               Runbooks are <code>bash</code> or <code>python</code> scripts.
-              When an alert comes from AKS they receive these environment
-              variables:
+              When an alert comes from AKS, the worker passes its resource
+              context as these environment variables:
             </p>
             <table>
               <thead>
@@ -989,15 +990,63 @@
               </tbody>
             </table>
             <p>
-              The worker image already includes the Azure CLI and the Python
-              Azure libraries. To use the worker's managed identity, start your
-              script with:
+              The worker image includes the Azure CLI and Python Azure
+              libraries. For Azure CLI operations outside the schema-managed AKS
+              connection, the worker's managed identity can be used with:
             </p>
             <pre><code># Ensure Azure login
 if ! az account show &gt;/dev/null 2&gt;&amp;1; then
   echo "Logging into Azure..."
   az login --identity --client-id "$AZURE_CLIENT_ID" &gt;/dev/null
 fi</code></pre>
+            <h3>AKS connection</h3>
+            <p>
+              Enable <code>aks_login_required</code> in a schema when its
+              runbook needs to call <code>kubectl</code>. Set the default
+              <code>aks_cluster_name</code>, <code>aks_resource_group</code> and
+              <code>aks_namespace</code> on the schema. The
+              <code>resource_info</code> values supplied by a trigger take
+              precedence over these defaults:
+              <code>resource_name</code> overrides the cluster name,
+              <code>resource_rg</code> overrides the resource group, and
+              <code>aks_namespace</code> overrides the namespace. If either
+              source does not provide a value, the worker also checks its
+              <code>RESOURCE_NAME</code>, <code>RESOURCE_RG</code> and
+              <code>AKS_NAMESPACE</code> environment variables.
+            </p>
+            <p>
+              When login is enabled, the worker validates that all three
+              connection values are available before starting the runbook. It
+              creates an execution-specific temporary kubeconfig, logs in to
+              Azure using the worker's managed identity, selects the configured
+              subscription when <code>AZURE_SUBSCRIPTION_ID</code> is set,
+              fetches the cluster credentials and converts them to managed
+              identity authentication with <code>kubelogin</code>. It then
+              scopes the Kubernetes context to the namespace and probes cluster
+              access.
+            </p>
+            <p>
+              The login helper prepares a namespace-scoped
+              <code>cloudo-sa-&lt;namespace&gt;</code> ServiceAccount and
+              Role/RoleBinding when the identity has permission to manage them.
+              Otherwise, those resources and permissions must already exist. It
+              requests a short-lived (10-minute) ServiceAccount token and writes
+              it to the temporary kubeconfig. The worker exposes that file as
+              <code>KUBECONFIG</code> to the runbook, so
+              <code>kubectl</code> commands use that connection without another
+              login in the script. The worker removes the kubeconfig after
+              execution. Authentication, authorization or token generation
+              failures stop the runbook and report an execution error.
+            </p>
+            <div class="note">
+              For Terraform deployments, configure
+              <code>aks_integration</code> with the AKS cluster IDs. The module
+              grants its managed identity the AKS Cluster User and AKS RBAC
+              Admin roles on those clusters, and sets
+              <code>AKS_INTEGRATION_ENABLED</code>. If that setting is
+              explicitly <code>false</code>, a schema requesting AKS login fails
+              rather than running without a cluster connection.
+            </div>
             <h3>Describing the runbook</h3>
             <pre><code>[
   {
@@ -1013,6 +1062,10 @@ fi</code></pre>
         "team": "infra",
         "oncall": true,
         "require_approval": true,
+        "aks_login_required": true,
+        "aks_cluster_name": "aks-prod",
+        "aks_resource_group": "rg-aks-prod",
+        "aks_namespace": "payments",
         "tags": "checkout,azure"
       }
     ]
@@ -1051,6 +1104,28 @@ fi</code></pre>
                 <tr>
                   <td><code>require_approval</code></td>
                   <td>When true, runs wait in the approval gate</td>
+                </tr>
+                <tr>
+                  <td><code>aks_login_required</code></td>
+                  <td>
+                    When true, the worker connects to AKS before running the
+                    runbook; cluster name, resource group and namespace are
+                    required from the schema, runtime resource info or worker
+                    environment
+                  </td>
+                </tr>
+                <tr>
+                  <td>
+                    <code>aks_cluster_name</code>,
+                    <code>aks_resource_group</code>,
+                    <code>aks_namespace</code>
+                  </td>
+                  <td>
+                    Optional connection defaults. Runtime
+                    <code>resource_info</code> fields
+                    (<code>resource_name</code>, <code>resource_rg</code> and
+                    <code>aks_namespace</code>) override the schema values.
+                  </td>
                 </tr>
                 <tr>
                   <td>

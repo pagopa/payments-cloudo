@@ -15,12 +15,16 @@ class Schema:
     run_args: Optional[str] = None
     worker: Optional[str] = None
     group: Optional[str] = "-"
-    oncall: Optional[str] = "false"
+    oncall: bool = False
     monitor_condition: Optional[str] = None
     severity: Optional[str] = None
     require_approval: bool = False
+    aks_login_required: bool = False
+    aks_cluster_name: Optional[str] = None
+    aks_resource_group: Optional[str] = None
+    aks_namespace: Optional[str] = None
     enabled: bool = True
-    tags: Optional[list] = ""
+    tags: Optional[list] = None
     team: str = "default"
 
     def __post_init__(self):
@@ -38,15 +42,19 @@ class Schema:
         self.runbook = (e.get("runbook") or "").strip() or None
         self.run_args = (e.get("run_args") or "").strip() or ""
         self.worker = (e.get("worker") or "").strip() or ""
-        self.group = (e.get("group") or "-").strip() or ""
-        self.oncall = (
-            str(e.get("oncall", e.get("oncall", "false"))).strip().lower() or "false"
-        )
+        self.group = (e.get("group") or "-").strip() or "-"
+        self.oncall = str(e.get("oncall", "false")).strip().lower() == "true"
         self.require_approval = (
             str(e.get("require_approval", "false")).strip().lower() == "true"
         )
+        self.aks_login_required = (
+            str(e.get("aks_login_required", "false")).strip().lower() == "true"
+        )
+        self.aks_cluster_name = (e.get("aks_cluster_name") or "").strip() or None
+        self.aks_resource_group = (e.get("aks_resource_group") or "").strip() or None
+        self.aks_namespace = (e.get("aks_namespace") or "").strip() or None
         self.enabled = str(e.get("enabled", "true")).strip().lower() == "true"
-        self.tags = (e.get("tags") or "").strip() or ""
+        self.tags = e.get("tags") or None
         self.team = (e.get("team") or "default").strip() or "default"
 
 

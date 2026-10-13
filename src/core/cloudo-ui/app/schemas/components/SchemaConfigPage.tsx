@@ -12,6 +12,7 @@ import {
 import { MdOutlineSchema } from "react-icons/md";
 import { cloudoFetch } from "@/lib/api";
 import { Schema } from "../types";
+import { normalizeSchema } from "../utils";
 import { SchemaForm, SCHEMA_FORM_ID } from "./SchemaForm";
 
 interface SchemaConfigPageProps {
@@ -118,7 +119,7 @@ export function SchemaConfigPage({ schemaId }: SchemaConfigPageProps) {
         );
         if (cancelled) return;
         if (found) {
-          setSchema(found);
+          setSchema(normalizeSchema(found));
         } else {
           setNotFound(true);
         }

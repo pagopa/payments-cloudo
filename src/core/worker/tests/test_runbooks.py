@@ -69,6 +69,85 @@ def test_process_runbook_happy_path(monkeypatch):
             assert payload["exec_id"] not in worker._ACTIVE_RUNS
 
 
+def test_process_runbook_uses_schema_aks_settings_unless_resource_info_overrides(
+    monkeypatch, tmp_path
+):
+    worker = importlib.import_module("function_app")
+    monkeypatch.delenv("RESOURCE_NAME", raising=False)
+    monkeypatch.delenv("RESOURCE_RG", raising=False)
+    monkeypatch.delenv("AKS_NAMESPACE", raising=False)
+    monkeypatch.setenv("AKS_INTEGRATION_ENABLED", "true")
+
+    payload = {
+        "name": "MyRule",
+        "runbook": "script.py",
+        "exec_id": "exec-schema-aks",
+        "aks_login_required": True,
+        "aks_cluster_name": "aks-schema",
+        "aks_resource_group": "rg-schema",
+        "aks_namespace": "ns-schema",
+        "resource_info": {"resource_name": "aks-payload"},
+    }
+    login_calls = []
+    script_calls = []
+
+    def fake_aks_login(info, payload, env, temp_dir):
+        login_calls.append(info)
+        return str(tmp_path / "kubeconfig")
+
+    def fake_run_script(**kwargs):
+        script_calls.append(kwargs)
+        result = MagicMock()
+        result.returncode = 0
+        result.stdout = "all good\n"
+        result.stderr = ""
+        return result
+
+    with patch.object(
+        worker, "_send_status_to_receiver", return_value=True
+    ), patch.object(worker, "_run_aks_login", side_effect=fake_aks_login), patch.object(
+        worker, "_run_script", side_effect=fake_run_script
+    ):
+        worker._ACTIVE_RUNS.clear()
+        worker.process_runbook(make_queue_message(payload))
+
+    expected_info = {
+        "resource_name": "aks-payload",
+        "resource_rg": "rg-schema",
+        "aks_namespace": "ns-schema",
+    }
+    assert login_calls == [expected_info]
+    assert script_calls[0]["resource_info"] == expected_info
+    assert script_calls[0]["kubeconfig_path"] == str(tmp_path / "kubeconfig")
+
+
+def test_process_runbook_skips_aks_login_when_schema_does_not_require_it(
+    monkeypatch,
+):
+    worker = importlib.import_module("function_app")
+    payload = {
+        "name": "MyRule",
+        "runbook": "script.py",
+        "exec_id": "exec-no-aks",
+        "resource_info": {
+            "resource_name": "aks-demo",
+            "resource_rg": "rg-demo",
+            "aks_namespace": "demo-ns",
+        },
+    }
+
+    result = MagicMock(returncode=0, stdout="all good\n", stderr="")
+    with patch.object(
+        worker, "_send_status_to_receiver", return_value=True
+    ), patch.object(worker, "_run_aks_login") as login, patch.object(
+        worker, "_run_script", return_value=result
+    ):
+        worker._ACTIVE_RUNS.clear()
+        worker.process_runbook(make_queue_message(payload))
+
+    login.assert_not_called()
+
+
 def test_process_runbook_skips_if_already_running(monkeypatch):
     worker = importlib.import_module("function_app")
 

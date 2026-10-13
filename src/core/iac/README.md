@@ -101,6 +101,9 @@ module "cloudo" {
   }
   # ==========================================
 
+  # Set "aks_login_required": true and configure aks_cluster_name,
+  # aks_resource_group and aks_namespace on a schema entity to connect to AKS.
+  # Values supplied at runtime in resource_info override these schema defaults.
   schemas = file("YOUR_PATH/schemas.json.tpl")
   schedules = file("YOUR_PATH/schedules.json.tpl")
 

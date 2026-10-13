@@ -44,17 +44,22 @@ resource "azurerm_storage_table_entity" "schemas" {
   entity = merge(
     each.value.entity,
     {
-      enabled          = tostring(try(tobool(lookup(each.value.entity, "enabled", true)), true))
-      oncall           = tostring(try(tobool(lookup(each.value.entity, "oncall", true)), true))
-      require_approval = tostring(try(tobool(lookup(each.value.entity, "require_approval", false)), false))
-      group            = lookup(each.value.entity, "group", null) == null ? "-" : each.value.entity.group
-      tags             = lookup(each.value.entity, "tags", null) == null ? "terraform" : contains(split(",", each.value.entity.tags), "terraform") ? each.value.entity.tags : "${each.value.entity.tags},terraform"
-      team             = lookup(each.value.entity, "team", "default")
+      enabled            = tostring(try(tobool(lookup(each.value.entity, "enabled", true)), true))
+      oncall             = tostring(try(tobool(lookup(each.value.entity, "oncall", true)), true))
+      require_approval   = tostring(try(tobool(lookup(each.value.entity, "require_approval", false)), false))
+      aks_login_required = tostring(try(tobool(lookup(each.value.entity, "aks_login_required", false)), false))
+      aks_cluster_name   = lookup(each.value.entity, "aks_cluster_name", "")
+      aks_resource_group = lookup(each.value.entity, "aks_resource_group", "")
+      aks_namespace      = lookup(each.value.entity, "aks_namespace", "")
+      group              = lookup(each.value.entity, "group", null) == null ? "-" : each.value.entity.group
+      tags               = lookup(each.value.entity, "tags", null) == null ? "terraform" : contains(split(",", each.value.entity.tags), "terraform") ? each.value.entity.tags : "${each.value.entity.tags},terraform"
+      team               = lookup(each.value.entity, "team", "default")
     },
     {
-      "enabled@odata.type"          = "Edm.Boolean"
-      "oncall@odata.type"           = "Edm.Boolean"
-      "require_approval@odata.type" = "Edm.Boolean"
+      "enabled@odata.type"            = "Edm.Boolean"
+      "oncall@odata.type"             = "Edm.Boolean"
+      "require_approval@odata.type"   = "Edm.Boolean"
+      "aks_login_required@odata.type" = "Edm.Boolean"
     }
   )
 }

@@ -199,7 +199,7 @@ export function SchemaTable({
                       >
                         <HiOutlineShieldCheck className="w-3.5 h-3.5" />
                       </div>
-                      {schema.oncall === "true" && (
+                      {schema.oncall && (
                         <div
                           className="p-1 border bg-cloudo-accent/10 border-cloudo-accent/40 text-cloudo-accent"
                           title="On-Call Flow Active"

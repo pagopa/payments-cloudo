@@ -45,11 +45,12 @@ variable "schemas" {
         alltrue([
           for item in v.entity : (
             length(setsubtract(keys(item), [
-              "id", "name", "description", "runbook", "run_args", "worker", "oncall", "enabled", "tags", "require_approval", "group", "team"
+              "id", "name", "description", "runbook", "run_args", "worker", "oncall", "enabled", "tags", "require_approval", "aks_login_required", "aks_cluster_name", "aks_resource_group", "aks_namespace", "group", "team"
             ])) == 0 &&
             item.id != "" && item.name != "" && item.runbook != "" && item.worker != "" &&
             contains([true, false], lookup(item, "oncall", "")) &&
-            contains([true, false], lookup(item, "require_approval", ""))
+            contains([true, false], lookup(item, "require_approval", "")) &&
+            contains([true, false], lookup(item, "aks_login_required", false))
           )
         ])
       )

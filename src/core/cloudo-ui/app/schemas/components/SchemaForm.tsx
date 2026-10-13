@@ -62,8 +62,12 @@ export function SchemaForm({
     runbook: initialData?.runbook || "",
     run_args: initialData?.run_args || "",
     worker: initialData?.worker || "",
-    oncall: initialData?.oncall || "",
+    oncall: initialData?.oncall || false,
     require_approval: initialData?.require_approval || false,
+    aks_login_required: initialData?.aks_login_required || false,
+    aks_cluster_name: initialData?.aks_cluster_name || "",
+    aks_resource_group: initialData?.aks_resource_group || "",
+    aks_namespace: initialData?.aks_namespace || "",
     severity: initialData?.severity || "",
     monitor_condition: initialData?.monitor_condition || "",
     tags: (initialData?.tags || (mode === "create" ? "ui" : ""))
@@ -368,6 +372,105 @@ export function SchemaForm({
                 />
               </div>
             </div>
+
+            <section className="border border-cloudo-border/70 bg-cloudo-accent/[0.03]">
+              <div className="flex items-center justify-between gap-4 p-4">
+                <div className="space-y-1">
+                  <h3 className="text-xs font-black uppercase tracking-[0.2em] text-cloudo-text">
+                    AKS Connection
+                  </h3>
+                  <p className="text-xs text-cloudo-muted">
+                    Connect to a cluster before running this runbook.
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  disabled={isDisabled}
+                  aria-pressed={formData.aks_login_required}
+                  onClick={() =>
+                    setFormData({
+                      ...formData,
+                      aks_login_required: !formData.aks_login_required,
+                    })
+                  }
+                  className={`flex shrink-0 items-center gap-2 border px-3 py-2 text-[10px] font-black uppercase tracking-wider transition-colors disabled:cursor-not-allowed disabled:opacity-50 ${
+                    formData.aks_login_required
+                      ? "border-cloudo-accent/50 bg-cloudo-accent/10 text-cloudo-accent"
+                      : "border-cloudo-border text-cloudo-muted hover:border-cloudo-accent/40"
+                  }`}
+                >
+                  {formData.aks_login_required && (
+                    <HiOutlineCheck className="h-3.5 w-3.5" />
+                  )}
+                  {formData.aks_login_required ? "Enabled" : "Disabled"}
+                </button>
+              </div>
+
+              {formData.aks_login_required && (
+                <div className="space-y-4 border-t border-cloudo-border/70 p-4">
+                  <p className="text-xs leading-relaxed text-cloudo-muted">
+                    Values provided in runtime resource info take precedence
+                    over these defaults.
+                  </p>
+                  <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                    <div className="space-y-1.5">
+                      <LabelWithTooltip tooltip="AKS cluster name; resource_info takes precedence at execution time.">
+                        Cluster Name
+                      </LabelWithTooltip>
+                      <input
+                        type="text"
+                        disabled={isDisabled}
+                        className="input w-full h-11 disabled:opacity-50 disabled:cursor-not-allowed"
+                        value={formData.aks_cluster_name}
+                        onChange={(e) =>
+                          setFormData({
+                            ...formData,
+                            aks_cluster_name: e.target.value,
+                          })
+                        }
+                        placeholder="e.g. aks-prod"
+                      />
+                    </div>
+                    <div className="space-y-1.5">
+                      <LabelWithTooltip tooltip="AKS resource group; resource_info takes precedence at execution time.">
+                        Resource Group
+                      </LabelWithTooltip>
+                      <input
+                        type="text"
+                        disabled={isDisabled}
+                        className="input w-full h-11 disabled:opacity-50 disabled:cursor-not-allowed"
+                        value={formData.aks_resource_group}
+                        onChange={(e) =>
+                          setFormData({
+                            ...formData,
+                            aks_resource_group: e.target.value,
+                          })
+                        }
+                        placeholder="e.g. rg-aks-prod"
+                      />
+                    </div>
+                    <div className="space-y-1.5 sm:col-span-2">
+                      <LabelWithTooltip tooltip="Kubernetes namespace; resource_info takes precedence at execution time.">
+                        Namespace
+                      </LabelWithTooltip>
+                      <input
+                        type="text"
+                        disabled={isDisabled}
+                        className="input w-full h-11 disabled:opacity-50 disabled:cursor-not-allowed"
+                        value={formData.aks_namespace}
+                        onChange={(e) =>
+                          setFormData({
+                            ...formData,
+                            aks_namespace: e.target.value,
+                          })
+                        }
+                        placeholder="e.g. payments"
+                      />
+                    </div>
+                  </div>
+                </div>
+              )}
+            </section>
           </div>
         </div>
 
@@ -405,7 +508,7 @@ export function SchemaForm({
                 </div>
                 <div
                   className={`w-5 h-5 border flex items-center justify-center transition-all ${
-                    formData.require_approval == true
+                    formData.require_approval
                       ? "bg-cloudo-accent border-cloudo-accent text-cloudo-dark"
                       : "border-cloudo-border"
                   }`}
@@ -424,7 +527,7 @@ export function SchemaForm({
                   !isDisabled &&
                   setFormData({
                     ...formData,
-                    oncall: formData.oncall === "true" ? "false" : "true",
+                    oncall: !formData.oncall,
                   })
                 }
               >
@@ -438,14 +541,12 @@ export function SchemaForm({
                 </div>
                 <div
                   className={`w-5 h-5 border flex items-center justify-center transition-all ${
-                    formData.oncall === "true"
+                    formData.oncall
                       ? "bg-cloudo-accent border-cloudo-accent text-cloudo-dark"
                       : "border-cloudo-border"
                   }`}
                 >
-                  {formData.oncall === "true" && (
-                    <HiOutlineCheck className="w-4 h-4" />
-                  )}
+                  {formData.oncall && <HiOutlineCheck className="w-4 h-4" />}
                 </div>
               </div>
             </div>

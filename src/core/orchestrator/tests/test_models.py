@@ -12,6 +12,10 @@ def test_schema_model():
         "group": "payments",
         "oncall": "true",
         "require_approval": "true",
+        "aks_login_required": "true",
+        "aks_cluster_name": "aks-demo",
+        "aks_resource_group": "rg-demo",
+        "aks_namespace": "payments",
         "enabled": "true",
         "tags": "infra,payments",
         "team": "team-a",
@@ -21,6 +25,10 @@ def test_schema_model():
     assert schema.name == "Test Runbook"
     assert schema.runbook == "my_runbook.py"
     assert schema.require_approval is True
+    assert schema.aks_login_required is True
+    assert schema.aks_cluster_name == "aks-demo"
+    assert schema.aks_resource_group == "rg-demo"
+    assert schema.aks_namespace == "payments"
     assert schema.enabled is True
     assert schema.team == "team-a"
 

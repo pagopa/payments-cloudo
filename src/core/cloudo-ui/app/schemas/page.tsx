@@ -24,6 +24,7 @@ import { MdOutlineSchema } from "react-icons/md";
 import { DeleteConfirmationModal } from "../utils/modals";
 import { parseRunbookIntoCells } from "../utils/parser";
 import { Schema, Notification } from "./types";
+import { normalizeSchema } from "./utils";
 import { StatSmall } from "./components/StatSmall";
 import { SchemaCard } from "./components/SchemaCard";
 import { SchemaTable } from "./components/SchemaTable";
@@ -173,7 +174,7 @@ export default function SchemasPage() {
     try {
       const res = await cloudoFetch(`/schemas`);
       const data = await res.json();
-      const schemasList = Array.isArray(data) ? data : [];
+      const schemasList = Array.isArray(data) ? data.map(normalizeSchema) : [];
       setSchemas(schemasList);
       extractAvailableTags(schemasList);
     } catch {
@@ -231,7 +232,9 @@ export default function SchemasPage() {
         headers: {
           "Content-Type": "application/json",
         },
-        body: JSON.stringify({ source: "schemas-manual" }),
+        body: JSON.stringify({
+          source: "schemas-manual",
+        }),
       });
 
       if (!response.ok) {
@@ -338,8 +341,8 @@ export default function SchemasPage() {
 
       const matchesOncall =
         oncallFilter === "all" ||
-        (oncallFilter === "active" && s.oncall === "true") ||
-        (oncallFilter === "inactive" && s.oncall !== "true");
+        (oncallFilter === "active" && s.oncall) ||
+        (oncallFilter === "inactive" && !s.oncall);
 
       const matchesEnabled =
         enabledFilter === "all" ||
@@ -409,7 +412,7 @@ export default function SchemasPage() {
       total: schemas.length,
       approvalRequired: schemas.filter((s) => isTrue(s.require_approval))
         .length,
-      onCall: schemas.filter((s) => isTrue(s.oncall)).length,
+      onCall: schemas.filter((s) => s.oncall).length,
       disabled: schemas.filter((s) => s.enabled === false).length,
     };
   }, [schemas]);
