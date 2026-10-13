@@ -30,7 +30,11 @@
       "runbook": "test.py",
       "run_args": "-n 1000 --repeats 1000",
       "worker": "Runbook",
-      "oncall": "true"
+      "oncall": "true",
+      "aks_login_required": true,
+      "aks_cluster_name": "aks-demo",
+      "aks_resource_group": "rg-demo",
+      "aks_namespace": "payments"
     }]
   },
   {

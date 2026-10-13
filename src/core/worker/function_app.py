@@ -321,7 +321,7 @@ def _create_inline_script_temp_file(
     """
     import tempfile
 
-    suffix = ".sh" if script_type == "shell" else ".py"
+    suffix = ".sh" if script_type.lower() in {"shell", "bash", "sh"} else ".py"
     with tempfile.NamedTemporaryFile(
         mode="w", suffix=suffix, delete=False, dir=temp_dir or "/tmp"
     ) as f:
@@ -329,7 +329,7 @@ def _create_inline_script_temp_file(
         temp_path = f.name
 
     # Make shell scripts executable
-    if script_type == "shell":
+    if script_type.lower() in {"shell", "bash", "sh"}:
         os.chmod(temp_path, 0o755)
 
     logging.debug("Created inline %s script: %s", script_type, temp_path)
@@ -836,16 +836,56 @@ def process_runbook(msg: func.QueueMessage) -> None:
 
     try:
         info = _parse_resource_info(payload.get("resource_info"), exec_id)
-
-        ns_val = str(info.get("aks_namespace", "")).strip().lower() if info else ""
-        has_valid_ns = bool(ns_val) and ns_val not in {"null", "none", "undefined"}
-
         kubeconfig_path = None
-        if info and has_valid_ns:
-            if os.environ.get("AKS_INTEGRATION_ENABLED") == "false":
-                err_msg = f"{log_prefix} AKS login failed: tf var AKS_INTEGRATION not defined for this deployment"
+        aks_login_required = (
+            str(payload.get("aks_login_required", "false")).strip().lower() == "true"
+        )
+
+        invalid_aks_values = {"", "null", "none", "undefined"}
+        for info_key, schema_key, env_key in (
+            ("resource_name", "aks_cluster_name", "RESOURCE_NAME"),
+            ("resource_rg", "aks_resource_group", "RESOURCE_RG"),
+            ("aks_namespace", "aks_namespace", "AKS_NAMESPACE"),
+        ):
+            value = str(info.get(info_key) or "").strip()
+            if value.lower() in invalid_aks_values:
+                value = str(payload.get(schema_key) or "").strip()
+            if value.lower() in invalid_aks_values:
+                value = str(env.get(env_key) or "").strip()
+            info[info_key] = value
+
+        if aks_login_required:
+            aks_integration_enabled = (
+                os.environ.get("AKS_INTEGRATION_ENABLED", "").strip().lower()
+            )
+            if aks_integration_enabled == "false":
+                err_msg = (
+                    f"{log_prefix} AKS login failed: tf var AKS_INTEGRATION "
+                    "not defined for this deployment"
+                )
                 _dispatch_status(payload, status="error", log_message=err_msg)
-                logging.error(f"{err_msg}")
+                logging.error(err_msg)
+                return
+
+            required_aks_settings = {
+                "resource_rg": "resource group (RESOURCE_RG)",
+                "resource_name": "cluster name (RESOURCE_NAME)",
+                "aks_namespace": "namespace (AKS_NAMESPACE)",
+            }
+            missing_settings = [
+                label
+                for key, label in required_aks_settings.items()
+                if not str(info.get(key) or "").strip()
+            ]
+            if missing_settings:
+                err_msg = (
+                    f"{log_prefix} AKS login failed: missing "
+                    f"{', '.join(missing_settings)} in resource_info, schema "
+                    "definition, or worker environment"
+                )
+                _dispatch_status(payload, status="error", log_message=err_msg)
+                logging.error(err_msg)
+                return
 
             try:
                 kubeconfig_path = _run_aks_login(
@@ -858,14 +898,14 @@ def process_runbook(msg: func.QueueMessage) -> None:
                 _dispatch_status(payload, status="error", log_message=err_msg)
                 logging.error(f"{err_msg}")
                 return
-
-        script_path = os.getenv("DEV_SCRIPT_PATH")
+        else:
+            logging.info(f"{log_prefix} AKS login skipped: not required by schema")
 
         result = _run_script(
             script_name=payload.get("runbook"),
-            script_path=script_path,
+            script_path=os.getenv("DEV_SCRIPT_PATH"),
             run_args=payload.get("run_args"),
-            resource_info=payload.get("resource_info"),
+            resource_info=info,
             monitor_condition=payload.get("monitor_condition"),
             payload=payload,
             kubeconfig_path=kubeconfig_path,

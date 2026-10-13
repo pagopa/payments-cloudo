@@ -108,7 +108,7 @@ export function SchemaCard({
               <HiOutlineShieldCheck className="w-3 h-3" />
               {String(schema.require_approval) === "true" ? "Gate" : "Auto"}
             </div>
-            {schema.oncall === "true" && (
+            {schema.oncall && (
               <div className="px-1.5 py-0.5 text-[9px] font-black uppercase border bg-cloudo-accent/10 border-cloudo-accent/40 text-cloudo-accent flex items-center gap-1">
                 <HiOutlineUserGroup className="w-3 h-3" />
                 OnCall

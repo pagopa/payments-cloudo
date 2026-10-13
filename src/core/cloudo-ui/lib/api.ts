@@ -1,3 +1,5 @@
+import { redirect } from "next/navigation";
+
 export const API_URL = "/api/proxy";
 
 export function shouldIncludeAllTeams(): boolean {
@@ -26,7 +28,7 @@ export async function cloudoFetch(url: string, options: RequestInit = {}) {
       localStorage.removeItem("cloudo_expires_at");
       localStorage.removeItem("cloudo_token");
       if (window.location.pathname !== "/login") {
-        window.location.href = "/login";
+        redirect("/login");
       }
       throw new Error("Security protocol violated: Session expiration missing");
     }
@@ -42,7 +44,7 @@ export async function cloudoFetch(url: string, options: RequestInit = {}) {
         localStorage.removeItem("cloudo_token");
         // Force redirect to login if not already there
         if (window.location.pathname !== "/login") {
-          window.location.href = "/login";
+          redirect("/login");
         }
         throw new Error("Session expired");
       }

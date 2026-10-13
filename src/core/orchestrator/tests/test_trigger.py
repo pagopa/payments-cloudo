@@ -51,6 +51,10 @@ def test_trigger_happy_path(monkeypatch):
         "run_args": "--x 1",
         "oncall": "false",
         "require_approval": "false",
+        "aks_login_required": "true",
+        "aks_cluster_name": "aks-schema",
+        "aks_resource_group": "rg-schema",
+        "aks_namespace": "ns-schema",
     }
     entities = json.dumps([schema_row])
 
@@ -105,3 +109,7 @@ def test_trigger_happy_path(monkeypatch):
                 assert queue_name == "worker-a-queue"
                 assert queue_payload["id"] == "schema-1"
                 assert queue_payload["runbook"] == "rb.sh"
+                assert queue_payload["aks_login_required"] is True
+                assert queue_payload["aks_cluster_name"] == "aks-schema"
+                assert queue_payload["aks_resource_group"] == "rg-schema"
+                assert queue_payload["aks_namespace"] == "ns-schema"

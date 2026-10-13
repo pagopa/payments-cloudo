@@ -995,7 +995,7 @@ def build_log_entry(
     worker: Optional[str],
     group: Optional[str],
     log_msg: Optional[str],
-    oncall: Optional[str],
+    oncall: Optional[bool] = None,
     monitor_condition: Optional[str],
     severity: Optional[str],
     team: Optional[str] = DEFAULT_TEAM,
@@ -1741,6 +1741,10 @@ def Trigger(
                     "requestedAt": requested_at,
                     "exec_id": exec_id,
                     "oncall": schema.oncall,
+                    "aks_login_required": schema.aks_login_required,
+                    "aks_cluster_name": schema.aks_cluster_name,
+                    "aks_resource_group": schema.aks_resource_group,
+                    "aks_namespace": schema.aks_namespace,
                     "monitor_condition": monitor_condition,
                     "severity": severity,
                     "team": schema.team,
@@ -2217,6 +2221,10 @@ def approve(
                     "requestedAt": requested_at,
                     "exec_id": execId,
                     "oncall": schema.oncall,
+                    "aks_login_required": schema.aks_login_required,
+                    "aks_cluster_name": schema.aks_cluster_name,
+                    "aks_resource_group": schema.aks_resource_group,
+                    "aks_namespace": schema.aks_namespace,
                     "monitor_condition": monitor_condition,
                     "severity": severity,
                     "team": schema.team,
@@ -5656,16 +5664,31 @@ def runbook_schemas(
 
             schema_id = body.get("id", str(uuid.uuid4()))
             try:
-                existing_schema = _get_table_client(TABLE_SCHEMAS).get_entity(
-                    partition_key=body.get("PartitionKey", "RunbookSchema"),
-                    row_key=schema_id,
+                existing_schema = _get_table_client(TABLE_SCHEMAS).query_entities(
+                    query_filter="id eq @schema_id",
+                    parameters={
+                        "schema_id": schema_id,
+                    },
                 )
-            except Exception:
+                existing_schema = next(iter(existing_schema), None)
+            except Exception as e:
                 existing_schema = None
-            if existing_schema and not _can_modify_entity(existing_schema, session):
+                logging.info(
+                    f"Existing schema not found: {existing_schema}, error: {str(e)}"
+                )
+            if existing_schema is not None:
                 return func.HttpResponse(
-                    body=json.dumps({"error": "Schema belongs to another team"}),
-                    status_code=403,
+                    body=json.dumps(
+                        {
+                            "error": (
+                                "Schema already exists on team "
+                                f"{existing_schema.get('team') or 'default'}"
+                            ),
+                        }
+                    ),
+                    status_code=409,
+                    mimetype="application/json",
+                    headers={"Access-Control-Allow-Origin": "*"},
                 )
             team, team_error = _requested_write_team(body, session)
             if team_error:

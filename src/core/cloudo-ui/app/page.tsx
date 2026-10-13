@@ -14,6 +14,7 @@ import {
   HiOutlineChartBar,
 } from "react-icons/hi";
 import { MdOutlineSpaceDashboard } from "react-icons/md";
+import { redirect } from "next/navigation";
 
 interface DashboardStats {
   totalExecutions: number;
@@ -678,7 +679,9 @@ export default function DashboardPage() {
                             key={exec.RowKey as string}
                             className="group hover:bg-white/[0.02] transition-colors cursor-pointer"
                             onClick={() => {
-                              window.location.href = `/executions?execId=${exec.ExecId}&partitionKey=${exec.PartitionKey}`;
+                              redirect(
+                                `/executions?execId=${exec.ExecId}&partitionKey=${exec.PartitionKey}`,
+                              );
                             }}
                           >
                             <td className="px-6 py-4 font-mono">
@@ -743,7 +746,7 @@ export default function DashboardPage() {
                       key={proc.exec_id as string}
                       className="bg-cloudo-accent/10 border border-cloudo-border p-3 border-l-2 border-l-cloudo-accent group hover:bg-cloudo-accent/5 transition-all cursor-pointer"
                       onClick={() => {
-                        window.location.href = `/workers`;
+                        redirect(`/workers`);
                       }}
                     >
                       <div className="flex justify-between items-start mb-2">
