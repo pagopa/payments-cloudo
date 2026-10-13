@@ -232,7 +232,11 @@ export default function SchemasPage() {
         headers: {
           "Content-Type": "application/json",
         },
-        body: JSON.stringify({ source: "schemas-manual" }),
+        body: JSON.stringify({
+          source: "schemas-manual",
+          severity: "none",
+          monitor_condition: "none",
+        }),
       });
 
       if (!response.ok) {
