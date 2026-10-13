@@ -234,8 +234,6 @@ export default function SchemasPage() {
         },
         body: JSON.stringify({
           source: "schemas-manual",
-          severity: "none",
-          monitor_condition: "none",
         }),
       });
 
