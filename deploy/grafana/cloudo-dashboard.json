@@ -1,0 +1,1489 @@
+{
+  "__inputs": [],
+  "__requires": [
+    {
+      "type": "grafana",
+      "id": "grafana",
+      "name": "Grafana",
+      "version": "10.4.0"
+    },
+    {
+      "type": "datasource",
+      "id": "grafana-azure-monitor-datasource",
+      "name": "Azure Monitor",
+      "version": "1.0.0"
+    },
+    {
+      "type": "datasource",
+      "id": "yesoreyeram-infinity-datasource",
+      "name": "Infinity",
+      "version": "2.0.0"
+    }
+  ],
+  "annotations": { "list": [] },
+  "description": "CloudO: esecuzioni runbook, worker e salute piattaforma Azure",
+  "editable": true,
+  "graphTooltip": 1,
+  "links": [
+    {
+      "title": "CloudO UI",
+      "type": "link",
+      "icon": "external link",
+      "url": "${cloudo_ui_url}",
+      "targetBlank": true
+    }
+  ],
+  "panels": [
+    {
+      "type": "row",
+      "title": "Esecuzioni — giorno di fine intervallo (${__to:date:YYYY-MM-DD})",
+      "id": 1,
+      "collapsed": false,
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 0 },
+      "panels": []
+    },
+    {
+      "type": "stat",
+      "title": "Esecuzioni per stato",
+      "id": 2,
+      "gridPos": { "h": 5, "w": 16, "x": 0, "y": 1 },
+      "datasource": {
+        "type": "yesoreyeram-infinity-datasource",
+        "uid": "${infinity_ds}"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "yesoreyeram-infinity-datasource",
+            "uid": "${infinity_ds}"
+          },
+          "type": "json",
+          "source": "url",
+          "format": "table",
+          "parser": "backend",
+          "url": "${cloudo_url}/api/logs/query?partitionKey=${__to:date:YYYYMMDD}&latestOnly=true&includeLogContent=false&limit=5000",
+          "url_options": { "method": "GET" },
+          "root_selector": "{\n  \"Totale\": $count(items),\n  \"Succeeded\": $count(items[Status = \"succeeded\"]),\n  \"Failed / Error\": $count(items[Status in [\"failed\", \"error\"]]),\n  \"Running\": $count(items[Status in [\"running\", \"accepted\"]]),\n  \"In approvazione\": $count(items[Status = \"pending\"]),\n  \"Skipped / Stopped / Rejected\": $count(items[Status in [\"skipped\", \"stopped\", \"rejected\"]])\n}",
+          "columns": []
+        }
+      ],
+      "options": {
+        "reduceOptions": {
+          "calcs": ["lastNotNull"],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "background",
+        "graphMode": "none",
+        "justifyMode": "center",
+        "textMode": "value_and_name",
+        "orientation": "vertical"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "none",
+          "color": { "mode": "fixed", "fixedColor": "text" }
+        },
+        "overrides": [
+          {
+            "matcher": { "id": "byName", "options": "Succeeded" },
+            "properties": [
+              {
+                "id": "color",
+                "value": { "mode": "fixed", "fixedColor": "green" }
+              }
+            ]
+          },
+          {
+            "matcher": { "id": "byName", "options": "Failed / Error" },
+            "properties": [
+              {
+                "id": "color",
+                "value": { "mode": "fixed", "fixedColor": "red" }
+              }
+            ]
+          },
+          {
+            "matcher": { "id": "byName", "options": "Running" },
+            "properties": [
+              {
+                "id": "color",
+                "value": { "mode": "fixed", "fixedColor": "blue" }
+              }
+            ]
+          },
+          {
+            "matcher": { "id": "byName", "options": "In approvazione" },
+            "properties": [
+              {
+                "id": "color",
+                "value": { "mode": "fixed", "fixedColor": "yellow" }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Skipped / Stopped / Rejected"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": { "mode": "fixed", "fixedColor": "orange" }
+              }
+            ]
+          },
+          {
+            "matcher": { "id": "byName", "options": "Totale" },
+            "properties": [
+              {
+                "id": "color",
+                "value": { "mode": "fixed", "fixedColor": "purple" }
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "type": "stat",
+      "title": "Success rate",
+      "description": "succeeded / (succeeded + failed + error)",
+      "id": 3,
+      "gridPos": { "h": 5, "w": 4, "x": 16, "y": 1 },
+      "datasource": {
+        "type": "yesoreyeram-infinity-datasource",
+        "uid": "${infinity_ds}"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "yesoreyeram-infinity-datasource",
+            "uid": "${infinity_ds}"
+          },
+          "type": "json",
+          "source": "url",
+          "format": "table",
+          "parser": "backend",
+          "url": "${cloudo_url}/api/logs/query?partitionKey=${__to:date:YYYYMMDD}&latestOnly=true&includeLogContent=false&limit=5000",
+          "url_options": { "method": "GET" },
+          "root_selector": "(\n  $done := $count(items[Status in [\"succeeded\", \"failed\", \"error\"]]);\n  {\"Success rate\": $done = 0 ? null : $count(items[Status = \"succeeded\"]) / $done * 100}\n)",
+          "columns": []
+        }
+      ],
+      "options": {
+        "reduceOptions": {
+          "calcs": ["lastNotNull"],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "background",
+        "graphMode": "none",
+        "justifyMode": "center",
+        "textMode": "value"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent",
+          "decimals": 1,
+          "min": 0,
+          "max": 100,
+          "noValue": "—",
+          "color": { "mode": "thresholds" },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "red", "value": null },
+              { "color": "orange", "value": 80 },
+              { "color": "green", "value": 95 }
+            ]
+          }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "type": "stat",
+      "title": "Worker online",
+      "description": "Worker con heartbeat negli ultimi 3 minuti (heartbeat ogni 60s)",
+      "id": 4,
+      "gridPos": { "h": 5, "w": 4, "x": 20, "y": 1 },
+      "datasource": {
+        "type": "yesoreyeram-infinity-datasource",
+        "uid": "${infinity_ds}"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "yesoreyeram-infinity-datasource",
+            "uid": "${infinity_ds}"
+          },
+          "type": "json",
+          "source": "url",
+          "format": "table",
+          "parser": "backend",
+          "url": "${cloudo_url}/api/workers?for=monitoring",
+          "url_options": { "method": "GET" },
+          "root_selector": "{\n  \"Online\": $count($[($toMillis($now()) - $toMillis(LastSeen)) < 180000]),\n  \"Registrati\": $count($)\n}",
+          "columns": []
+        }
+      ],
+      "options": {
+        "reduceOptions": {
+          "calcs": ["lastNotNull"],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "center",
+        "textMode": "value_and_name",
+        "orientation": "vertical"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "thresholds" },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "red", "value": null },
+              { "color": "green", "value": 1 }
+            ]
+          }
+        },
+        "overrides": [
+          {
+            "matcher": { "id": "byName", "options": "Registrati" },
+            "properties": [
+              {
+                "id": "color",
+                "value": { "mode": "fixed", "fixedColor": "text" }
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "type": "barchart",
+      "title": "Esecuzioni per ora (Europe/Rome)",
+      "id": 5,
+      "gridPos": { "h": 9, "w": 16, "x": 0, "y": 6 },
+      "datasource": {
+        "type": "yesoreyeram-infinity-datasource",
+        "uid": "${infinity_ds}"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "yesoreyeram-infinity-datasource",
+            "uid": "${infinity_ds}"
+          },
+          "type": "json",
+          "source": "url",
+          "format": "table",
+          "parser": "backend",
+          "url": "${cloudo_url}/api/logs/query?partitionKey=${__to:date:YYYYMMDD}&latestOnly=true&includeLogContent=false&limit=5000",
+          "url_options": { "method": "GET" },
+          "root_selector": "$count(items) = 0 ? [] : $sort(\n  $each(items{$substring(RequestedAt, 11, 2) & \":00\": {\n    \"succeeded\": $count(Status[$ = \"succeeded\"]),\n    \"failed\": $count(Status[$ in [\"failed\", \"error\"]]),\n    \"running\": $count(Status[$ in [\"running\", \"accepted\"]]),\n    \"pending\": $count(Status[$ = \"pending\"]),\n    \"other\": $count(Status[$ in [\"skipped\", \"stopped\", \"rejected\"]])\n  }}, function($v, $k) { $merge([{\"hour\": $k}, $v]) }),\n  function($a, $b) { $a.hour > $b.hour }\n)",
+          "columns": [
+            { "selector": "hour", "text": "hour", "type": "string" },
+            { "selector": "succeeded", "text": "succeeded", "type": "number" },
+            { "selector": "failed", "text": "failed", "type": "number" },
+            { "selector": "running", "text": "running", "type": "number" },
+            { "selector": "pending", "text": "pending", "type": "number" },
+            { "selector": "other", "text": "other", "type": "number" }
+          ]
+        }
+      ],
+      "options": {
+        "xField": "hour",
+        "stacking": "normal",
+        "orientation": "auto",
+        "showValue": "never",
+        "barWidth": 0.8,
+        "groupWidth": 0.7,
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": { "mode": "multi", "sort": "desc" }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "palette-classic" },
+          "custom": { "fillOpacity": 85, "lineWidth": 0 }
+        },
+        "overrides": [
+          {
+            "matcher": { "id": "byName", "options": "succeeded" },
+            "properties": [
+              {
+                "id": "color",
+                "value": { "mode": "fixed", "fixedColor": "green" }
+              }
+            ]
+          },
+          {
+            "matcher": { "id": "byName", "options": "failed" },
+            "properties": [
+              {
+                "id": "color",
+                "value": { "mode": "fixed", "fixedColor": "red" }
+              }
+            ]
+          },
+          {
+            "matcher": { "id": "byName", "options": "running" },
+            "properties": [
+              {
+                "id": "color",
+                "value": { "mode": "fixed", "fixedColor": "blue" }
+              }
+            ]
+          },
+          {
+            "matcher": { "id": "byName", "options": "pending" },
+            "properties": [
+              {
+                "id": "color",
+                "value": { "mode": "fixed", "fixedColor": "yellow" }
+              }
+            ]
+          },
+          {
+            "matcher": { "id": "byName", "options": "other" },
+            "properties": [
+              {
+                "id": "color",
+                "value": { "mode": "fixed", "fixedColor": "orange" }
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "type": "piechart",
+      "title": "Distribuzione stati",
+      "id": 6,
+      "gridPos": { "h": 9, "w": 8, "x": 16, "y": 6 },
+      "datasource": {
+        "type": "yesoreyeram-infinity-datasource",
+        "uid": "${infinity_ds}"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "yesoreyeram-infinity-datasource",
+            "uid": "${infinity_ds}"
+          },
+          "type": "json",
+          "source": "url",
+          "format": "table",
+          "parser": "backend",
+          "url": "${cloudo_url}/api/logs/query?partitionKey=${__to:date:YYYYMMDD}&latestOnly=true&includeLogContent=false&limit=5000",
+          "url_options": { "method": "GET" },
+          "root_selector": "items{Status: $count(Status)}",
+          "columns": []
+        }
+      ],
+      "options": {
+        "reduceOptions": {
+          "calcs": ["lastNotNull"],
+          "fields": "",
+          "values": false
+        },
+        "pieType": "donut",
+        "displayLabels": ["percent"],
+        "legend": {
+          "displayMode": "table",
+          "placement": "right",
+          "showLegend": true,
+          "values": ["value"]
+        },
+        "tooltip": { "mode": "single" }
+      },
+      "fieldConfig": {
+        "defaults": { "color": { "mode": "palette-classic" } },
+        "overrides": [
+          {
+            "matcher": { "id": "byName", "options": "succeeded" },
+            "properties": [
+              {
+                "id": "color",
+                "value": { "mode": "fixed", "fixedColor": "green" }
+              }
+            ]
+          },
+          {
+            "matcher": { "id": "byName", "options": "failed" },
+            "properties": [
+              {
+                "id": "color",
+                "value": { "mode": "fixed", "fixedColor": "red" }
+              }
+            ]
+          },
+          {
+            "matcher": { "id": "byName", "options": "error" },
+            "properties": [
+              {
+                "id": "color",
+                "value": { "mode": "fixed", "fixedColor": "dark-red" }
+              }
+            ]
+          },
+          {
+            "matcher": { "id": "byName", "options": "running" },
+            "properties": [
+              {
+                "id": "color",
+                "value": { "mode": "fixed", "fixedColor": "blue" }
+              }
+            ]
+          },
+          {
+            "matcher": { "id": "byName", "options": "pending" },
+            "properties": [
+              {
+                "id": "color",
+                "value": { "mode": "fixed", "fixedColor": "yellow" }
+              }
+            ]
+          },
+          {
+            "matcher": { "id": "byName", "options": "skipped" },
+            "properties": [
+              {
+                "id": "color",
+                "value": { "mode": "fixed", "fixedColor": "orange" }
+              }
+            ]
+          },
+          {
+            "matcher": { "id": "byName", "options": "stopped" },
+            "properties": [
+              {
+                "id": "color",
+                "value": { "mode": "fixed", "fixedColor": "purple" }
+              }
+            ]
+          },
+          {
+            "matcher": { "id": "byName", "options": "rejected" },
+            "properties": [
+              {
+                "id": "color",
+                "value": { "mode": "fixed", "fixedColor": "dark-orange" }
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "type": "bargauge",
+      "title": "Esecuzioni per runbook",
+      "id": 7,
+      "gridPos": { "h": 9, "w": 8, "x": 0, "y": 15 },
+      "datasource": {
+        "type": "yesoreyeram-infinity-datasource",
+        "uid": "${infinity_ds}"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "yesoreyeram-infinity-datasource",
+            "uid": "${infinity_ds}"
+          },
+          "type": "json",
+          "source": "url",
+          "format": "table",
+          "parser": "backend",
+          "url": "${cloudo_url}/api/logs/query?partitionKey=${__to:date:YYYYMMDD}&latestOnly=true&includeLogContent=false&limit=5000",
+          "url_options": { "method": "GET" },
+          "root_selector": "items{Name: $count(Status)}",
+          "columns": []
+        }
+      ],
+      "options": {
+        "reduceOptions": {
+          "calcs": ["lastNotNull"],
+          "fields": "",
+          "values": false
+        },
+        "orientation": "horizontal",
+        "displayMode": "basic",
+        "valueMode": "color",
+        "showUnfilled": true,
+        "namePlacement": "left",
+        "sizing": "auto"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "min": 0,
+          "color": { "mode": "fixed", "fixedColor": "blue" }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "type": "bargauge",
+      "title": "Fallimenti per runbook",
+      "description": "Esecuzioni con stato finale failed o error",
+      "id": 8,
+      "gridPos": { "h": 9, "w": 8, "x": 8, "y": 15 },
+      "datasource": {
+        "type": "yesoreyeram-infinity-datasource",
+        "uid": "${infinity_ds}"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "yesoreyeram-infinity-datasource",
+            "uid": "${infinity_ds}"
+          },
+          "type": "json",
+          "source": "url",
+          "format": "table",
+          "parser": "backend",
+          "url": "${cloudo_url}/api/logs/query?partitionKey=${__to:date:YYYYMMDD}&latestOnly=true&includeLogContent=false&limit=5000",
+          "url_options": { "method": "GET" },
+          "root_selector": "items[Status in [\"failed\", \"error\"]]{Name: $count(Status)}",
+          "columns": []
+        }
+      ],
+      "options": {
+        "reduceOptions": {
+          "calcs": ["lastNotNull"],
+          "fields": "",
+          "values": false
+        },
+        "orientation": "horizontal",
+        "displayMode": "basic",
+        "valueMode": "color",
+        "showUnfilled": true,
+        "namePlacement": "left",
+        "sizing": "auto"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "min": 0,
+          "noValue": "Nessun fallimento",
+          "color": { "mode": "fixed", "fixedColor": "red" }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "type": "bargauge",
+      "title": "Esecuzioni per worker",
+      "id": 9,
+      "gridPos": { "h": 9, "w": 8, "x": 16, "y": 15 },
+      "datasource": {
+        "type": "yesoreyeram-infinity-datasource",
+        "uid": "${infinity_ds}"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "yesoreyeram-infinity-datasource",
+            "uid": "${infinity_ds}"
+          },
+          "type": "json",
+          "source": "url",
+          "format": "table",
+          "parser": "backend",
+          "url": "${cloudo_url}/api/logs/query?partitionKey=${__to:date:YYYYMMDD}&latestOnly=true&includeLogContent=false&limit=5000",
+          "url_options": { "method": "GET" },
+          "root_selector": "items[Worker]{Worker: $count(Status)}",
+          "columns": []
+        }
+      ],
+      "options": {
+        "reduceOptions": {
+          "calcs": ["lastNotNull"],
+          "fields": "",
+          "values": false
+        },
+        "orientation": "horizontal",
+        "displayMode": "basic",
+        "valueMode": "color",
+        "showUnfilled": true,
+        "namePlacement": "left",
+        "sizing": "auto"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "min": 0,
+          "color": { "mode": "fixed", "fixedColor": "purple" }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "type": "table",
+      "title": "Ultime esecuzioni",
+      "id": 10,
+      "gridPos": { "h": 12, "w": 24, "x": 0, "y": 24 },
+      "datasource": {
+        "type": "yesoreyeram-infinity-datasource",
+        "uid": "${infinity_ds}"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "yesoreyeram-infinity-datasource",
+            "uid": "${infinity_ds}"
+          },
+          "type": "json",
+          "source": "url",
+          "format": "table",
+          "parser": "backend",
+          "url": "${cloudo_url}/api/logs/query?partitionKey=${__to:date:YYYYMMDD}&latestOnly=true&includeLogContent=false&order=desc&limit=500",
+          "url_options": { "method": "GET" },
+          "root_selector": "items",
+          "columns": [
+            {
+              "selector": "RequestedAt",
+              "text": "Requested at",
+              "type": "string"
+            },
+            { "selector": "Status", "text": "Status", "type": "string" },
+            { "selector": "Name", "text": "Name", "type": "string" },
+            { "selector": "Runbook", "text": "Runbook", "type": "string" },
+            { "selector": "Worker", "text": "Worker", "type": "string" },
+            { "selector": "team", "text": "Team", "type": "string" },
+            { "selector": "Initiator", "text": "Initiator", "type": "string" },
+            { "selector": "Severity", "text": "Severity", "type": "string" },
+            {
+              "selector": "MonitorCondition",
+              "text": "Monitor condition",
+              "type": "string"
+            },
+            { "selector": "ExecId", "text": "Exec ID", "type": "string" }
+          ]
+        }
+      ],
+      "options": {
+        "showHeader": true,
+        "cellHeight": "sm",
+        "footer": { "show": false, "reducer": ["count"], "fields": "" },
+        "sortBy": [{ "displayName": "Requested at", "desc": true }]
+      },
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "align": "auto",
+            "filterable": true,
+            "cellOptions": { "type": "auto" }
+          }
+        },
+        "overrides": [
+          {
+            "matcher": { "id": "byName", "options": "Status" },
+            "properties": [
+              {
+                "id": "custom.cellOptions",
+                "value": { "type": "color-background", "mode": "basic" }
+              },
+              { "id": "custom.width", "value": 110 },
+              {
+                "id": "mappings",
+                "value": [
+                  {
+                    "type": "value",
+                    "options": {
+                      "succeeded": { "color": "green", "index": 0 },
+                      "failed": { "color": "red", "index": 1 },
+                      "error": { "color": "dark-red", "index": 2 },
+                      "running": { "color": "blue", "index": 3 },
+                      "accepted": { "color": "blue", "index": 4 },
+                      "pending": { "color": "yellow", "index": 5 },
+                      "skipped": { "color": "orange", "index": 6 },
+                      "stopped": { "color": "purple", "index": 7 },
+                      "rejected": { "color": "dark-orange", "index": 8 }
+                    }
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "matcher": { "id": "byName", "options": "Requested at" },
+            "properties": [{ "id": "custom.width", "value": 170 }]
+          }
+        ]
+      }
+    },
+    {
+      "type": "table",
+      "title": "Fallimenti (con log)",
+      "id": 11,
+      "gridPos": { "h": 10, "w": 24, "x": 0, "y": 36 },
+      "datasource": {
+        "type": "yesoreyeram-infinity-datasource",
+        "uid": "${infinity_ds}"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "yesoreyeram-infinity-datasource",
+            "uid": "${infinity_ds}"
+          },
+          "type": "json",
+          "source": "url",
+          "format": "table",
+          "parser": "backend",
+          "url": "${cloudo_url}/api/logs/query?partitionKey=${__to:date:YYYYMMDD}&latestOnly=true&status=failed,error&includeLogContent=true&order=desc&limit=50",
+          "url_options": { "method": "GET" },
+          "root_selector": "items",
+          "columns": [
+            {
+              "selector": "RequestedAt",
+              "text": "Requested at",
+              "type": "string"
+            },
+            { "selector": "Status", "text": "Status", "type": "string" },
+            { "selector": "Name", "text": "Name", "type": "string" },
+            { "selector": "Worker", "text": "Worker", "type": "string" },
+            { "selector": "ExecId", "text": "Exec ID", "type": "string" },
+            { "selector": "Log", "text": "Log", "type": "string" }
+          ]
+        }
+      ],
+      "options": {
+        "showHeader": true,
+        "cellHeight": "md",
+        "sortBy": [{ "displayName": "Requested at", "desc": true }]
+      },
+      "fieldConfig": {
+        "defaults": {
+          "noValue": "Nessun fallimento",
+          "custom": {
+            "align": "auto",
+            "filterable": true,
+            "cellOptions": { "type": "auto" }
+          }
+        },
+        "overrides": [
+          {
+            "matcher": { "id": "byName", "options": "Requested at" },
+            "properties": [{ "id": "custom.width", "value": 170 }]
+          },
+          {
+            "matcher": { "id": "byName", "options": "Status" },
+            "properties": [
+              { "id": "custom.width", "value": 90 },
+              {
+                "id": "color",
+                "value": { "mode": "fixed", "fixedColor": "red" }
+              },
+              { "id": "custom.cellOptions", "value": { "type": "color-text" } }
+            ]
+          },
+          {
+            "matcher": { "id": "byName", "options": "Log" },
+            "properties": [
+              { "id": "custom.inspect", "value": true },
+              { "id": "custom.minWidth", "value": 500 }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "type": "row",
+      "title": "Worker",
+      "id": 12,
+      "collapsed": false,
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 46 },
+      "panels": []
+    },
+    {
+      "type": "table",
+      "title": "Registro worker",
+      "id": 13,
+      "gridPos": { "h": 7, "w": 24, "x": 0, "y": 47 },
+      "datasource": {
+        "type": "yesoreyeram-infinity-datasource",
+        "uid": "${infinity_ds}"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "yesoreyeram-infinity-datasource",
+            "uid": "${infinity_ds}"
+          },
+          "type": "json",
+          "source": "url",
+          "format": "table",
+          "parser": "backend",
+          "url": "${cloudo_url}/api/workers?for=monitoring",
+          "url_options": { "method": "GET" },
+          "root_selector": "$.{\n  \"Worker\": RowKey,\n  \"Capability\": PartitionKey,\n  \"Team\": team,\n  \"Queue\": Queue,\n  \"Region\": Region,\n  \"Load\": Load,\n  \"Last seen\": LastSeen,\n  \"Heartbeat age\": $round(($toMillis($now()) - $toMillis(LastSeen)) / 1000)\n}",
+          "columns": [
+            { "selector": "Worker", "text": "Worker", "type": "string" },
+            {
+              "selector": "Capability",
+              "text": "Capability",
+              "type": "string"
+            },
+            { "selector": "Team", "text": "Team", "type": "string" },
+            { "selector": "Queue", "text": "Queue", "type": "string" },
+            { "selector": "Region", "text": "Region", "type": "string" },
+            { "selector": "Load", "text": "Load", "type": "number" },
+            {
+              "selector": "Last seen",
+              "text": "Last seen",
+              "type": "timestamp"
+            },
+            {
+              "selector": "Heartbeat age",
+              "text": "Heartbeat age",
+              "type": "number"
+            }
+          ]
+        }
+      ],
+      "options": { "showHeader": true, "cellHeight": "sm" },
+      "fieldConfig": {
+        "defaults": {
+          "custom": { "align": "auto", "cellOptions": { "type": "auto" } }
+        },
+        "overrides": [
+          {
+            "matcher": { "id": "byName", "options": "Heartbeat age" },
+            "properties": [
+              { "id": "unit", "value": "s" },
+              {
+                "id": "custom.cellOptions",
+                "value": { "type": "color-background", "mode": "basic" }
+              },
+              { "id": "color", "value": { "mode": "thresholds" } },
+              {
+                "id": "thresholds",
+                "value": {
+                  "mode": "absolute",
+                  "steps": [
+                    { "color": "green", "value": null },
+                    { "color": "orange", "value": 120 },
+                    { "color": "red", "value": 180 }
+                  ]
+                }
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "type": "table",
+      "title": "Processi in esecuzione — $worker",
+      "id": 14,
+      "repeat": "worker",
+      "repeatDirection": "h",
+      "maxPerRow": 2,
+      "gridPos": { "h": 7, "w": 12, "x": 0, "y": 54 },
+      "datasource": {
+        "type": "yesoreyeram-infinity-datasource",
+        "uid": "${infinity_ds}"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "yesoreyeram-infinity-datasource",
+            "uid": "${infinity_ds}"
+          },
+          "type": "json",
+          "source": "url",
+          "format": "table",
+          "parser": "backend",
+          "url": "${cloudo_url}/api/workers/processes?worker=${worker}",
+          "url_options": { "method": "GET" },
+          "root_selector": "runs",
+          "columns": [
+            { "selector": "startedAt", "text": "Started at", "type": "string" },
+            { "selector": "name", "text": "Name", "type": "string" },
+            { "selector": "runbook", "text": "Runbook", "type": "string" },
+            { "selector": "group", "text": "Group", "type": "string" },
+            { "selector": "team", "text": "Team", "type": "string" },
+            { "selector": "initiator", "text": "Initiator", "type": "string" },
+            { "selector": "exec_id", "text": "Exec ID", "type": "string" }
+          ]
+        }
+      ],
+      "options": { "showHeader": true, "cellHeight": "sm" },
+      "fieldConfig": {
+        "defaults": {
+          "noValue": "Nessun processo attivo",
+          "custom": { "align": "auto" }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "type": "row",
+      "title": "Piattaforma Azure",
+      "id": 15,
+      "collapsed": false,
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 61 },
+      "panels": []
+    },
+    {
+      "type": "timeseries",
+      "title": "Richieste HTTP per app",
+      "id": 16,
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 62 },
+      "datasource": {
+        "type": "grafana-azure-monitor-datasource",
+        "uid": "${azure_ds}"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-azure-monitor-datasource",
+            "uid": "${azure_ds}"
+          },
+          "queryType": "Azure Monitor",
+          "subscription": "$subscription",
+          "azureMonitor": {
+            "resources": [
+              {
+                "subscription": "$subscription",
+                "resourceGroup": "$resource_group",
+                "resourceName": "$function_apps",
+                "metricNamespace": "microsoft.web/sites",
+                "region": "$region"
+              }
+            ],
+            "metricNamespace": "microsoft.web/sites",
+            "metricName": "Requests",
+            "aggregation": "Total",
+            "timeGrain": "auto",
+            "dimensionFilters": [],
+            "alias": "{{ resourcename }}"
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "custom": { "drawStyle": "line", "fillOpacity": 10, "lineWidth": 1 }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": { "mode": "multi", "sort": "desc" }
+      }
+    },
+    {
+      "type": "timeseries",
+      "title": "HTTP 5xx per app",
+      "id": 17,
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 62 },
+      "datasource": {
+        "type": "grafana-azure-monitor-datasource",
+        "uid": "${azure_ds}"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-azure-monitor-datasource",
+            "uid": "${azure_ds}"
+          },
+          "queryType": "Azure Monitor",
+          "subscription": "$subscription",
+          "azureMonitor": {
+            "resources": [
+              {
+                "subscription": "$subscription",
+                "resourceGroup": "$resource_group",
+                "resourceName": "$function_apps",
+                "metricNamespace": "microsoft.web/sites",
+                "region": "$region"
+              }
+            ],
+            "metricNamespace": "microsoft.web/sites",
+            "metricName": "Http5xx",
+            "aggregation": "Total",
+            "timeGrain": "auto",
+            "dimensionFilters": [],
+            "alias": "{{ resourcename }}"
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "color": { "mode": "palette-classic" },
+          "custom": {
+            "drawStyle": "bars",
+            "fillOpacity": 80,
+            "lineWidth": 1,
+            "stacking": { "mode": "normal", "group": "A" }
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": { "mode": "multi", "sort": "desc" }
+      }
+    },
+    {
+      "type": "timeseries",
+      "title": "Tempo di risposta medio",
+      "id": 18,
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 70 },
+      "datasource": {
+        "type": "grafana-azure-monitor-datasource",
+        "uid": "${azure_ds}"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-azure-monitor-datasource",
+            "uid": "${azure_ds}"
+          },
+          "queryType": "Azure Monitor",
+          "subscription": "$subscription",
+          "azureMonitor": {
+            "resources": [
+              {
+                "subscription": "$subscription",
+                "resourceGroup": "$resource_group",
+                "resourceName": "$function_apps",
+                "metricNamespace": "microsoft.web/sites",
+                "region": "$region"
+              }
+            ],
+            "metricNamespace": "microsoft.web/sites",
+            "metricName": "HttpResponseTime",
+            "aggregation": "Average",
+            "timeGrain": "auto",
+            "dimensionFilters": [],
+            "alias": "{{ resourcename }}"
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "custom": { "drawStyle": "line", "fillOpacity": 0, "lineWidth": 1 }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": { "mode": "multi", "sort": "desc" }
+      }
+    },
+    {
+      "type": "timeseries",
+      "title": "Memoria (working set)",
+      "id": 19,
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 70 },
+      "datasource": {
+        "type": "grafana-azure-monitor-datasource",
+        "uid": "${azure_ds}"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-azure-monitor-datasource",
+            "uid": "${azure_ds}"
+          },
+          "queryType": "Azure Monitor",
+          "subscription": "$subscription",
+          "azureMonitor": {
+            "resources": [
+              {
+                "subscription": "$subscription",
+                "resourceGroup": "$resource_group",
+                "resourceName": "$function_apps",
+                "metricNamespace": "microsoft.web/sites",
+                "region": "$region"
+              }
+            ],
+            "metricNamespace": "microsoft.web/sites",
+            "metricName": "MemoryWorkingSet",
+            "aggregation": "Average",
+            "timeGrain": "auto",
+            "dimensionFilters": [],
+            "alias": "{{ resourcename }}"
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "bytes",
+          "custom": { "drawStyle": "line", "fillOpacity": 0, "lineWidth": 1 }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": { "mode": "multi", "sort": "desc" }
+      }
+    },
+    {
+      "type": "timeseries",
+      "title": "Messaggi in coda (storage account)",
+      "description": "Somma dei messaggi su tutte le code dello storage CloudO (metrica aggiornata ~ogni ora da Azure)",
+      "id": 20,
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 78 },
+      "datasource": {
+        "type": "grafana-azure-monitor-datasource",
+        "uid": "${azure_ds}"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-azure-monitor-datasource",
+            "uid": "${azure_ds}"
+          },
+          "queryType": "Azure Monitor",
+          "subscription": "$subscription",
+          "azureMonitor": {
+            "resources": [
+              {
+                "subscription": "$subscription",
+                "resourceGroup": "$resource_group",
+                "resourceName": "${storage_account}/default",
+                "metricNamespace": "microsoft.storage/storageaccounts/queueservices"
+              }
+            ],
+            "metricNamespace": "microsoft.storage/storageaccounts/queueservices",
+            "metricName": "QueueMessageCount",
+            "aggregation": "Average",
+            "timeGrain": "PT1H",
+            "dimensionFilters": [],
+            "alias": "messaggi in coda"
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "custom": {
+            "drawStyle": "line",
+            "fillOpacity": 10,
+            "lineWidth": 2,
+            "thresholdsStyle": { "mode": "line" }
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "red", "value": 500 }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": false
+        },
+        "tooltip": { "mode": "single" }
+      }
+    },
+    {
+      "type": "timeseries",
+      "title": "Transazioni storage per servizio",
+      "id": 21,
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 78 },
+      "datasource": {
+        "type": "grafana-azure-monitor-datasource",
+        "uid": "${azure_ds}"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-azure-monitor-datasource",
+            "uid": "${azure_ds}"
+          },
+          "queryType": "Azure Monitor",
+          "subscription": "$subscription",
+          "azureMonitor": {
+            "resources": [
+              {
+                "subscription": "$subscription",
+                "resourceGroup": "$resource_group",
+                "resourceName": "${storage_account}/default",
+                "metricNamespace": "microsoft.storage/storageaccounts/queueservices"
+              }
+            ],
+            "metricNamespace": "microsoft.storage/storageaccounts/queueservices",
+            "metricName": "Transactions",
+            "aggregation": "Total",
+            "timeGrain": "auto",
+            "dimensionFilters": [
+              { "dimension": "ResponseType", "operator": "eq", "filters": [] }
+            ],
+            "alias": "queue {{ responsetype }}"
+          }
+        },
+        {
+          "refId": "B",
+          "datasource": {
+            "type": "grafana-azure-monitor-datasource",
+            "uid": "${azure_ds}"
+          },
+          "queryType": "Azure Monitor",
+          "subscription": "$subscription",
+          "azureMonitor": {
+            "resources": [
+              {
+                "subscription": "$subscription",
+                "resourceGroup": "$resource_group",
+                "resourceName": "${storage_account}/default",
+                "metricNamespace": "microsoft.storage/storageaccounts/tableservices"
+              }
+            ],
+            "metricNamespace": "microsoft.storage/storageaccounts/tableservices",
+            "metricName": "Transactions",
+            "aggregation": "Total",
+            "timeGrain": "auto",
+            "dimensionFilters": [
+              { "dimension": "ResponseType", "operator": "eq", "filters": [] }
+            ],
+            "alias": "table {{ responsetype }}"
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "custom": { "drawStyle": "line", "fillOpacity": 0, "lineWidth": 1 }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": { "mode": "multi", "sort": "desc" }
+      }
+    }
+  ],
+  "refresh": "1m",
+  "schemaVersion": 39,
+  "tags": ["cloudo", "payments"],
+  "templating": {
+    "list": [
+      {
+        "type": "datasource",
+        "name": "azure_ds",
+        "label": "Azure Monitor",
+        "query": "grafana-azure-monitor-datasource",
+        "hide": 0,
+        "refresh": 1,
+        "current": {}
+      },
+      {
+        "type": "datasource",
+        "name": "infinity_ds",
+        "label": "Infinity",
+        "query": "yesoreyeram-infinity-datasource",
+        "hide": 0,
+        "refresh": 1,
+        "current": {}
+      },
+      {
+        "type": "textbox",
+        "name": "cloudo_url",
+        "label": "Orchestrator URL",
+        "description": "Base URL dell'orchestrator CloudO, senza /api finale",
+        "query": "https://CHANGE-ME-cloudo-orchestrator.azurewebsites.net",
+        "hide": 0,
+        "current": {
+          "text": "https://CHANGE-ME-cloudo-orchestrator.azurewebsites.net",
+          "value": "https://CHANGE-ME-cloudo-orchestrator.azurewebsites.net"
+        }
+      },
+      {
+        "type": "textbox",
+        "name": "cloudo_ui_url",
+        "label": "CloudO UI URL",
+        "query": "https://CHANGE-ME-cloudo-ui.azurewebsites.net",
+        "hide": 2,
+        "current": {
+          "text": "https://CHANGE-ME-cloudo-ui.azurewebsites.net",
+          "value": "https://CHANGE-ME-cloudo-ui.azurewebsites.net"
+        }
+      },
+      {
+        "type": "query",
+        "name": "worker",
+        "label": "Worker",
+        "datasource": {
+          "type": "yesoreyeram-infinity-datasource",
+          "uid": "${infinity_ds}"
+        },
+        "query": {
+          "queryType": "infinity",
+          "refId": "variable",
+          "infinityQuery": {
+            "refId": "variable",
+            "type": "json",
+            "source": "url",
+            "format": "table",
+            "parser": "backend",
+            "url": "${cloudo_url}/api/workers?for=monitoring",
+            "url_options": { "method": "GET" },
+            "root_selector": "",
+            "columns": [
+              { "selector": "RowKey", "text": "worker", "type": "string" }
+            ]
+          }
+        },
+        "multi": true,
+        "includeAll": true,
+        "refresh": 1,
+        "sort": 1,
+        "hide": 0,
+        "current": {}
+      },
+      {
+        "type": "query",
+        "name": "subscription",
+        "label": "Subscription",
+        "datasource": {
+          "type": "grafana-azure-monitor-datasource",
+          "uid": "${azure_ds}"
+        },
+        "query": { "queryType": "Azure Subscriptions", "refId": "A" },
+        "refresh": 1,
+        "hide": 0,
+        "current": {}
+      },
+      {
+        "type": "query",
+        "name": "resource_group",
+        "label": "Resource group",
+        "datasource": {
+          "type": "grafana-azure-monitor-datasource",
+          "uid": "${azure_ds}"
+        },
+        "query": {
+          "queryType": "Azure Resource Groups",
+          "subscription": "$subscription",
+          "refId": "A"
+        },
+        "regex": "/cloudo/",
+        "refresh": 1,
+        "hide": 0,
+        "current": {}
+      },
+      {
+        "type": "query",
+        "name": "region",
+        "label": "Region",
+        "datasource": {
+          "type": "grafana-azure-monitor-datasource",
+          "uid": "${azure_ds}"
+        },
+        "query": {
+          "queryType": "Azure Regions",
+          "subscription": "$subscription",
+          "refId": "A"
+        },
+        "refresh": 1,
+        "hide": 0,
+        "current": { "text": "Italy North", "value": "italynorth" }
+      },
+      {
+        "type": "query",
+        "name": "function_apps",
+        "label": "App CloudO",
+        "datasource": {
+          "type": "grafana-azure-monitor-datasource",
+          "uid": "${azure_ds}"
+        },
+        "query": {
+          "queryType": "Azure Resource Names",
+          "subscription": "$subscription",
+          "resourceGroup": "$resource_group",
+          "namespace": "microsoft.web/sites",
+          "refId": "A"
+        },
+        "regex": "/cloudo/",
+        "multi": true,
+        "includeAll": true,
+        "refresh": 1,
+        "sort": 1,
+        "hide": 0,
+        "current": {}
+      },
+      {
+        "type": "query",
+        "name": "storage_account",
+        "label": "Storage account",
+        "datasource": {
+          "type": "grafana-azure-monitor-datasource",
+          "uid": "${azure_ds}"
+        },
+        "query": {
+          "queryType": "Azure Resource Names",
+          "subscription": "$subscription",
+          "resourceGroup": "$resource_group",
+          "namespace": "microsoft.storage/storageaccounts",
+          "refId": "A"
+        },
+        "regex": "/cloudosa/",
+        "refresh": 1,
+        "hide": 0,
+        "current": {}
+      }
+    ]
+  },
+  "time": { "from": "now/d", "to": "now" },
+  "timepicker": {},
+  "timezone": "Europe/Rome",
+  "title": "CloudO",
+  "uid": "cloudo-overview",
+  "version": 1
+}
