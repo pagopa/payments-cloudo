@@ -101,3 +101,32 @@ def test_startup_shutdown():
             assert mock_stop.called
 
     asyncio.run(_run())
+
+
+def test_process_queue_message_renews_lease_until_done():
+    import time
+
+    import fastapi_app
+
+    queue = MagicMock()
+    queue.update_message.side_effect = [
+        MagicMock(pop_receipt=f"receipt-{i}") for i in range(1, 100)
+    ]
+    msg = MagicMock(id="msg-1", pop_receipt="receipt-0", content='{"exec_id": "x"}')
+
+    def slow_runbook(_msg):
+        time.sleep(0.35)
+
+    with (
+        patch.object(fastapi_app, "_get_queue_client", return_value=queue),
+        patch.object(fastapi_app, "QUEUE_VISIBILITY_RENEW_SECONDS", 0.1),
+        patch.object(fastapi_app.legacy, "process_runbook", side_effect=slow_runbook),
+    ):
+        fastapi_app._process_queue_message(msg)
+
+    assert queue.update_message.call_count >= 2
+    first = queue.update_message.call_args_list[0]
+    assert first.args == ("msg-1", "receipt-0")
+    assert first.kwargs["visibility_timeout"] == fastapi_app.QUEUE_VISIBILITY_TIMEOUT
+    last_receipt = f"receipt-{queue.update_message.call_count}"
+    queue.delete_message.assert_called_once_with("msg-1", last_receipt)

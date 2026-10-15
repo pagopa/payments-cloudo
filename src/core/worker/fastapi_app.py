@@ -21,6 +21,18 @@ QUEUE_CONCURRENCY = max(1, int(os.getenv("FASTAPI_QUEUE_CONCURRENCY", "4")))
 QUEUE_VISIBILITY_TIMEOUT = int(os.getenv("FASTAPI_QUEUE_VISIBILITY_TIMEOUT", "3600"))
 QUEUE_BATCH_SIZE = max(1, int(os.getenv("FASTAPI_QUEUE_BATCH_SIZE", "8")))
 
+# Renew the message lease well before it expires, otherwise long-running
+# runbooks become visible again and get picked up a second time.
+QUEUE_VISIBILITY_RENEW_SECONDS = max(
+    1,
+    int(
+        os.getenv(
+            "FASTAPI_QUEUE_VISIBILITY_RENEW_SECONDS",
+            str(max(1, QUEUE_VISIBILITY_TIMEOUT // 2)),
+        )
+    ),
+)
+
 _STOP_EVENT = threading.Event()
 _BACKGROUND_THREADS: list[threading.Thread] = []
 _QUEUE_CLIENTS: dict[tuple[str, str], Any] = {}
@@ -315,13 +327,38 @@ def _queue_message_to_legacy(content: str):
 
 
 def _process_queue_message(msg: Any) -> None:
-    payload = msg.content or ""
-    if isinstance(payload, bytes):
-        payload = payload.decode("utf-8", errors="replace")
-    if payload:
-        legacy.process_runbook(_queue_message_to_legacy(payload))
     queue = _get_queue_client(legacy.QUEUE_NAME)
-    queue.delete_message(msg.id, msg.pop_receipt)
+    lease = {"pop_receipt": msg.pop_receipt}
+    done = threading.Event()
+
+    def _keep_invisible() -> None:
+        while not done.wait(QUEUE_VISIBILITY_RENEW_SECONDS):
+            try:
+                updated = queue.update_message(
+                    msg.id,
+                    lease["pop_receipt"],
+                    visibility_timeout=QUEUE_VISIBILITY_TIMEOUT,
+                )
+                lease["pop_receipt"] = updated.pop_receipt
+            except Exception as exc:
+                logging.warning(
+                    "Worker queue message %s lease renewal failed: %s", msg.id, exc
+                )
+
+    renewer = threading.Thread(
+        target=_keep_invisible, name=f"worker-lease-{msg.id}", daemon=True
+    )
+    renewer.start()
+    try:
+        payload = msg.content or ""
+        if isinstance(payload, bytes):
+            payload = payload.decode("utf-8", errors="replace")
+        if payload:
+            legacy.process_runbook(_queue_message_to_legacy(payload))
+    finally:
+        done.set()
+        renewer.join()
+    queue.delete_message(msg.id, lease["pop_receipt"])
 
 
 def _poll_runbook_queue() -> None:
