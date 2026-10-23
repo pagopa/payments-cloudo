@@ -7,6 +7,7 @@ from datetime import datetime, timezone
 from typing import Any, Optional
 
 from core.config import SETTINGS_CACHE_TTL_SECONDS, STORAGE_CONN, TABLE_SETTINGS
+from utils import today_partition_key
 
 from core import storage, team_access
 
@@ -85,7 +86,10 @@ def notify_slack_decision(
     extra: str = "",
     routing_info: Optional[dict] = None,
     team: Optional[str] = None,
+    partition_key: Optional[str] = None,
 ) -> None:
+    """Notify the approval gate decision; `partition_key` locates the execution
+    rows for the UI link (defaults to today's partition, as used for log rows)."""
     from escalation import send_jsm_alert, send_slack_execution
     from smart_routing import resolve_jsm_apikey
 
@@ -97,7 +101,7 @@ def notify_slack_decision(
     emoji = "✅" if decision == "approved" else "❌"
 
     ui_base = ui_base_url()
-    partition_key = datetime.now(timezone.utc).strftime("%Y%m%d")
+    partition_key = partition_key or today_partition_key()
     ui_url = f"{ui_base}/executions?execId={exec_id}&partitionKey={partition_key}"
 
     # Truncate extra to avoid Slack invalid_blocks (max 3000 chars for mrkdwn sections)

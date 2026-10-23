@@ -66,10 +66,9 @@ def _slack_blocks(
     status_emoji: str,
     resource_info: dict,
     logs_raw: str,
+    partition_key: str,
 ) -> list[dict]:
     exec_id = body.get("exec_id")
-    # The execution row lives in today's partition; link to it from the UI.
-    partition_key = datetime.now(timezone.utc).strftime("%Y%m%d")
     ui_url = f"{notify.ui_base_url()}/executions?execId={exec_id}&partitionKey={partition_key}"
 
     # Truncate large fields for Slack blocks to avoid invalid_blocks
@@ -225,9 +224,13 @@ def notify_status(
     routing_info: dict,
     logs_raw: str,
     log_prefix: str,
+    partition_key: str,
     smart_routing: SmartRoutingApi,
 ) -> tuple[Any, list]:
-    """Route the status change; returns (decision, delivery results) for the log."""
+    """Route the status change; returns (decision, delivery results) for the log.
+
+    `partition_key` is the partition of the log row, linked from the Slack message.
+    """
     ctx = routing_context(body, status_label, resource_info, routing_info)
     decision = smart_routing.route_alert(ctx)
     logging.debug(f"{log_prefix} {decision}")
@@ -237,7 +240,7 @@ def notify_status(
         "slack": {
             "message": f"[{exec_id}] {status_emoji} {status_label.upper()}: {body.get('name')}",
             "blocks": _slack_blocks(
-                body, status_label, status_emoji, resource_info, logs_raw
+                body, status_label, status_emoji, resource_info, logs_raw, partition_key
             ),
         },
         "jsm": _jsm_payload(body, status_label, resource_info, logs_raw, decision),

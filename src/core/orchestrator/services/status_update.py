@@ -171,6 +171,7 @@ def process(body: dict, log_table: func.Out[str]) -> None:
             routing_info,
             logs_raw,
             log_prefix,
+            partition_key,
             smart_routing,
         )
     else:

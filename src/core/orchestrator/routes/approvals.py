@@ -316,6 +316,7 @@ def approve(
                 approver=approver,
                 routing_info=routing_info,
                 team=resource_team,
+                partition_key=partition_key,
             )
 
             # We still execute other actions via smart routing if any (excluding Slack)
@@ -374,6 +375,7 @@ def approve(
             extra=f"*Error:* {str(e)}",
             routing_info=routing_info,
             team=resource_team,
+            partition_key=partition_key,
         )
         return func.HttpResponse(
             json.dumps({"error": str(e)}, ensure_ascii=False),
@@ -575,6 +577,7 @@ def reject(
         approver=approver,
         routing_info=routing_info,
         team=resource_team,
+        partition_key=partition_key,
     )
 
     # smart routing notification (if routing module available)

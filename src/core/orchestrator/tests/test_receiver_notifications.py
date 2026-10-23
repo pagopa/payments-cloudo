@@ -425,3 +425,17 @@ def test_receiver_http_unexpected_error_returns_500(monkeypatch):
 
     assert res.status_code == 500
     assert json.loads(res.get_body()) == {"error": "Internal error: RuntimeError"}
+
+
+def test_slack_link_points_to_the_partition_of_the_log_row(env, monkeypatch):
+    # The row partition (Europe/Rome date) can differ from the UTC date
+    # around midnight: the UI link must follow the row, not the UTC clock.
+    import utils
+
+    monkeypatch.setattr(utils, "today_partition_key", lambda: "19990101")
+
+    out = process(make_body())
+
+    assert out.entities()[0]["PartitionKey"] == "19990101"
+    url = routed_payload(env)["slack"]["blocks"][6]["elements"][0]["url"]
+    assert url.endswith("&partitionKey=19990101")
