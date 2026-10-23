@@ -120,7 +120,7 @@ def test_process_queue_message_renews_lease_until_done():
     with (
         patch.object(fastapi_app, "_get_queue_client", return_value=queue),
         patch.object(fastapi_app, "QUEUE_VISIBILITY_RENEW_SECONDS", 0.1),
-        patch.object(fastapi_app.legacy, "process_runbook", side_effect=slow_runbook),
+        patch.object(fastapi_app.runbooks, "process_runbook", side_effect=slow_runbook),
     ):
         fastapi_app._process_queue_message(msg)
 

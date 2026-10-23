@@ -10,8 +10,10 @@ from typing import Any, Callable, Optional
 
 import azure.functions as func
 import function_app as legacy
+from core.config import QUEUE_NAME, STORAGE_CONNECTION
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse, Response
+from routes import runbooks, system
 
 API_PREFIX = os.getenv("API_PREFIX", "/api")
 POLL_SECONDS = float(os.getenv("FASTAPI_QUEUE_POLL_SECONDS", "2"))
@@ -93,11 +95,9 @@ def _get_queue_client(queue_name: str):
         TextBase64EncodePolicy,
     )
 
-    conn_str = (os.getenv(legacy.STORAGE_CONNECTION) or "").strip()
+    conn_str = (os.getenv(STORAGE_CONNECTION) or "").strip()
     if not conn_str:
-        raise ValueError(
-            f"Missing storage connection string in '{legacy.STORAGE_CONNECTION}'"
-        )
+        raise ValueError(f"Missing storage connection string in '{STORAGE_CONNECTION}'")
 
     key = (conn_str, queue_name)
     client = _QUEUE_CLIENTS.get(key)
@@ -319,7 +319,7 @@ def _queue_message_to_legacy(content: str):
 
 
 def _process_queue_message(msg: Any) -> None:
-    queue = _get_queue_client(legacy.QUEUE_NAME)
+    queue = _get_queue_client(QUEUE_NAME)
     lease = {"pop_receipt": msg.pop_receipt}
     done = threading.Event()
 
@@ -346,7 +346,7 @@ def _process_queue_message(msg: Any) -> None:
         if isinstance(payload, bytes):
             payload = payload.decode("utf-8", errors="replace")
         if payload:
-            legacy.process_runbook(_queue_message_to_legacy(payload))
+            runbooks.process_runbook(_queue_message_to_legacy(payload))
     finally:
         done.set()
         renewer.join()
@@ -360,7 +360,7 @@ def _poll_runbook_queue() -> None:
     in_flight: set[concurrent.futures.Future] = set()
     while not _STOP_EVENT.is_set():
         try:
-            queue = _get_queue_client(legacy.QUEUE_NAME)
+            queue = _get_queue_client(QUEUE_NAME)
 
             done = {f for f in in_flight if f.done()}
             in_flight -= done
@@ -401,7 +401,7 @@ def _run_heartbeat_timer() -> None:
 
     while not _STOP_EVENT.is_set():
         try:
-            legacy.heartbeat_trigger(_Timer())
+            system.heartbeat_trigger(_Timer())
         except Exception as exc:
             logging.warning("Worker heartbeat trigger failed: %s", exc)
         _STOP_EVENT.wait(HEARTBEAT_SECONDS)
