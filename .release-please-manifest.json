@@ -2,5 +2,5 @@
   "src/core/orchestrator": "0.30.0",
   "src/core/worker": "0.26.1",
   "src/core/cloudo-ui": "0.21.0",
-  "src/core/agent": "0.2.1"
+  "src/core/agent": "0.2.2"
 }
