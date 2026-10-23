@@ -1,6 +1,6 @@
 # python
 """Tests for the Receiver flow (queue trigger + HTTP fast path) and the
-shared `_process_receiver_body` helper that both delegate to.
+shared `services.status_update.process` pipeline that both delegate to.
 
 Covers: field normalization, status resolution, missing-field handling,
 log payload variants (plain, base64, blob ref, blob-upload failure),
@@ -87,12 +87,12 @@ def inert_smart_routing(monkeypatch):
 
 
 def test_receiver_happy_path_normalizes_status_and_writes_log():
-    from routes.receiver import _process_receiver_body
+    from services.status_update import process
 
     body = make_body(status="Completed")
     out = FakeOut()
 
-    _process_receiver_body(body, out)
+    process(body, out)
 
     log = json.loads(out.get())
     assert log["Status"] == "succeeded"
@@ -116,10 +116,10 @@ def test_receiver_happy_path_normalizes_status_and_writes_log():
     ],
 )
 def test_receiver_status_normalization_variants(raw_status, expected):
-    from routes.receiver import _process_receiver_body
+    from services.status_update import process
 
     out = FakeOut()
-    _process_receiver_body(make_body(status=raw_status), out)
+    process(make_body(status=raw_status), out)
 
     log = json.loads(out.get())
     assert log["Status"] == expected
@@ -128,7 +128,7 @@ def test_receiver_status_normalization_variants(raw_status, expected):
 def test_receiver_list_type_fields_are_normalized_to_first_value():
     """Some callers send scalar fields wrapped in a single-element list
     (e.g. header-derived payloads); Receiver must be robust to that."""
-    from routes.receiver import _process_receiver_body
+    from services.status_update import process
 
     body = make_body(
         exec_id=["exec-999"],
@@ -139,7 +139,7 @@ def test_receiver_list_type_fields_are_normalized_to_first_value():
     )
     out = FakeOut()
 
-    _process_receiver_body(body, out)
+    process(body, out)
 
     log = json.loads(out.get())
     assert log["ExecId"] == "exec-999"
@@ -156,24 +156,24 @@ def test_receiver_missing_required_field_is_a_silent_no_op(missing_field):
     """Missing required fields must not raise and must not write a log
     entry — the message is dropped with a warning (fail-open by design,
     since Receiver is a best-effort queue/HTTP sink)."""
-    from routes.receiver import _process_receiver_body
+    from services.status_update import process
 
     body = make_body()
     body[missing_field] = ""
     out = FakeOut()
 
-    _process_receiver_body(body, out)
+    process(body, out)
 
     assert out.get() is None
 
 
 def test_receiver_none_values_are_normalized_to_empty_string():
-    from routes.receiver import _process_receiver_body
+    from services.status_update import process
 
     body = make_body(run_args=None, worker=None)
     out = FakeOut()
 
-    _process_receiver_body(body, out)
+    process(body, out)
 
     log = json.loads(out.get())
     # run_args/worker are not part of the required-field normalization loop,
@@ -188,17 +188,17 @@ def test_receiver_none_values_are_normalized_to_empty_string():
 
 
 def test_receiver_without_logs_writes_empty_log_field():
-    from routes.receiver import _process_receiver_body
+    from services.status_update import process
 
     out = FakeOut()
-    _process_receiver_body(make_body(), out)
+    process(make_body(), out)
 
     log = json.loads(out.get())
     assert log["Log"] == ""
 
 
 def test_receiver_decodes_base64_logs_and_uploads_to_blob(monkeypatch):
-    from routes.receiver import _process_receiver_body
+    from services.status_update import process
 
     upload_mock = MagicMock(return_value="blobref://runbook-logs/2024/exec-123.log")
     monkeypatch.setattr(log_blobs, "upload_log_to_blob", upload_mock)
@@ -206,7 +206,7 @@ def test_receiver_decodes_base64_logs_and_uploads_to_blob(monkeypatch):
     logs_b64 = log_blobs.encode_logs("line1\nline2 error").decode("utf-8")
     out = FakeOut()
 
-    _process_receiver_body(make_body(logs_b64=logs_b64), out)
+    process(make_body(logs_b64=logs_b64), out)
 
     upload_mock.assert_called_once()
     log = json.loads(out.get())
@@ -214,7 +214,7 @@ def test_receiver_decodes_base64_logs_and_uploads_to_blob(monkeypatch):
 
 
 def test_receiver_falls_back_to_table_log_when_blob_upload_fails(monkeypatch):
-    from routes.receiver import _process_receiver_body
+    from services.status_update import process
 
     monkeypatch.setattr(
         log_blobs, "upload_log_to_blob", MagicMock(side_effect=RuntimeError("boom"))
@@ -223,14 +223,14 @@ def test_receiver_falls_back_to_table_log_when_blob_upload_fails(monkeypatch):
     logs_b64 = log_blobs.encode_logs("some failure output").decode("utf-8")
     out = FakeOut()
 
-    _process_receiver_body(make_body(logs_b64=logs_b64), out)
+    process(make_body(logs_b64=logs_b64), out)
 
     log = json.loads(out.get())
     assert log["Log"] == "some failure output"
 
 
 def test_receiver_reuses_provided_log_ref_without_reuploading(monkeypatch):
-    from routes.receiver import _process_receiver_body
+    from services.status_update import process
 
     upload_mock = MagicMock()
     monkeypatch.setattr(log_blobs, "upload_log_to_blob", upload_mock)
@@ -238,7 +238,7 @@ def test_receiver_reuses_provided_log_ref_without_reuploading(monkeypatch):
     logs_b64 = log_blobs.encode_logs("already stored elsewhere").decode("utf-8")
     out = FakeOut()
 
-    _process_receiver_body(
+    process(
         make_body(
             logs_b64=logs_b64,
             log_ref="blobref://runbook-logs/pre-existing.log",
@@ -252,7 +252,7 @@ def test_receiver_reuses_provided_log_ref_without_reuploading(monkeypatch):
 
 
 def test_receiver_ignores_malformed_log_ref_and_uses_logs_instead(monkeypatch):
-    from routes.receiver import _process_receiver_body
+    from services.status_update import process
 
     monkeypatch.setattr(
         log_blobs, "upload_log_to_blob", MagicMock(return_value="blobref://x/y.log")
@@ -260,9 +260,7 @@ def test_receiver_ignores_malformed_log_ref_and_uses_logs_instead(monkeypatch):
     logs_b64 = log_blobs.encode_logs("fallback logs").decode("utf-8")
     out = FakeOut()
 
-    _process_receiver_body(
-        make_body(logs_b64=logs_b64, log_ref="not-a-real-blob-ref"), out
-    )
+    process(make_body(logs_b64=logs_b64, log_ref="not-a-real-blob-ref"), out)
 
     log = json.loads(out.get())
     assert log["Log"] == "blobref://x/y.log"
@@ -274,22 +272,20 @@ def test_receiver_ignores_malformed_log_ref_and_uses_logs_instead(monkeypatch):
 
 
 def test_receiver_accepts_resource_info_as_json_string():
-    from routes.receiver import _process_receiver_body
+    from services.status_update import process
 
     out = FakeOut()
-    _process_receiver_body(
-        make_body(resource_info=json.dumps({"resource_name": "vm-1"})), out
-    )
+    process(make_body(resource_info=json.dumps({"resource_name": "vm-1"})), out)
 
     log = json.loads(out.get())
     assert json.loads(log["ResourceInfo"])["resource_name"] == "vm-1"
 
 
 def test_receiver_invalid_resource_info_json_string_becomes_empty_dict():
-    from routes.receiver import _process_receiver_body
+    from services.status_update import process
 
     out = FakeOut()
-    _process_receiver_body(make_body(resource_info="{not json"), out)
+    process(make_body(resource_info="{not json"), out)
 
     log = json.loads(out.get())
     # build_log_entry omits ResourceInfo entirely when the dict is empty/falsy
@@ -300,13 +296,13 @@ def test_receiver_invalid_routing_info_json_string_is_treated_as_no_routing(
     monkeypatch,
 ):
     import smart_routing
-    from routes.receiver import _process_receiver_body
+    from services.status_update import process
 
     route_alert_mock = MagicMock(return_value=SimpleNamespace(actions=[]))
     monkeypatch.setattr(smart_routing, "route_alert", route_alert_mock)
 
     out = FakeOut()
-    _process_receiver_body(make_body(routing_info="{not json"), out)
+    process(make_body(routing_info="{not json"), out)
 
     ctx = route_alert_mock.call_args.args[0]
     assert ctx["routing_info"] == {}
@@ -321,7 +317,7 @@ def test_receiver_invokes_route_alert_and_execute_actions_with_resource_context(
     monkeypatch,
 ):
     import smart_routing
-    from routes.receiver import _process_receiver_body
+    from services.status_update import process
 
     decision = SimpleNamespace(actions=[SimpleNamespace(team="core")])
     route_alert_mock = MagicMock(return_value=decision)
@@ -330,7 +326,7 @@ def test_receiver_invokes_route_alert_and_execute_actions_with_resource_context(
     monkeypatch.setattr(smart_routing, "execute_actions", execute_actions_mock)
 
     out = FakeOut()
-    _process_receiver_body(
+    process(
         make_body(
             status="Failed",
             resource_info={"resource_name": "vm-42", "resource_rg": "rg-1"},
@@ -350,7 +346,7 @@ def test_receiver_survives_execute_actions_exception(monkeypatch):
     """A smart-routing failure must not prevent the log entity from being
     written nor propagate to the caller."""
     import smart_routing
-    from routes.receiver import _process_receiver_body
+    from services.status_update import process
 
     monkeypatch.setattr(
         smart_routing,
@@ -362,7 +358,7 @@ def test_receiver_survives_execute_actions_exception(monkeypatch):
     )
 
     out = FakeOut()
-    _process_receiver_body(make_body(status="Failed"), out)
+    process(make_body(status="Failed"), out)
 
     log = json.loads(out.get())
     assert log["Status"] == "failed"
@@ -371,11 +367,10 @@ def test_receiver_survives_execute_actions_exception(monkeypatch):
 def test_receiver_skips_routing_gracefully_when_smart_routing_unavailable(
     monkeypatch,
 ):
-    from routes import receiver
-
-    monkeypatch.setattr(receiver, "route_alert", None, raising=False)
     # Simulate the ImportError branch by making the local import fail.
     import builtins
+
+    from services import status_update
 
     real_import = builtins.__import__
 
@@ -387,7 +382,7 @@ def test_receiver_skips_routing_gracefully_when_smart_routing_unavailable(
     monkeypatch.setattr(builtins, "__import__", fake_import)
 
     out = FakeOut()
-    receiver._process_receiver_body(make_body(), out)
+    status_update.process(make_body(), out)
 
     log = json.loads(out.get())
     assert log["Status"] == "succeeded"
@@ -399,27 +394,27 @@ def test_receiver_skips_routing_gracefully_when_smart_routing_unavailable(
 
 
 def test_receiver_does_not_enqueue_ai_triage_when_disabled(monkeypatch):
-    from routes.receiver import _process_receiver_body
+    from services.status_update import process
 
     queue_mock = MagicMock()
     monkeypatch.setattr(storage, "get_queue_client", MagicMock(return_value=queue_mock))
 
     out = FakeOut()
-    _process_receiver_body(make_body(status="Failed"), out)
+    process(make_body(status="Failed"), out)
 
     queue_mock.send_message.assert_not_called()
 
 
 def test_receiver_enqueues_ai_triage_for_failed_status_when_enabled(monkeypatch):
     import smart_routing
-    from routes.receiver import _process_receiver_body
+    from services.status_update import process
 
     monkeypatch.setattr(smart_routing, "get_setting", MagicMock(return_value="true"))
     queue_mock = MagicMock()
     monkeypatch.setattr(storage, "get_queue_client", MagicMock(return_value=queue_mock))
 
     out = FakeOut()
-    _process_receiver_body(
+    process(
         make_body(status="Failed", routing_info={"team": "core", "slack_token": "x"}),
         out,
     )
@@ -435,53 +430,49 @@ def test_receiver_enqueues_ai_triage_for_failed_status_when_enabled(monkeypatch)
 
 def test_receiver_does_not_enqueue_ai_triage_for_succeeded_status(monkeypatch):
     import smart_routing
-    from routes.receiver import _process_receiver_body
+    from services.status_update import process
 
     monkeypatch.setattr(smart_routing, "get_setting", MagicMock(return_value="true"))
     queue_mock = MagicMock()
     monkeypatch.setattr(storage, "get_queue_client", MagicMock(return_value=queue_mock))
 
     out = FakeOut()
-    _process_receiver_body(make_body(status="Completed"), out)
+    process(make_body(status="Completed"), out)
 
     queue_mock.send_message.assert_not_called()
 
 
 def test_receiver_skips_ai_triage_for_dev_test_run_by_name(monkeypatch):
     import smart_routing
-    from routes.receiver import _process_receiver_body
+    from services.status_update import process
 
     monkeypatch.setattr(smart_routing, "get_setting", MagicMock(return_value="true"))
     queue_mock = MagicMock()
     monkeypatch.setattr(storage, "get_queue_client", MagicMock(return_value=queue_mock))
 
     out = FakeOut()
-    _process_receiver_body(
-        make_body(status="Failed", name="Dev Test Run", id="dev-test-abc123"), out
-    )
+    process(make_body(status="Failed", name="Dev Test Run", id="dev-test-abc123"), out)
 
     queue_mock.send_message.assert_not_called()
 
 
 def test_receiver_skips_ai_triage_for_dev_test_run_by_team(monkeypatch):
     import smart_routing
-    from routes.receiver import _process_receiver_body
+    from services.status_update import process
 
     monkeypatch.setattr(smart_routing, "get_setting", MagicMock(return_value="true"))
     queue_mock = MagicMock()
     monkeypatch.setattr(storage, "get_queue_client", MagicMock(return_value=queue_mock))
 
     out = FakeOut()
-    _process_receiver_body(
-        make_body(status="Failed", resource_info={"team": "dev-test"}), out
-    )
+    process(make_body(status="Failed", resource_info={"team": "dev-test"}), out)
 
     queue_mock.send_message.assert_not_called()
 
 
 def test_receiver_ai_triage_enqueue_failure_does_not_raise(monkeypatch):
     import smart_routing
-    from routes.receiver import _process_receiver_body
+    from services.status_update import process
 
     monkeypatch.setattr(smart_routing, "get_setting", MagicMock(return_value="true"))
     monkeypatch.setattr(
@@ -492,7 +483,7 @@ def test_receiver_ai_triage_enqueue_failure_does_not_raise(monkeypatch):
 
     out = FakeOut()
     # Should not raise even though enqueueing the AI analysis message fails.
-    _process_receiver_body(make_body(status="Failed"), out)
+    process(make_body(status="Failed"), out)
 
     log = json.loads(out.get())
     assert log["Status"] == "failed"
@@ -503,7 +494,7 @@ def test_receiver_ai_triage_enqueue_failure_does_not_raise(monkeypatch):
 # =========================
 
 
-def test_queue_trigger_receiver_delegates_to_process_receiver_body():
+def test_queue_trigger_receiver_delegates_toprocess():
     from routes.receiver import Receiver
 
     msg = func.QueueMessage(body=json.dumps(make_body()).encode("utf-8"))
@@ -622,7 +613,7 @@ def test_receiver_http_rejects_malformed_json_body():
 
 
 def test_receiver_http_still_returns_200_when_required_fields_missing():
-    """_process_receiver_body fails open (logs + drops), so the HTTP caller
+    """status_update.process fails open (logs + drops), so the HTTP caller
     always gets a 200 acknowledgement even if the payload was incomplete —
     this documents existing best-effort semantics."""
     from routes.receiver import ReceiverHttp

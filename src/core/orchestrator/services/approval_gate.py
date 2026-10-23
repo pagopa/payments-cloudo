@@ -57,9 +57,7 @@ def _orchestrator_base_url() -> str:
 
 
 def _ui_execution_url(execution: ExecutionRequest) -> str:
-    ui_base = (os.getenv("NEXTJS_URL") or "http://localhost:3000").strip().rstrip("/")
-    if not ui_base.startswith("http"):
-        ui_base = f"https://{ui_base}" if ui_base else "http://localhost:3000"
+    ui_base = notify.ui_base_url()
     return f"{ui_base}/executions?execId={execution.exec_id}&partitionKey={execution.partition_key}"
 
 

@@ -17,6 +17,7 @@ import escalation
 import pytest
 import smart_routing
 from routes import receiver
+from services import ai_triage, status_update
 
 from core import log_blobs, storage
 
@@ -97,7 +98,7 @@ def env(monkeypatch):
 
 def process(body):
     out = RecordingOut()
-    receiver._process_receiver_body(body, out)
+    status_update.process(body, out)
     return out
 
 
@@ -401,7 +402,7 @@ def test_ai_triage_falls_back_to_env_when_settings_unavailable(env, monkeypatch)
 
 
 def test_ai_placeholder_skipped_without_exec_id(env):
-    receiver._write_ai_analysis_placeholder("", "payments")
+    ai_triage.write_placeholder("", "payments")
 
     env.table.upsert_entity.assert_not_called()
 
@@ -409,12 +410,12 @@ def test_ai_placeholder_skipped_without_exec_id(env):
 def test_ai_placeholder_failure_is_swallowed(env):
     env.table.upsert_entity.side_effect = RuntimeError("table down")
 
-    receiver._write_ai_analysis_placeholder("exec-1", "payments")
+    ai_triage.write_placeholder("exec-1", "payments")
 
 
 def test_receiver_http_unexpected_error_returns_500(monkeypatch):
     monkeypatch.setattr(
-        receiver, "_process_receiver_body", MagicMock(side_effect=RuntimeError("x"))
+        status_update, "process", MagicMock(side_effect=RuntimeError("x"))
     )
     req = func.HttpRequest(
         "POST", "https://x/api/receiver", body=json.dumps({"a": 1}).encode()

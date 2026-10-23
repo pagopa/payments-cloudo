@@ -69,6 +69,14 @@ def format_compact_resource_info(resource_info: Optional[dict]) -> Optional[str]
     return " | ".join(items)
 
 
+def ui_base_url() -> str:
+    """Base URL of the web UI, used for deep links in notifications."""
+    ui_base = (os.getenv("NEXTJS_URL") or "http://localhost:3000").strip().rstrip("/")
+    if not ui_base.startswith("http"):
+        ui_base = f"https://{ui_base}" if ui_base else "http://localhost:3000"
+    return ui_base
+
+
 def notify_slack_decision(
     exec_id: str,
     schema_id: str,
@@ -88,10 +96,7 @@ def notify_slack_decision(
 
     emoji = "✅" if decision == "approved" else "❌"
 
-    # UI Base URL
-    ui_base = (os.getenv("NEXTJS_URL") or "http://localhost:3000").strip().rstrip("/")
-    if not ui_base.startswith("http"):
-        ui_base = f"https://{ui_base}" if ui_base else "http://localhost:3000"
+    ui_base = ui_base_url()
     partition_key = datetime.now(timezone.utc).strftime("%Y%m%d")
     ui_url = f"{ui_base}/executions?execId={exec_id}&partitionKey={partition_key}"
 
