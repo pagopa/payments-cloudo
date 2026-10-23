@@ -224,7 +224,7 @@ def _notify_dispatch_failure(
         "resourceName": execution.resource_name,
         "schemaName": (schema.name or ""),
         "severity": execution.severity,
-        "namespace": ((resource_info or {}).get("namespace") or ""),
+        "namespace": ((resource_info or {}).get("aks_namespace") or ""),
         "oncall": schema.oncall,
         "status": status_label,
         "execId": execution.exec_id,

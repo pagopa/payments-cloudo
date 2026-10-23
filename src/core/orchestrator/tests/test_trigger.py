@@ -417,7 +417,7 @@ def test_no_available_worker_logs_error_and_runs_smart_routing(env):
     ctx = env.route_alert.call_args.args[0]
     assert ctx["status"] == "error"
     assert ctx["resourceName"] == "res-1"
-    assert ctx["namespace"] == ""
+    assert ctx["namespace"] == "ns-1"
     assert ctx["team"] == "default"
 
     decision, payload = env.execute_actions.call_args.args[:2]
