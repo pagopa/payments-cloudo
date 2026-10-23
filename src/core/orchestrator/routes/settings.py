@@ -202,8 +202,7 @@ def settings_management(req: func.HttpRequest) -> func.HttpResponse:
             try:
                 import smart_routing
 
-                smart_routing._routing_config_cache["expires_at"] = 0.0
-                smart_routing._setting_cache.clear()
+                smart_routing.invalidate_caches()
             except Exception:
                 pass
 
