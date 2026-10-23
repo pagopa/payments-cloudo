@@ -64,9 +64,9 @@ az storage entity insert \
     description='Hello Test!' \
     worker=local \
     runbook=check_sys.sh \
-    oncall=False \
+    oncall=false \
     tags=terraform,test \
-    require_approval=True \
+    require_approval=true \
   --if-exists merge \
   --connection-string "${CONN_STR}" \
   --only-show-errors >/dev/null
@@ -83,7 +83,7 @@ az storage entity insert \
     worker=local \
     runbook=printenv.sh \
     run_args="" \
-    oncall=True \
+    oncall=true \
     tags=terraform,test \
   --if-exists merge \
   --connection-string "${CONN_STR}" \
@@ -100,7 +100,7 @@ az storage entity insert \
     description='Hello Test 3!' \
     worker=alert \
     runbook=check_sys.sh \
-    oncall=False \
+    oncall=false \
     tags=terraform,test \
   --if-exists merge \
   --connection-string "${CONN_STR}" \

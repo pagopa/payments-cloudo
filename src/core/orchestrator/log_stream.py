@@ -8,11 +8,14 @@ import time
 from datetime import datetime, timedelta, timezone
 from typing import Any, Optional
 
-import function_app as legacy
 from azure.core import MatchConditions
 from azure.core.exceptions import HttpResponseError, ResourceNotModifiedError
+from core.config import DEFAULT_TEAM, STORAGE_CONN, TABLE_NAME
 from fastapi import WebSocket, WebSocketDisconnect
 from starlette.concurrency import run_in_threadpool
+from utils import as_bool
+
+from core import executions, log_blobs, security, storage, team_access
 
 POLL_SECONDS = float(os.getenv("LOG_STREAM_POLL_SECONDS", "1"))
 HEARTBEAT_SECONDS = float(os.getenv("LOG_STREAM_HEARTBEAT_SECONDS", "20"))
@@ -60,7 +63,7 @@ def _odata_escape(value: str) -> str:
 
 
 def _fetch_latest_entity(partition_key: str, exec_id: str) -> Optional[dict]:
-    table = legacy._get_table_client(legacy.TABLE_NAME)  # noqa: SLF001
+    table = storage.get_table_client(TABLE_NAME)
     query_filter = (
         f"PartitionKey eq '{_odata_escape(partition_key)}' "
         f"and ExecId eq '{_odata_escape(exec_id)}'"
@@ -69,14 +72,14 @@ def _fetch_latest_entity(partition_key: str, exec_id: str) -> Optional[dict]:
         dict(e)
         for e in table.query_entities(query_filter=query_filter, select=_ENTRY_COLUMNS)
     ]
-    return legacy._latest_log_entity(rows)  # noqa: SLF001
+    return executions.latest_log_entity(rows)
 
 
 def _can_view(entity: dict, session: dict, include_all_teams: bool) -> bool:
-    if include_all_teams and legacy._is_admin(session):  # noqa: SLF001
+    if include_all_teams and team_access.is_admin(session):
         return True
-    allowed = {legacy.DEFAULT_TEAM, legacy._session_team(session)}  # noqa: SLF001
-    return legacy._entity_team(entity) in allowed  # noqa: SLF001
+    allowed = {DEFAULT_TEAM, team_access.session_team(session)}
+    return team_access.entity_team(entity) in allowed
 
 
 class _LogTail:
@@ -88,7 +91,7 @@ class _LogTail:
 
     def read(self, log_value: Optional[str]) -> Optional[str]:
         """Return the full log text, or None if the blob has not changed."""
-        parsed = legacy._parse_blob_ref(log_value)  # noqa: SLF001
+        parsed = log_blobs.parse_blob_ref(log_value)
         if not parsed:
             self._ref, self._etag = None, None
             return log_value or ""
@@ -97,9 +100,9 @@ class _LogTail:
             self._ref, self._etag = log_value, None
 
         container, blob_name = parsed
-        blob = legacy._get_blob_service(  # noqa: SLF001
-            legacy.STORAGE_CONN
-        ).get_blob_client(container=container, blob=blob_name)
+        blob = storage.get_blob_service(STORAGE_CONN).get_blob_client(
+            container=container, blob=blob_name
+        )
         kwargs: dict[str, Any] = {}
         if self._etag:
             kwargs = {"etag": self._etag, "match_condition": MatchConditions.IfModified}
@@ -129,9 +132,7 @@ async def _authenticate(websocket: WebSocket) -> Optional[tuple[dict, bool]]:
 
     if not isinstance(message, dict):
         message = {}
-    ok, session = legacy._verify_session_token(  # noqa: SLF001
-        str(message.get("token") or "")
-    )
+    ok, session = security.verify_session_token(str(message.get("token") or ""))
     if message.get("type") != "auth" or not ok:
         await _close_with_error(
             websocket,
@@ -139,7 +140,7 @@ async def _authenticate(websocket: WebSocket) -> Optional[tuple[dict, bool]]:
             "Unauthorized: Missing or invalid credentials",
         )
         return None
-    return session, legacy._as_bool(message.get("includeAllTeams"))  # noqa: SLF001
+    return session, as_bool(message.get("includeAllTeams"))
 
 
 async def _close_with_error(websocket: WebSocket, code: int, error: str) -> None:
@@ -267,7 +268,7 @@ async def stream_execution_logs(
 
 
 def _fetch_changed_rows(partition_key: str, since: datetime) -> list[Any]:
-    table = legacy._get_table_client(legacy.TABLE_NAME)  # noqa: SLF001
+    table = storage.get_table_client(TABLE_NAME)
     return list(
         table.query_entities(
             query_filter="PartitionKey eq @pk and Timestamp ge @since",
@@ -278,7 +279,7 @@ def _fetch_changed_rows(partition_key: str, since: datetime) -> list[Any]:
 
 
 def _fetch_latest_for_execs(partition_key: str, exec_ids: set[str]) -> list[dict]:
-    table = legacy._get_table_client(legacy.TABLE_NAME)  # noqa: SLF001
+    table = storage.get_table_client(TABLE_NAME)
     grouped: dict[str, list[dict]] = {}
     ids = sorted(exec_ids)
     for i in range(0, len(ids), _EXEC_ID_BATCH_SIZE):
@@ -297,9 +298,9 @@ def _fetch_latest_for_execs(partition_key: str, exec_ids: set[str]) -> list[dict
 
     items = []
     for rows in grouped.values():
-        latest = legacy._latest_log_entity(rows)  # noqa: SLF001
+        latest = executions.latest_log_entity(rows)
         try:
-            items.append(legacy._hydrate_log_field(latest))  # noqa: SLF001
+            items.append(log_blobs.hydrate_log_field(latest))
         except Exception as e:
             logging.error(f"Failed to hydrate log item {latest.get('RowKey')}: {e}")
             items.append(latest)

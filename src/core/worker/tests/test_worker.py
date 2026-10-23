@@ -10,19 +10,19 @@ actually exist: `healthz` and the shared `_is_authorized_request` guard used
 by `processes` / `processes/stop`.
 """
 
-import importlib
 import json
 
 import azure.functions as func
+from routes import system
+
+from core import reporting, security
 
 
 def test_healthz_is_anonymous_and_reports_ok():
-    worker = importlib.import_module("function_app")
-
     req = func.HttpRequest(
         "GET", "https://x/api/healthz", params={}, headers={}, body=b""
     )
-    res = worker.heartbeat(req)
+    res = system.heartbeat(req)
 
     assert res.status_code == 200
     body = json.loads(res.get_body())
@@ -32,8 +32,7 @@ def test_healthz_is_anonymous_and_reports_ok():
 
 
 def test_is_authorized_request_requires_matching_secret_key(monkeypatch):
-    worker = importlib.import_module("function_app")
-    monkeypatch.setattr(worker, "_CLOUDO_SECRET_KEY", "test-secret")
+    monkeypatch.setattr(security, "CLOUDO_SECRET_KEY", "test-secret")
 
     authorized_req = func.HttpRequest(
         "GET",
@@ -42,7 +41,7 @@ def test_is_authorized_request_requires_matching_secret_key(monkeypatch):
         headers={"x-cloudo-key": "test-secret"},
         body=b"",
     )
-    assert worker._is_authorized_request(authorized_req) is True
+    assert security.is_authorized_request(authorized_req) is True
 
     wrong_key_req = func.HttpRequest(
         "GET",
@@ -51,19 +50,18 @@ def test_is_authorized_request_requires_matching_secret_key(monkeypatch):
         headers={"x-cloudo-key": "wrong-secret"},
         body=b"",
     )
-    assert worker._is_authorized_request(wrong_key_req) is False
+    assert security.is_authorized_request(wrong_key_req) is False
 
     no_key_req = func.HttpRequest(
         "GET", "https://x/api/processes", params={}, headers={}, body=b""
     )
-    assert worker._is_authorized_request(no_key_req) is False
+    assert security.is_authorized_request(no_key_req) is False
 
 
 def test_is_authorized_request_rejects_everything_when_no_secret_configured(
     monkeypatch,
 ):
-    worker = importlib.import_module("function_app")
-    monkeypatch.setattr(worker, "_CLOUDO_SECRET_KEY", "")
+    monkeypatch.setattr(security, "CLOUDO_SECRET_KEY", "")
 
     req = func.HttpRequest(
         "GET",
@@ -72,14 +70,12 @@ def test_is_authorized_request_rejects_everything_when_no_secret_configured(
         headers={"x-cloudo-key": ""},
         body=b"",
     )
-    assert worker._is_authorized_request(req) is False
+    assert security.is_authorized_request(req) is False
 
 
 def test_post_status_propagates_team_to_receiver_payload():
-    worker = importlib.import_module("function_app")
-
     message = json.loads(
-        worker._post_status(
+        reporting.post_status(
             {
                 "requestedAt": "2026-10-01T10:00:00+00:00",
                 "id": "schema-1",

@@ -1,0 +1,102 @@
+name: Release
+
+on:
+  push:
+    branches: [ main ]
+
+permissions:
+  contents: write
+  pull-requests: write
+  packages: write
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+env:
+  REGISTRY: ghcr.io/${{ github.repository_owner }}
+  IMAGE_PREFIX: cloudo
+
+jobs:
+  release-please:
+    runs-on: ubuntu-latest
+    outputs:
+      paths_released: ${{ steps.release.outputs.paths_released }}
+      outputs: ${{ toJSON(steps.release.outputs) }}
+    steps:
+      - id: release
+        uses: googleapis/release-please-action@45996ed1f6d02564a971a2fa1b5860e934307cf7 # v5.0.0
+        with:
+          token: ${{ secrets.RELEASE_PLEASE_TOKEN || github.token }}
+          config-file: release-please-config.json
+          manifest-file: .release-please-manifest.json
+
+  promote:
+    name: Promote ${{ matrix.component }}
+    needs: release-please
+    if: needs.release-please.outputs.paths_released != '[]'
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - component: orchestrator
+            path: src/core/orchestrator
+            target: orchestrator
+          - component: worker
+            path: src/core/worker
+            target: worker
+          - component: ui
+            path: src/core/cloudo-ui
+            target: fe
+          - component: agent
+            path: src/core/agent
+            target: agent
+    env:
+      RELEASED: ${{ fromJSON(needs.release-please.outputs.outputs)[format('{0}--release_created', matrix.path)] }}
+      VERSION: ${{ fromJSON(needs.release-please.outputs.outputs)[format('{0}--version', matrix.path)] }}
+      SHA: ${{ fromJSON(needs.release-please.outputs.outputs)[format('{0}--sha', matrix.path)] }}
+    steps:
+      - name: Skip component without release
+        if: env.RELEASED != 'true'
+        run: echo "${{ matrix.component }} was not released"
+
+      - name: Login to GHCR
+        if: env.RELEASED == 'true'
+        uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Look for the merge queue image
+        if: env.RELEASED == 'true'
+        id: source
+        run: |
+          IMAGE="${REGISTRY}/${IMAGE_PREFIX}-${{ matrix.component }}"
+          echo "image=${IMAGE}" >> "$GITHUB_OUTPUT"
+          if docker buildx imagetools inspect "${IMAGE}:${SHA}" >/dev/null 2>&1; then
+            echo "exists=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "::warning::${IMAGE}:${SHA} not found, building it from the release commit"
+            echo "exists=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Checkout release commit
+        if: env.RELEASED == 'true' && steps.source.outputs.exists != 'true'
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          ref: ${{ env.SHA }}
+
+      - name: Build & push ${{ matrix.component }}:${{ env.SHA }}
+        if: env.RELEASED == 'true' && steps.source.outputs.exists != 'true'
+        run: |
+          make build-${{ matrix.target }} DOCKER=docker REGISTRY="${REGISTRY}" IMAGE_PREFIX="${IMAGE_PREFIX}" PLATFORM="linux/amd64" VERSION="${SHA}"
+          make push-${{ matrix.target }} DOCKER=docker REGISTRY="${REGISTRY}" IMAGE_PREFIX="${IMAGE_PREFIX}" PLATFORM="linux/amd64" VERSION="${SHA}"
+
+      - name: Tag ${{ matrix.component }}:${{ env.VERSION }}
+        if: env.RELEASED == 'true'
+        run: |
+          IMAGE="${{ steps.source.outputs.image }}"
+          docker buildx imagetools create --tag "${IMAGE}:${VERSION}" "${IMAGE}:${SHA}"
+          echo "Released ${IMAGE}:${VERSION} (from ${IMAGE}:${SHA})" >> "$GITHUB_STEP_SUMMARY"

@@ -1,4 +1,3 @@
-import ast
 import asyncio
 import json
 from unittest.mock import MagicMock, patch
@@ -11,8 +10,7 @@ from fastapi_app import (
     _configure_runtime_logging,
     _normalize_table_entity,
     _OutBinding,
-    _parse_decorator_kwargs,
-    _resolve_value,
+    _read_route_specs,
     _sanitize_method,
     _to_fastapi_response,
     _translate_route_pattern,
@@ -37,11 +35,6 @@ def test_normalize_table_entity():
     norm = _normalize_table_entity(data)
     assert norm["name"] == "test"
     assert norm["items"] == json.dumps([1, 2, 3])
-
-
-def test_resolve_value():
-    assert _resolve_value("STORAGE_CONNECTION") is not None
-    assert _resolve_value("UNKNOWN_VALUE_XYZ") == "UNKNOWN_VALUE_XYZ"
 
 
 def test_sanitize_method():
@@ -72,12 +65,19 @@ def test_translate_route_pattern():
     assert _translate_route_pattern("ping") == ["ping"]
 
 
-def test_parse_decorator_kwargs():
-    tree = ast.parse("route(route='jobs', methods=['POST'])")
-    call_node = tree.body[0].value
-    kwargs = _parse_decorator_kwargs(call_node)
-    assert kwargs.get("route") == "jobs"
-    assert kwargs.get("methods") == ["POST"]
+def test_read_route_specs_uses_function_metadata():
+    specs = {spec["function_name"]: spec for spec in _read_route_specs()}
+
+    assert specs["heartbeat"]["route"] == "healthz"
+    assert callable(specs["heartbeat"]["handler"])
+
+    stop = specs["stop_process"]
+    assert [b["kind"] for b in stop["bindings"]] == ["queue_output"]
+    assert stop["bindings"][0]["queue_name"]
+
+    # Queue/timer triggers are consumed by background threads, not routes.
+    assert "process_runbook" not in specs
+    assert "heartbeat_trigger" not in specs
 
 
 def test_admin_endpoints():
@@ -120,7 +120,7 @@ def test_process_queue_message_renews_lease_until_done():
     with (
         patch.object(fastapi_app, "_get_queue_client", return_value=queue),
         patch.object(fastapi_app, "QUEUE_VISIBILITY_RENEW_SECONDS", 0.1),
-        patch.object(fastapi_app.legacy, "process_runbook", side_effect=slow_runbook),
+        patch.object(fastapi_app.runbooks, "process_runbook", side_effect=slow_runbook),
     ):
         fastapi_app._process_queue_message(msg)
 

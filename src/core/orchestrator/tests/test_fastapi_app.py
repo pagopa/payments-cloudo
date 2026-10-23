@@ -1,4 +1,3 @@
-import ast
 import asyncio
 import json
 from unittest.mock import MagicMock, patch
@@ -11,8 +10,7 @@ from fastapi_app import (
     _configure_runtime_logging,
     _normalize_table_entity,
     _OutBinding,
-    _parse_decorator_kwargs,
-    _resolve_value,
+    _read_route_specs,
     _sanitize_method,
     _to_fastapi_response,
     _translate_route_pattern,
@@ -39,11 +37,6 @@ def test_normalize_table_entity():
     assert norm["str"] == "hello"
     assert norm["dict"] == json.dumps({"a": 1})
     assert norm["list"] == json.dumps([1, 2])
-
-
-def test_resolve_value():
-    assert _resolve_value("TABLE_EXECUTION") is not None
-    assert _resolve_value("NON_EXISTING_ATTR_12345") == "NON_EXISTING_ATTR_12345"
 
 
 def test_sanitize_method():
@@ -80,13 +73,29 @@ def test_translate_route_pattern():
     assert _translate_route_pattern("health") == ["health"]
 
 
-def test_parse_decorator_kwargs():
-    tree = ast.parse("route(route='test', methods=['GET', 'POST'], arg=TABLE_NAME)")
-    call_node = tree.body[0].value
-    kwargs = _parse_decorator_kwargs(call_node)
-    assert kwargs.get("route") == "test"
-    assert kwargs.get("methods") == ["GET", "POST"]
-    assert kwargs.get("arg") == "TABLE_NAME"
+def test_read_route_specs_uses_function_metadata():
+    specs = {spec["function_name"]: spec for spec in _read_route_specs()}
+
+    get_log = specs["get_log"]
+    assert get_log["route"] == "logs/{partitionKey}/{execId}"
+    assert callable(get_log["handler"])
+    assert get_log["bindings"] == [
+        {
+            "kind": "table_input",
+            "arg_name": "log_entity",
+            "table_name": "RunbookLogs",
+            "partition_key": "{partitionKey}",
+            "row_key": None,
+            "filter": "ExecId eq '{execId}'",
+        }
+    ]
+
+    receiver = specs["ReceiverHttp"]
+    assert [b["kind"] for b in receiver["bindings"]] == ["table_output"]
+
+    # Non-HTTP functions (queue/timer triggers) are not exposed as routes.
+    assert "Receiver" not in specs
+    assert "scheduler_engine" not in specs
 
 
 def test_app_endpoints():

@@ -1,12 +1,13 @@
 from unittest.mock import MagicMock, patch
 
-import function_app
 import log_stream
 import pytest
 from azure.core.exceptions import ResourceNotModifiedError
 from fastapi.testclient import TestClient
 from fastapi_app import app
 from starlette.websockets import WebSocketDisconnect
+
+from core import executions, security, storage
 
 WS_PATH = "/api/ws/logs/20260101/exec-1"
 SESSION = {"username": "alice", "role": "OPERATOR", "team": "payments"}
@@ -39,9 +40,7 @@ def client():
 
 @pytest.fixture
 def valid_token():
-    with patch.object(
-        function_app, "_verify_session_token", return_value=(True, SESSION)
-    ):
+    with patch.object(security, "verify_session_token", return_value=(True, SESSION)):
         yield
 
 
@@ -55,7 +54,7 @@ def _collect(ws):
 
 
 def test_rejects_invalid_token(client):
-    with patch.object(function_app, "_verify_session_token", return_value=(False, {})):
+    with patch.object(security, "verify_session_token", return_value=(False, {})):
         with client.websocket_connect(WS_PATH) as ws:
             ws.send_json({"type": "auth", "token": "bad"})
             messages, code = _collect(ws)
@@ -124,7 +123,7 @@ def test_forbidden_for_other_team(client, valid_token):
 def test_admin_include_all_teams_can_view_other_team(client):
     admin = {"username": "root", "role": "ADMIN", "team": "platform"}
     with (
-        patch.object(function_app, "_verify_session_token", return_value=(True, admin)),
+        patch.object(security, "verify_session_token", return_value=(True, admin)),
         patch.object(
             log_stream,
             "_fetch_latest_entity",
@@ -157,7 +156,7 @@ def test_log_tail_uses_etag_for_blob_refs():
     ref = "blobref://runbook-logs/20260101/exec-1/RUNNING_exec-1.log"
 
     tail = log_stream._LogTail()
-    with patch.object(function_app, "_get_blob_service", return_value=service):
+    with patch.object(storage, "get_blob_service", return_value=service):
         assert tail.read(ref) == "hello"
         assert tail.read(ref) is None
 
@@ -177,18 +176,18 @@ def test_latest_log_entity_prefers_priority_then_time_then_rowkey():
         _row("accepted", "", row_key="b", requested_at="2026-01-01 10:00:09"),
         _row("succeeded", "", row_key="c", requested_at="2026-01-01 10:00:01"),
     ]
-    assert function_app._latest_log_entity(rows)["RowKey"] == "c"
+    assert executions.latest_log_entity(rows)["RowKey"] == "c"
 
     same_priority = [
         _row("running", "", row_key="a", requested_at="2026-01-01 10:00:05"),
         _row("running", "", row_key="b", requested_at="2026-01-01 10:00:01"),
         _row("running", "", row_key="c", requested_at=""),
     ]
-    assert function_app._latest_log_entity(same_priority)["RowKey"] == "a"
+    assert executions.latest_log_entity(same_priority)["RowKey"] == "a"
 
     tie = [_row("running", "", row_key="a"), _row("running", "", row_key="b")]
-    assert function_app._latest_log_entity(tie)["RowKey"] == "b"
-    assert function_app._latest_log_entity([]) is None
+    assert executions.latest_log_entity(tie)["RowKey"] == "b"
+    assert executions.latest_log_entity([]) is None
 
 
 class _Entity(dict):
@@ -249,7 +248,7 @@ def test_executions_stream_sends_only_changed_executions(client, valid_token):
 
 def test_executions_stream_requires_auth(client):
     with (
-        patch.object(function_app, "_verify_session_token", return_value=(False, {})),
+        patch.object(security, "verify_session_token", return_value=(False, {})),
         client.websocket_connect("/api/ws/executions/20260101") as ws,
     ):
         ws.send_json({"type": "auth", "token": "bad"})

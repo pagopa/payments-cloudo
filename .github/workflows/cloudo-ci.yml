@@ -3,10 +3,51 @@ name: CloudDO CI
 on:
   pull_request:
     branches: [ main ]
-  push:
-    branches: [ main ]
+  merge_group:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.event_name }}-${{ github.event.pull_request.number || github.event.merge_group.head_sha }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+env:
+  REGISTRY: ghcr.io/${{ github.repository_owner }}
+  IMAGE_PREFIX: cloudo
 
 jobs:
+  changes:
+    name: Detect changed components
+    runs-on: ubuntu-latest
+    outputs:
+      components: ${{ steps.diff.outputs.components }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          fetch-depth: 0
+
+      - name: Diff against the target branch
+        id: diff
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.merge_group.base_sha }}
+          HEAD_SHA: ${{ github.sha }}
+        run: |
+          files="$(git diff --name-only "$BASE_SHA" "$HEAD_SHA")"
+          echo "$files"
+          # CI/build changes rebuild everything.
+          all=false
+          if echo "$files" | grep -qE '^(\.github/workflows/cloudo-ci\.yml|Makefile)$'; then all=true; fi
+          changed() { [ "$all" = true ] || echo "$files" | grep -q "^$1/"; }
+          json="{"
+          for pair in orchestrator:src/core/orchestrator worker:src/core/worker ui:src/core/cloudo-ui agent:src/core/agent; do
+            name="${pair%%:*}"; path="${pair#*:}"
+            if changed "$path"; then value=true; else value=false; fi
+            json="${json}\"${name}\":${value},"
+          done
+          json="${json%,}}"
+          echo "components=${json}" | tee -a "$GITHUB_OUTPUT"
+
   check:
     runs-on: ubuntu-latest
     strategy:
@@ -63,274 +104,63 @@ jobs:
       - name: Build Frontend
         run: npm run build
         working-directory: src/core/cloudo-ui
-  versioning:
-    name: Versioning
-    needs: [check]
-    runs-on: ubuntu-latest
-    outputs:
-      orchestrator_version: ${{ steps.set-outputs.outputs.orchestrator_version }}
-      orchestrator_changed: ${{ steps.set-outputs.outputs.orchestrator_changed }}
-      worker_version: ${{ steps.set-outputs.outputs.worker_version }}
-      worker_changed: ${{ steps.set-outputs.outputs.worker_changed }}
-      ui_version: ${{ steps.set-outputs.outputs.ui_version }}
-      ui_changed: ${{ steps.set-outputs.outputs.ui_changed }}
-      agent_version: ${{ steps.set-outputs.outputs.agent_version }}
-      agent_changed: ${{ steps.set-outputs.outputs.agent_changed }}
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
-        with:
-          fetch-depth: 0  # Ensure tags and full history are available
 
-      - name: Orchestrator Version
-        id: orchestrator-ver
-        uses: paulhatch/semantic-version@a8f8f59fd7f0625188492e945240f12d7ad2dca3 # v5.4.0
-        with:
-          change_path: "src/core/orchestrator"
-          namespace: orchestrator
-          major_pattern: "BREAKING CHANGE"
-          minor_pattern: "feat"
-          tag_prefix: "v"
-
-      - name: Worker Version
-        id: worker-ver
-        uses: paulhatch/semantic-version@a8f8f59fd7f0625188492e945240f12d7ad2dca3 # v5.4.0
-        with:
-          change_path: "src/core/worker"
-          namespace: worker
-          major_pattern: "BREAKING CHANGE"
-          minor_pattern: "feat"
-          tag_prefix: "v"
-
-      - name: UI Version
-        id: ui-ver
-        uses: paulhatch/semantic-version@a8f8f59fd7f0625188492e945240f12d7ad2dca3 # v5.4.0
-        with:
-          change_path: "src/core/cloudo-ui"
-          namespace: ui
-          major_pattern: "BREAKING CHANGE"
-          minor_pattern: "feat"
-          tag_prefix: "v"
-
-      - name: Agent Version
-        id: agent-ver
-        uses: paulhatch/semantic-version@a8f8f59fd7f0625188492e945240f12d7ad2dca3 # v5.4.0
-        with:
-          change_path: "src/core/agent"
-          namespace: agent
-          major_pattern: "BREAKING CHANGE"
-          minor_pattern: "feat"
-          tag_prefix: "v"
-
-      - name: Set composite outputs
-        id: set-outputs
-        run: |
-          # Use "version" (X.Y.Z). It is present even when "clean_version" may be empty.
-          echo "orchestrator_version=${{ steps.orchestrator-ver.outputs.version }}" >> "$GITHUB_OUTPUT"
-          echo "orchestrator_changed=${{ steps.orchestrator-ver.outputs.changed }}" >> "$GITHUB_OUTPUT"
-          echo "worker_version=${{ steps.worker-ver.outputs.version }}" >> "$GITHUB_OUTPUT"
-          echo "worker_changed=${{ steps.worker-ver.outputs.changed }}" >> "$GITHUB_OUTPUT"
-          echo "ui_version=${{ steps.ui-ver.outputs.version }}" >> "$GITHUB_OUTPUT"
-          echo "ui_changed=${{ steps.ui-ver.outputs.changed }}" >> "$GITHUB_OUTPUT"
-          echo "agent_version=${{ steps.agent-ver.outputs.version }}" >> "$GITHUB_OUTPUT"
-          echo "agent_changed=${{ steps.agent-ver.outputs.changed }}" >> "$GITHUB_OUTPUT"
-
-      - name: Create and push orchestrator tag (main only)
-        if: github.event_name == 'push' && github.ref == 'refs/heads/main' && steps.orchestrator-ver.outputs.changed == 'true'
-        env:
-          VERSION: ${{ steps.orchestrator-ver.outputs.version }}
-        run: |
-          # Create and push vX.Y.Z-orchestrator tag if it doesn't already exist
-          TAG="v${VERSION}-orchestrator"
-          if git rev-parse "$TAG" >/dev/null 2>&1; then
-            echo "Tag already exists: $TAG"; exit 0
-          fi
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git tag -a "$TAG" -m "Release $TAG"
-          git push origin "$TAG"
-
-      - name: Create and push worker tag (main only)
-        if: github.event_name == 'push' && github.ref == 'refs/heads/main' && steps.worker-ver.outputs.changed == 'true'
-        env:
-          VERSION: ${{ steps.worker-ver.outputs.version }}
-        run: |
-          # Create and push vX.Y.Z-worker tag if it doesn't already exist
-          TAG="v${VERSION}-worker"
-          if git rev-parse "$TAG" >/dev/null 2>&1; then
-            echo "Tag already exists: $TAG"; exit 0
-          fi
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git tag -a "$TAG" -m "Release $TAG"
-          git push origin "$TAG"
-
-      - name: Create and push UI tag (main only)
-        if: github.event_name == 'push' && github.ref == 'refs/heads/main' && steps.ui-ver.outputs.changed == 'true'
-        env:
-          VERSION: ${{ steps.ui-ver.outputs.version }}
-        run: |
-          # Create and push vX.Y.Z-ui tag if it doesn't already exist
-          TAG="v${VERSION}-ui"
-          if git rev-parse "$TAG" >/dev/null 2>&1; then
-            echo "Tag already exists: $TAG"; exit 0
-          fi
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git tag -a "$TAG" -m "Release $TAG"
-          git push origin "$TAG"
-
-      - name: Create and push agent tag (main only)
-        if: github.event_name == 'push' && github.ref == 'refs/heads/main' && steps.agent-ver.outputs.changed == 'true'
-        env:
-          VERSION: ${{ steps.agent-ver.outputs.version }}
-        run: |
-          # Create and push vX.Y.Z-agent tag if it doesn't already exist
-          TAG="v${VERSION}-agent"
-          if git rev-parse "$TAG" >/dev/null 2>&1; then
-            echo "Tag already exists: $TAG"; exit 0
-          fi
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git tag -a "$TAG" -m "Release $TAG"
-          git push origin "$TAG"
-
-      - name: Generate semantic release notes (main only)
-        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-        id: relnotes
-        uses: release-drafter/release-drafter@b1476f6e6eb133afa41ed8589daba6dc69b4d3f5
-        with:
-          config-name: release-drafter.yml
-          disable-autolabeler: true
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Create GitHub Release for orchestrator
-        if: github.event_name == 'push' && github.ref == 'refs/heads/main' && steps.orchestrator-ver.outputs.changed == 'true'
-        uses: softprops/action-gh-release@97d42c1b50f585f357413698aa1b779307aa0d52
-        with:
-          tag_name: v${{ steps.orchestrator-ver.outputs.version }}-orchestrator
-          name: Orchestrator v${{ steps.orchestrator-ver.outputs.version }}
-          body: ${{ steps.relnotes.outputs.body || 'Automated semantic release for Orchestrator.' }}
-          generate_release_notes: false
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Create GitHub Release for worker
-        if: github.event_name == 'push' && github.ref == 'refs/heads/main' && steps.worker-ver.outputs.changed == 'true'
-        uses: softprops/action-gh-release@97d42c1b50f585f357413698aa1b779307aa0d52
-        with:
-          tag_name: v${{ steps.worker-ver.outputs.version }}-worker
-          name: Worker v${{ steps.worker-ver.outputs.version }}
-          body: ${{ steps.relnotes.outputs.body || 'Automated semantic release for Worker.' }}
-          generate_release_notes: false
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Create GitHub Release for UI
-        if: github.event_name == 'push' && github.ref == 'refs/heads/main' && steps.ui-ver.outputs.changed == 'true'
-        uses: softprops/action-gh-release@97d42c1b50f585f357413698aa1b779307aa0d52
-        with:
-          tag_name: v${{ steps.ui-ver.outputs.version }}-ui
-          name: UI v${{ steps.ui-ver.outputs.version }}
-          body: ${{ steps.relnotes.outputs.body || 'Automated semantic release for UI.' }}
-          generate_release_notes: false
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Create GitHub Release for agent
-        if: github.event_name == 'push' && github.ref == 'refs/heads/main' && steps.agent-ver.outputs.changed == 'true'
-        uses: softprops/action-gh-release@97d42c1b50f585f357413698aa1b779307aa0d52
-        with:
-          tag_name: v${{ steps.agent-ver.outputs.version }}-agent
-          name: Agent v${{ steps.agent-ver.outputs.version }}
-          body: ${{ steps.relnotes.outputs.body || 'Automated semantic release for Agent.' }}
-          generate_release_notes: false
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-  docker:
-    name: Build & Push via Makefile
-    needs: [versioning]
+  build:
+    name: Build & push ${{ matrix.component }}
+    if: github.event_name == 'merge_group'
+    needs: [ changes, check ]
     runs-on: ubuntu-latest
     permissions:
       contents: read
       packages: write
-    env:
-      REGISTRY: ghcr.io/${{ github.repository_owner }}
-      IMAGE_PREFIX: cloudo
-      SHA_VERSION: ${{ github.sha }}
-      IS_MAIN_PUSH: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
-      ORCHESTRATOR_VER: ${{ needs.versioning.outputs.orchestrator_version }}
-      ORCHESTRATOR_CHANGED: ${{ needs.versioning.outputs.orchestrator_changed }}
-      WORKER_VER: ${{ needs.versioning.outputs.worker_version }}
-      WORKER_CHANGED: ${{ needs.versioning.outputs.worker_changed }}
-      UI_VER: ${{ needs.versioning.outputs.ui_version }}
-      UI_CHANGED: ${{ needs.versioning.outputs.ui_changed }}
-      AGENT_VER: ${{ needs.versioning.outputs.agent_version }}
-      AGENT_CHANGED: ${{ needs.versioning.outputs.agent_changed }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - component: orchestrator
+            target: orchestrator
+          - component: worker
+            target: worker
+          - component: ui
+            target: fe
+          - component: agent
+            target: agent
     steps:
+      - name: Skip unchanged component
+        if: ${{ !fromJSON(needs.changes.outputs.components)[matrix.component] }}
+        run: echo "${{ matrix.component }} unchanged, nothing to build"
+
       - name: Checkout
+        if: ${{ fromJSON(needs.changes.outputs.components)[matrix.component] }}
         uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
 
       - name: Login to GHCR
-        if: env.IS_MAIN_PUSH == 'true'
+        if: ${{ fromJSON(needs.changes.outputs.components)[matrix.component] }}
         uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Debug computed versions
+      - name: Build & push ${{ env.IMAGE_PREFIX }}-${{ matrix.component }}:${{ github.sha }}
+        if: ${{ fromJSON(needs.changes.outputs.components)[matrix.component] }}
         run: |
-          echo "ORCHESTRATOR_CHANGED=${ORCHESTRATOR_CHANGED}"
-          echo "ORCHESTRATOR_VER='${ORCHESTRATOR_VER}'"
-          echo "WORKER_CHANGED=${WORKER_CHANGED}"
-          echo "WORKER_VER='${WORKER_VER}'"
-          echo "UI_CHANGED=${UI_CHANGED}"
-          echo "UI_VER='${UI_VER}'"
-          echo "AGENT_CHANGED=${AGENT_CHANGED}"
-          echo "AGENT_VER='${AGENT_VER}'"
+          make build-${{ matrix.target }} DOCKER=docker REGISTRY="${REGISTRY}" IMAGE_PREFIX="${IMAGE_PREFIX}" PLATFORM="linux/amd64" VERSION="${{ github.sha }}"
+          make push-${{ matrix.target }} DOCKER=docker REGISTRY="${REGISTRY}" IMAGE_PREFIX="${IMAGE_PREFIX}" PLATFORM="linux/amd64" VERSION="${{ github.sha }}"
 
-      - name: Build & Push orchestrator (SHA + semver)
-        if: env.ORCHESTRATOR_CHANGED == 'true'
+  # Single, stable required status check for the ruleset (job names above vary
+  # with the matrix; skipped jobs count as passed).
+  ci-ok:
+    name: ci-ok
+    if: always()
+    needs: [ changes, check, build ]
+    runs-on: ubuntu-latest
+    steps:
+      - name: All required jobs passed
+        env:
+          RESULTS: ${{ join(needs.*.result, ' ') }}
         run: |
-          make build-orchestrator DOCKER=docker REGISTRY="${REGISTRY}" IMAGE_PREFIX="${IMAGE_PREFIX}" PLATFORM="linux/amd64" VERSION="${SHA_VERSION}"
-          if [ "${IS_MAIN_PUSH}" = "true" ]; then
-            [ -n "${ORCHESTRATOR_VER}" ] || (echo "ORCHESTRATOR_VER is empty" && exit 1)
-            make build-orchestrator DOCKER=docker REGISTRY="${REGISTRY}" IMAGE_PREFIX="${IMAGE_PREFIX}" PLATFORM="linux/amd64" VERSION="${ORCHESTRATOR_VER}"
-            make push-orchestrator DOCKER=docker REGISTRY="${REGISTRY}" IMAGE_PREFIX="${IMAGE_PREFIX}" PLATFORM="linux/amd64" VERSION="${SHA_VERSION}"
-            make push-orchestrator DOCKER=docker REGISTRY="${REGISTRY}" IMAGE_PREFIX="${IMAGE_PREFIX}" PLATFORM="linux/amd64" VERSION="${ORCHESTRATOR_VER}"
-          fi
-
-      - name: Build & Push worker (SHA + semver)
-        if: env.WORKER_CHANGED == 'true'
-        run: |
-          make build-worker DOCKER=docker REGISTRY="${REGISTRY}" IMAGE_PREFIX="${IMAGE_PREFIX}" PLATFORM="linux/amd64" VERSION="${SHA_VERSION}"
-          if [ "${IS_MAIN_PUSH}" = "true" ]; then
-            [ -n "${WORKER_VER}" ] || (echo "WORKER_VER is empty" && exit 1)
-            make build-worker DOCKER=docker REGISTRY="${REGISTRY}" IMAGE_PREFIX="${IMAGE_PREFIX}" PLATFORM="linux/amd64" VERSION="${WORKER_VER}"
-            make push-worker DOCKER=docker REGISTRY="${REGISTRY}" IMAGE_PREFIX="${IMAGE_PREFIX}" PLATFORM="linux/amd64" VERSION="${SHA_VERSION}"
-            make push-worker DOCKER=docker REGISTRY="${REGISTRY}" IMAGE_PREFIX="${IMAGE_PREFIX}" PLATFORM="linux/amd64" VERSION="${WORKER_VER}"
-          fi
-
-      - name: Build & Push UI (SHA + semver)
-        if: env.UI_CHANGED == 'true'
-        run: |
-          make build-fe DOCKER=docker REGISTRY="${REGISTRY}" IMAGE_PREFIX="${IMAGE_PREFIX}" PLATFORM="linux/amd64" VERSION="${SHA_VERSION}"
-          if [ "${IS_MAIN_PUSH}" = "true" ]; then
-            [ -n "${UI_VER}" ] || (echo "UI_VER is empty" && exit 1)
-            make build-fe DOCKER=docker REGISTRY="${REGISTRY}" IMAGE_PREFIX="${IMAGE_PREFIX}" PLATFORM="linux/amd64" VERSION="${UI_VER}"
-            make push-fe DOCKER=docker REGISTRY="${REGISTRY}" IMAGE_PREFIX="${IMAGE_PREFIX}" PLATFORM="linux/amd64" VERSION="${SHA_VERSION}"
-            make push-fe DOCKER=docker REGISTRY="${REGISTRY}" IMAGE_PREFIX="${IMAGE_PREFIX}" PLATFORM="linux/amd64" VERSION="${UI_VER}"
-          fi
-
-      - name: Build & Push agent (SHA + semver)
-        if: env.AGENT_CHANGED == 'true'
-        run: |
-          make build-agent DOCKER=docker REGISTRY="${REGISTRY}" IMAGE_PREFIX="${IMAGE_PREFIX}" PLATFORM="linux/amd64" VERSION="${SHA_VERSION}"
-          if [ "${IS_MAIN_PUSH}" = "true" ]; then
-            [ -n "${AGENT_VER}" ] || (echo "AGENT_VER is empty" && exit 1)
-            make build-agent DOCKER=docker REGISTRY="${REGISTRY}" IMAGE_PREFIX="${IMAGE_PREFIX}" PLATFORM="linux/amd64" VERSION="${AGENT_VER}"
-            make push-agent DOCKER=docker REGISTRY="${REGISTRY}" IMAGE_PREFIX="${IMAGE_PREFIX}" PLATFORM="linux/amd64" VERSION="${SHA_VERSION}"
-            make push-agent DOCKER=docker REGISTRY="${REGISTRY}" IMAGE_PREFIX="${IMAGE_PREFIX}" PLATFORM="linux/amd64" VERSION="${AGENT_VER}"
-          fi
+          echo "Job results: ${RESULTS}"
+          case " ${RESULTS} " in
+            *" failure "*|*" cancelled "*) echo "A required job did not succeed"; exit 1 ;;
+          esac

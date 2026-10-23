@@ -3,7 +3,7 @@ import smart_routing
 
 def test_route_alert_fans_out_all_matching_global_and_team_rules(monkeypatch):
     monkeypatch.setattr(
-        smart_routing,
+        smart_routing.config,
         "load_routing_config",
         lambda: {
             "defaults": {"jsm": {"team": "default"}, "slack": {"channel": "#default"}},
@@ -27,9 +27,11 @@ def test_route_alert_fans_out_all_matching_global_and_team_rules(monkeypatch):
         },
     )
     monkeypatch.setattr(
-        smart_routing, "resolve_slack_token", lambda team: f"slack-{team}"
+        smart_routing.settings, "resolve_slack_token", lambda team: f"slack-{team}"
     )
-    monkeypatch.setattr(smart_routing, "resolve_jsm_apikey", lambda team: f"jsm-{team}")
+    monkeypatch.setattr(
+        smart_routing.settings, "resolve_jsm_apikey", lambda team: f"jsm-{team}"
+    )
 
     decision = smart_routing.route_alert(
         {"team": "payments", "status": "failed", "severity": "Sev2", "oncall": "true"}
@@ -80,7 +82,7 @@ def test_jsm_targets_are_dropped_when_execution_is_not_oncall(monkeypatch):
     import smart_routing
 
     monkeypatch.setattr(
-        smart_routing,
+        smart_routing.config,
         "load_routing_config",
         lambda: {
             "defaults": {"slack": {"channel": "#d"}, "jsm": {"team": "default"}},
@@ -93,7 +95,9 @@ def test_jsm_targets_are_dropped_when_execution_is_not_oncall(monkeypatch):
             ],
         },
     )
-    monkeypatch.setattr(smart_routing, "resolve_jsm_apikey", lambda team: "key")
+    monkeypatch.setattr(
+        smart_routing.settings, "resolve_jsm_apikey", lambda team: "key"
+    )
 
     ctx = {"status": "failed", "team": "infra", "oncall": "false"}
     off = smart_routing.route_alert(ctx)

@@ -1,18 +1,19 @@
-import ast
 import concurrent.futures
+import functools
 import json
 import logging
 import os
 import re
 import threading
 from contextlib import asynccontextmanager
-from pathlib import Path
 from typing import Any, Callable, Optional
 
 import azure.functions as func
 import function_app as legacy
+from core.config import QUEUE_NAME, STORAGE_CONNECTION
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse, Response
+from routes import runbooks, system
 
 API_PREFIX = os.getenv("API_PREFIX", "/api")
 POLL_SECONDS = float(os.getenv("FASTAPI_QUEUE_POLL_SECONDS", "2"))
@@ -94,11 +95,9 @@ def _get_queue_client(queue_name: str):
         TextBase64EncodePolicy,
     )
 
-    conn_str = (os.getenv(legacy.STORAGE_CONNECTION) or "").strip()
+    conn_str = (os.getenv(STORAGE_CONNECTION) or "").strip()
     if not conn_str:
-        raise ValueError(
-            f"Missing storage connection string in '{legacy.STORAGE_CONNECTION}'"
-        )
+        raise ValueError(f"Missing storage connection string in '{STORAGE_CONNECTION}'")
 
     key = (conn_str, queue_name)
     client = _QUEUE_CLIENTS.get(key)
@@ -111,12 +110,6 @@ def _get_queue_client(queue_name: str):
         )
         _QUEUE_CLIENTS[key] = client
     return client
-
-
-def _resolve_value(value: Any) -> Any:
-    if isinstance(value, str) and hasattr(legacy, value):
-        return getattr(legacy, value)
-    return value
 
 
 def _sanitize_method(method: Any) -> str:
@@ -158,7 +151,7 @@ def _to_fastapi_response(result: Any) -> Response:
 
 
 def _query_table_rows(binding: dict[str, Any], params: dict[str, str]) -> str:
-    table_name = _resolve_value(binding.get("table_name"))
+    table_name = binding.get("table_name")
     if not table_name:
         return "[]"
 
@@ -184,7 +177,7 @@ def _query_table_rows(binding: dict[str, Any], params: dict[str, str]) -> str:
 
 
 def _flush_table_output(binding: dict[str, Any], out: _OutBinding) -> None:
-    table_name = _resolve_value(binding.get("table_name"))
+    table_name = binding.get("table_name")
     if not table_name:
         return
 
@@ -202,7 +195,7 @@ def _flush_table_output(binding: dict[str, Any], out: _OutBinding) -> None:
 
 
 def _flush_queue_output(binding: dict[str, Any], out: _OutBinding) -> None:
-    queue_name = _resolve_value(binding.get("queue_name"))
+    queue_name = binding.get("queue_name")
     if not queue_name:
         return
 
@@ -212,32 +205,6 @@ def _flush_queue_output(binding: dict[str, Any], out: _OutBinding) -> None:
             continue
         msg = raw if isinstance(raw, str) else json.dumps(raw, ensure_ascii=False)
         queue_client.send_message(msg)
-
-
-def _parse_decorator_kwargs(call: ast.Call) -> dict[str, Any]:
-    data: dict[str, Any] = {}
-    for kw in call.keywords:
-        if not kw.arg:
-            continue
-        value = kw.value
-        if isinstance(value, ast.Constant):
-            data[kw.arg] = value.value
-            continue
-        if isinstance(value, ast.Name):
-            data[kw.arg] = value.id
-            continue
-        if isinstance(value, ast.List):
-            methods: list[str] = []
-            for item in value.elts:
-                if isinstance(item, ast.Attribute):
-                    methods.append(item.attr.upper())
-                elif isinstance(item, ast.Constant):
-                    methods.append(str(item.value).upper())
-            data[kw.arg] = methods
-            continue
-        if isinstance(value, ast.Attribute):
-            data[kw.arg] = value.attr
-    return data
 
 
 def _translate_route_pattern(route: str) -> list[str]:
@@ -250,34 +217,59 @@ def _translate_route_pattern(route: str) -> list[str]:
     return unique or [route]
 
 
-def _read_route_specs() -> list[dict[str, Any]]:
-    source = Path(legacy.__file__).read_text(encoding="utf-8")
-    tree = ast.parse(source)
-    specs: list[dict[str, Any]] = []
+@functools.cache
+def _get_legacy_functions() -> list[Any]:
+    # The SDK validates function names on every get_functions() call and
+    # rejects names it has already seen, so it must be called once per app.
+    return legacy.app.get_functions()
 
-    for node in tree.body:
-        if not isinstance(node, ast.FunctionDef):
+
+def _binding_spec(binding: Any) -> Optional[dict[str, Any]]:
+    data = binding.get_dict_repr()
+    is_input = str(getattr(data.get("direction"), "name", "")) == "IN"
+    if data.get("type") == "table":
+        return {
+            "kind": "table_input" if is_input else "table_output",
+            "arg_name": data.get("name"),
+            "table_name": data.get("tableName"),
+            "partition_key": data.get("partitionKey"),
+            "row_key": data.get("rowKey"),
+            "filter": data.get("filter"),
+        }
+    if data.get("type") == "queue" and not is_input:
+        return {
+            "kind": "queue_output",
+            "arg_name": data.get("name"),
+            "queue_name": data.get("queueName"),
+        }
+    return None
+
+
+def _read_route_specs() -> list[dict[str, Any]]:
+    """Derive the HTTP routes from the Azure Functions app metadata.
+
+    Functions registered on the app directly or through Blueprints are
+    discovered the same way, regardless of the module they are defined in.
+    """
+    specs: list[dict[str, Any]] = []
+    for fn in _get_legacy_functions():
+        if not fn.is_http_function():
             continue
-        route_data: Optional[dict[str, Any]] = None
-        bindings: list[dict[str, Any]] = []
-        for dec in node.decorator_list:
-            if not isinstance(dec, ast.Call) or not isinstance(dec.func, ast.Attribute):
-                continue
-            name = dec.func.attr
-            kwargs = _parse_decorator_kwargs(dec)
-            if name == "route":
-                route_data = kwargs
-            elif name in {"table_input", "table_output", "queue_output"}:
-                bindings.append({"kind": name, **kwargs})
-        if route_data:
-            specs.append(
-                {
-                    "function_name": node.name,
-                    "route": str(route_data.get("route", "")).strip(),
-                    "methods": route_data.get("methods", ["GET", "POST"]),
-                    "bindings": bindings,
-                }
-            )
+        trigger = fn.get_trigger().get_dict_repr()
+        bindings = [
+            spec
+            for spec in (_binding_spec(b) for b in fn.get_bindings())
+            if spec is not None
+        ]
+        specs.append(
+            {
+                "function_name": fn.get_function_name(),
+                "handler": fn.get_user_function(),
+                "route": str(trigger.get("route") or "").strip(),
+                "methods": trigger.get("methods") or ["GET", "POST"],
+                "bindings": bindings,
+            }
+        )
     return specs
 
 
@@ -327,7 +319,7 @@ def _queue_message_to_legacy(content: str):
 
 
 def _process_queue_message(msg: Any) -> None:
-    queue = _get_queue_client(legacy.QUEUE_NAME)
+    queue = _get_queue_client(QUEUE_NAME)
     lease = {"pop_receipt": msg.pop_receipt}
     done = threading.Event()
 
@@ -354,7 +346,7 @@ def _process_queue_message(msg: Any) -> None:
         if isinstance(payload, bytes):
             payload = payload.decode("utf-8", errors="replace")
         if payload:
-            legacy.process_runbook(_queue_message_to_legacy(payload))
+            runbooks.process_runbook(_queue_message_to_legacy(payload))
     finally:
         done.set()
         renewer.join()
@@ -368,7 +360,7 @@ def _poll_runbook_queue() -> None:
     in_flight: set[concurrent.futures.Future] = set()
     while not _STOP_EVENT.is_set():
         try:
-            queue = _get_queue_client(legacy.QUEUE_NAME)
+            queue = _get_queue_client(QUEUE_NAME)
 
             done = {f for f in in_flight if f.done()}
             in_flight -= done
@@ -409,7 +401,7 @@ def _run_heartbeat_timer() -> None:
 
     while not _STOP_EVENT.is_set():
         try:
-            legacy.heartbeat_trigger(_Timer())
+            system.heartbeat_trigger(_Timer())
         except Exception as exc:
             logging.warning("Worker heartbeat trigger failed: %s", exc)
         _STOP_EVENT.wait(HEARTBEAT_SECONDS)
@@ -476,9 +468,7 @@ for spec in _read_route_specs():
     route = spec["route"]
     if not route:
         continue
-    handler = getattr(legacy, spec["function_name"], None)
-    if not callable(handler):
-        continue
+    handler = spec["handler"]
     methods = [_sanitize_method(m) for m in spec["methods"]]
     endpoint = _build_endpoint(handler, spec["bindings"])
     for pattern in _translate_route_pattern(route):

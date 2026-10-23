@@ -1,9 +1,11 @@
 # python
-import importlib
 import json
 from unittest.mock import MagicMock, patch
 
 import azure.functions as func
+from routes import processes
+
+from core import registry, reporting, security
 
 
 class FakeOut(func.Out):
@@ -19,17 +21,16 @@ class FakeOut(func.Out):
         return self.value
 
 
-def _auth_headers(worker) -> dict:
-    return {"x-cloudo-key": worker._CLOUDO_SECRET_KEY}
+def _auth_headers() -> dict:
+    return {"x-cloudo-key": security.CLOUDO_SECRET_KEY}
 
 
 def test_list_processes_returns_active_runs(monkeypatch):
-    worker = importlib.import_module("function_app")
-    monkeypatch.setattr(worker, "_CLOUDO_SECRET_KEY", "test-secret")
+    monkeypatch.setattr(security, "CLOUDO_SECRET_KEY", "test-secret")
 
     # Seed ACTIVE_RUNS with two items
-    worker._ACTIVE_RUNS.clear()
-    worker._ACTIVE_RUNS["e1"] = {
+    registry.ACTIVE_RUNS.clear()
+    registry.ACTIVE_RUNS["e1"] = {
         "exec_id": "e1",
         "id": "s1",
         "name": "N1",
@@ -38,7 +39,7 @@ def test_list_processes_returns_active_runs(monkeypatch):
         "startedAt": "2025-01-01 10:01:00",
         "status": "running",
     }
-    worker._ACTIVE_RUNS["e2"] = {
+    registry.ACTIVE_RUNS["e2"] = {
         "exec_id": "e2",
         "id": "s2",
         "name": "N2",
@@ -52,10 +53,10 @@ def test_list_processes_returns_active_runs(monkeypatch):
         "GET",
         "https://x/api/processes?q=N",
         params={},
-        headers=_auth_headers(worker),
+        headers=_auth_headers(),
         body=b"",
     )
-    res = worker.list_processes(req)
+    res = processes.list_processes(req)
     assert res.status_code == 200
     data = json.loads(res.get_body())
     assert data["status"] == "ok"
@@ -64,29 +65,27 @@ def test_list_processes_returns_active_runs(monkeypatch):
 
 
 def test_list_processes_rejects_unauthorized_request(monkeypatch):
-    worker = importlib.import_module("function_app")
-    monkeypatch.setattr(worker, "_CLOUDO_SECRET_KEY", "test-secret")
+    monkeypatch.setattr(security, "CLOUDO_SECRET_KEY", "test-secret")
 
     req = func.HttpRequest(
         "GET", "https://x/api/processes", params={}, headers={}, body=b""
     )
-    res = worker.list_processes(req)
+    res = processes.list_processes(req)
     assert res.status_code == 401
 
 
 def test_stop_process_terminates_and_reports(monkeypatch):
-    worker = importlib.import_module("function_app")
-    monkeypatch.setattr(worker, "_CLOUDO_SECRET_KEY", "test-secret")
+    monkeypatch.setattr(security, "CLOUDO_SECRET_KEY", "test-secret")
 
     # Fake running process mapped by exec id
     fake_proc = MagicMock()
     fake_proc.poll.return_value = None  # running
-    worker._PROCESS_BY_EXEC.clear()
-    worker._PROCESS_BY_EXEC["exec-999"] = fake_proc
+    registry.PROCESS_BY_EXEC.clear()
+    registry.PROCESS_BY_EXEC["exec-999"] = fake_proc
 
     # Track run info to trigger _dispatch_status on stop
-    worker._ACTIVE_RUNS.clear()
-    worker._ACTIVE_RUNS["exec-999"] = {
+    registry.ACTIVE_RUNS.clear()
+    registry.ACTIVE_RUNS["exec-999"] = {
         "exec_id": "exec-999",
         "id": "s1",
         "name": "N1",
@@ -99,17 +98,17 @@ def test_stop_process_terminates_and_reports(monkeypatch):
 
     # Avoid any real HTTP/queue delivery: pretend the HTTP fast path succeeded.
     with patch.object(
-        worker, "_send_status_to_receiver", return_value=True
+        reporting, "_send_status_to_receiver", return_value=True
     ) as send_status:
         req = func.HttpRequest(
             "DELETE",
             "https://x/api/processes/stop?exec_id=exec-999",
             params={"exec_id": "exec-999"},
-            headers=_auth_headers(worker),
+            headers=_auth_headers(),
             body=b"",
         )
         out = FakeOut()
-        res = worker.stop_process(req, out)
+        res = processes.stop_process(req, out)
 
     assert res.status_code == 200
     body = json.loads(res.get_body())
@@ -128,8 +127,7 @@ def test_stop_process_terminates_and_reports(monkeypatch):
 
 
 def test_stop_process_rejects_unauthorized_request(monkeypatch):
-    worker = importlib.import_module("function_app")
-    monkeypatch.setattr(worker, "_CLOUDO_SECRET_KEY", "test-secret")
+    monkeypatch.setattr(security, "CLOUDO_SECRET_KEY", "test-secret")
 
     req = func.HttpRequest(
         "DELETE",
@@ -139,22 +137,21 @@ def test_stop_process_rejects_unauthorized_request(monkeypatch):
         body=b"",
     )
     out = FakeOut()
-    res = worker.stop_process(req, out)
+    res = processes.stop_process(req, out)
     assert res.status_code == 401
 
 
 def test_stop_process_returns_404_for_unknown_exec_id(monkeypatch):
-    worker = importlib.import_module("function_app")
-    monkeypatch.setattr(worker, "_CLOUDO_SECRET_KEY", "test-secret")
+    monkeypatch.setattr(security, "CLOUDO_SECRET_KEY", "test-secret")
 
-    worker._PROCESS_BY_EXEC.clear()
+    registry.PROCESS_BY_EXEC.clear()
     req = func.HttpRequest(
         "DELETE",
         "https://x/api/processes/stop?exec_id=does-not-exist",
         params={"exec_id": "does-not-exist"},
-        headers=_auth_headers(worker),
+        headers=_auth_headers(),
         body=b"",
     )
     out = FakeOut()
-    res = worker.stop_process(req, out)
+    res = processes.stop_process(req, out)
     assert res.status_code == 404
