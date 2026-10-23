@@ -46,6 +46,41 @@ def build_response_body(
     )
 
 
+def build_queue_payload(
+    schema: Schema,
+    *,
+    exec_id: str,
+    requested_at: str,
+    initiator: Optional[str],
+    monitor_condition: Optional[str],
+    severity: Optional[str],
+    resource_info: Optional[dict],
+    routing_info: Optional[dict],
+) -> dict[str, Any]:
+    """Run request consumed by the worker (see worker routes/runbooks.py)."""
+    return {
+        "runbook": schema.runbook,
+        "run_args": schema.run_args,
+        "id": schema.id,
+        "name": schema.name or "",
+        "requestedAt": requested_at,
+        "exec_id": exec_id,
+        "oncall": schema.oncall,
+        "aks_login_required": schema.aks_login_required,
+        "aks_cluster_name": schema.aks_cluster_name,
+        "aks_resource_group": schema.aks_resource_group,
+        "aks_namespace": schema.aks_namespace,
+        "monitor_condition": monitor_condition,
+        "severity": severity,
+        "team": schema.team,
+        "worker": schema.worker,
+        "group": schema.group,
+        "initiator": initiator,
+        "resource_info": resource_info or {},
+        "routing_info": routing_info or {},
+    }
+
+
 def _enqueue_run(
     execution: ExecutionRequest, schema: Schema, target_queue: str
 ) -> tuple[int, dict[str, Any]]:
@@ -54,27 +89,16 @@ def _enqueue_run(
         f"{execution.log_prefix} 🎯 Dynamic Routing: Selected Queue '{target_queue}'"
     )
     try:
-        queue_payload = {
-            "runbook": schema.runbook,
-            "run_args": schema.run_args,
-            "id": schema.id,
-            "name": schema.name or "",
-            "requestedAt": execution.requested_at,
-            "exec_id": execution.exec_id,
-            "oncall": schema.oncall,
-            "aks_login_required": schema.aks_login_required,
-            "aks_cluster_name": schema.aks_cluster_name,
-            "aks_resource_group": schema.aks_resource_group,
-            "aks_namespace": schema.aks_namespace,
-            "monitor_condition": execution.monitor_condition,
-            "severity": execution.severity,
-            "team": schema.team,
-            "worker": schema.worker,
-            "group": schema.group,
-            "initiator": execution.initiator,
-            "resource_info": execution.resource_info or {},
-            "routing_info": execution.routing_info or {},
-        }
+        queue_payload = build_queue_payload(
+            schema,
+            exec_id=execution.exec_id,
+            requested_at=execution.requested_at,
+            initiator=execution.initiator,
+            monitor_condition=execution.monitor_condition,
+            severity=execution.severity,
+            resource_info=execution.resource_info,
+            routing_info=execution.routing_info,
+        )
         storage.enqueue_queue_payload(target_queue, queue_payload)
         audit.log_audit(
             user=execution.initiator,
