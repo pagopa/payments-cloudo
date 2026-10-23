@@ -74,7 +74,7 @@ def test_trigger_happy_path(monkeypatch):
         # defensively in case that assumption ever changes.
         with patch("smart_routing.route_alert", return_value=MagicMock(actions=[])):
             with patch("smart_routing.execute_actions") as exec_actions:
-                from function_app import Trigger
+                from routes.trigger import Trigger
 
                 # Build request and fake table output
                 req = make_request(

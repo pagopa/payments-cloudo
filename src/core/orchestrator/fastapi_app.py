@@ -15,6 +15,7 @@ from core.config import NOTIFICATION_QUEUE_NAME, TABLE_NAME
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse, Response
 from log_stream import stream_execution_logs, stream_executions
+from routes import receiver, schedules, workers
 
 from core import storage
 
@@ -283,7 +284,7 @@ def _process_notification_message(msg: Any) -> None:
         # so both consumption paths (classic host trigger / FastAPI polling)
         # behave identically even if the message wasn't decoded upstream.
         out = _OutBinding()
-        legacy.Receiver(_queue_message_to_legacy(payload), out)
+        receiver.Receiver(_queue_message_to_legacy(payload), out)
         _flush_table_output({"table_name": TABLE_NAME}, out)
     queue = storage.get_queue_client(NOTIFICATION_QUEUE_NAME)
     queue.delete_message(msg.id, msg.pop_receipt)
@@ -351,11 +352,11 @@ def _run_scheduler_timers() -> None:
 
     while not _STOP_EVENT.is_set():
         try:
-            legacy.scheduler_engine(_Timer())
+            schedules.scheduler_engine(_Timer())
         except Exception:
             logging.exception("Scheduler engine failed")
         try:
-            legacy.worker_cleanup(_Timer())
+            workers.worker_cleanup(_Timer())
         except Exception:
             logging.exception("Worker cleanup failed")
         # Recalculate sleep to next minute boundary after each run,

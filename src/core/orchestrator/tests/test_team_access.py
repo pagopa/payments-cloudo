@@ -1,8 +1,8 @@
 import json
 
 import azure.functions as func
-import function_app
 from routes import settings as settings_routes
+from routes import trigger as trigger_routes
 
 from core import operators, team_access
 
@@ -137,12 +137,12 @@ def test_team_approval_targets_prefer_team_config(monkeypatch):
     monkeypatch.setattr(smart_routing, "resolve_slack_token", lambda team: "tok-ops")
     monkeypatch.setattr(smart_routing, "resolve_jsm_apikey", lambda team: "jsm-ops")
 
-    assert function_app._team_approval_targets("ops", "t", "#c", "j") == (
+    assert trigger_routes._team_approval_targets("ops", "t", "#c", "j") == (
         "tok-ops",
         "#ops-approvals",
         "jsm-ops",
     )
-    assert function_app._team_approval_targets("default", "t", "#c", "j") == (
+    assert trigger_routes._team_approval_targets("default", "t", "#c", "j") == (
         "t",
         "#c",
         "j",
