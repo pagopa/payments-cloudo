@@ -5,6 +5,8 @@ from unittest.mock import MagicMock, patch
 
 import azure.functions as func
 
+from core import storage
+
 
 def make_request(
     method="POST", url="https://x/api/Trigger", params=None, headers=None, body=b""
@@ -58,16 +60,14 @@ def test_trigger_happy_path(monkeypatch):
     }
     entities = json.dumps([schema_row])
 
-    import function_app
-
     # Trigger's execution path is fully queue-based (no direct HTTP call to
     # the worker): it (1) ensures the notification queue exists, (2) asks
     # worker_routing for a target queue, then (3) enqueues the payload.
     # Mock all three so the test never touches real Azure Storage.
     monkeypatch.setattr(
-        function_app, "_get_queue_client", MagicMock(return_value=MagicMock())
+        storage, "get_queue_client", MagicMock(return_value=MagicMock())
     )
-    monkeypatch.setattr(function_app, "_enqueue_queue_payload", MagicMock())
+    monkeypatch.setattr(storage, "enqueue_queue_payload", MagicMock())
 
     with patch("worker_routing.worker_routing", return_value="worker-a-queue"):
         # Routing is not executed for status 202 ("accepted"), but we patch
@@ -102,10 +102,8 @@ def test_trigger_happy_path(monkeypatch):
 
                 # The payload was handed off to the worker via the queue,
                 # not via a direct HTTP call.
-                function_app._enqueue_queue_payload.assert_called_once()
-                queue_name, queue_payload = (
-                    function_app._enqueue_queue_payload.call_args.args
-                )
+                storage.enqueue_queue_payload.assert_called_once()
+                queue_name, queue_payload = storage.enqueue_queue_payload.call_args.args
                 assert queue_name == "worker-a-queue"
                 assert queue_payload["id"] == "schema-1"
                 assert queue_payload["runbook"] == "rb.sh"

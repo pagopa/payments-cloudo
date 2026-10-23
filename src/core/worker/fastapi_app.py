@@ -1,12 +1,11 @@
-import ast
 import concurrent.futures
+import functools
 import json
 import logging
 import os
 import re
 import threading
 from contextlib import asynccontextmanager
-from pathlib import Path
 from typing import Any, Callable, Optional
 
 import azure.functions as func
@@ -113,12 +112,6 @@ def _get_queue_client(queue_name: str):
     return client
 
 
-def _resolve_value(value: Any) -> Any:
-    if isinstance(value, str) and hasattr(legacy, value):
-        return getattr(legacy, value)
-    return value
-
-
 def _sanitize_method(method: Any) -> str:
     raw = str(getattr(method, "value", method) or "GET").strip().upper()
     if raw.startswith("HTTPMETHOD."):
@@ -158,7 +151,7 @@ def _to_fastapi_response(result: Any) -> Response:
 
 
 def _query_table_rows(binding: dict[str, Any], params: dict[str, str]) -> str:
-    table_name = _resolve_value(binding.get("table_name"))
+    table_name = binding.get("table_name")
     if not table_name:
         return "[]"
 
@@ -184,7 +177,7 @@ def _query_table_rows(binding: dict[str, Any], params: dict[str, str]) -> str:
 
 
 def _flush_table_output(binding: dict[str, Any], out: _OutBinding) -> None:
-    table_name = _resolve_value(binding.get("table_name"))
+    table_name = binding.get("table_name")
     if not table_name:
         return
 
@@ -202,7 +195,7 @@ def _flush_table_output(binding: dict[str, Any], out: _OutBinding) -> None:
 
 
 def _flush_queue_output(binding: dict[str, Any], out: _OutBinding) -> None:
-    queue_name = _resolve_value(binding.get("queue_name"))
+    queue_name = binding.get("queue_name")
     if not queue_name:
         return
 
@@ -212,32 +205,6 @@ def _flush_queue_output(binding: dict[str, Any], out: _OutBinding) -> None:
             continue
         msg = raw if isinstance(raw, str) else json.dumps(raw, ensure_ascii=False)
         queue_client.send_message(msg)
-
-
-def _parse_decorator_kwargs(call: ast.Call) -> dict[str, Any]:
-    data: dict[str, Any] = {}
-    for kw in call.keywords:
-        if not kw.arg:
-            continue
-        value = kw.value
-        if isinstance(value, ast.Constant):
-            data[kw.arg] = value.value
-            continue
-        if isinstance(value, ast.Name):
-            data[kw.arg] = value.id
-            continue
-        if isinstance(value, ast.List):
-            methods: list[str] = []
-            for item in value.elts:
-                if isinstance(item, ast.Attribute):
-                    methods.append(item.attr.upper())
-                elif isinstance(item, ast.Constant):
-                    methods.append(str(item.value).upper())
-            data[kw.arg] = methods
-            continue
-        if isinstance(value, ast.Attribute):
-            data[kw.arg] = value.attr
-    return data
 
 
 def _translate_route_pattern(route: str) -> list[str]:
@@ -250,34 +217,59 @@ def _translate_route_pattern(route: str) -> list[str]:
     return unique or [route]
 
 
-def _read_route_specs() -> list[dict[str, Any]]:
-    source = Path(legacy.__file__).read_text(encoding="utf-8")
-    tree = ast.parse(source)
-    specs: list[dict[str, Any]] = []
+@functools.cache
+def _get_legacy_functions() -> list[Any]:
+    # The SDK validates function names on every get_functions() call and
+    # rejects names it has already seen, so it must be called once per app.
+    return legacy.app.get_functions()
 
-    for node in tree.body:
-        if not isinstance(node, ast.FunctionDef):
+
+def _binding_spec(binding: Any) -> Optional[dict[str, Any]]:
+    data = binding.get_dict_repr()
+    is_input = str(getattr(data.get("direction"), "name", "")) == "IN"
+    if data.get("type") == "table":
+        return {
+            "kind": "table_input" if is_input else "table_output",
+            "arg_name": data.get("name"),
+            "table_name": data.get("tableName"),
+            "partition_key": data.get("partitionKey"),
+            "row_key": data.get("rowKey"),
+            "filter": data.get("filter"),
+        }
+    if data.get("type") == "queue" and not is_input:
+        return {
+            "kind": "queue_output",
+            "arg_name": data.get("name"),
+            "queue_name": data.get("queueName"),
+        }
+    return None
+
+
+def _read_route_specs() -> list[dict[str, Any]]:
+    """Derive the HTTP routes from the Azure Functions app metadata.
+
+    Functions registered on the app directly or through Blueprints are
+    discovered the same way, regardless of the module they are defined in.
+    """
+    specs: list[dict[str, Any]] = []
+    for fn in _get_legacy_functions():
+        if not fn.is_http_function():
             continue
-        route_data: Optional[dict[str, Any]] = None
-        bindings: list[dict[str, Any]] = []
-        for dec in node.decorator_list:
-            if not isinstance(dec, ast.Call) or not isinstance(dec.func, ast.Attribute):
-                continue
-            name = dec.func.attr
-            kwargs = _parse_decorator_kwargs(dec)
-            if name == "route":
-                route_data = kwargs
-            elif name in {"table_input", "table_output", "queue_output"}:
-                bindings.append({"kind": name, **kwargs})
-        if route_data:
-            specs.append(
-                {
-                    "function_name": node.name,
-                    "route": str(route_data.get("route", "")).strip(),
-                    "methods": route_data.get("methods", ["GET", "POST"]),
-                    "bindings": bindings,
-                }
-            )
+        trigger = fn.get_trigger().get_dict_repr()
+        bindings = [
+            spec
+            for spec in (_binding_spec(b) for b in fn.get_bindings())
+            if spec is not None
+        ]
+        specs.append(
+            {
+                "function_name": fn.get_function_name(),
+                "handler": fn.get_user_function(),
+                "route": str(trigger.get("route") or "").strip(),
+                "methods": trigger.get("methods") or ["GET", "POST"],
+                "bindings": bindings,
+            }
+        )
     return specs
 
 
@@ -476,9 +468,7 @@ for spec in _read_route_specs():
     route = spec["route"]
     if not route:
         continue
-    handler = getattr(legacy, spec["function_name"], None)
-    if not callable(handler):
-        continue
+    handler = spec["handler"]
     methods = [_sanitize_method(m) for m in spec["methods"]]
     endpoint = _build_endpoint(handler, spec["bindings"])
     for pattern in _translate_route_pattern(route):

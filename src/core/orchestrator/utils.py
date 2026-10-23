@@ -144,3 +144,11 @@ def is_cron_now(cron_str: str, now: datetime) -> bool:
         return True
     except Exception:
         return False
+
+
+def as_bool(value: Any, default: bool = False) -> bool:
+    if isinstance(value, bool):
+        return value
+    if value is None:
+        return default
+    return str(value).strip().lower() in {"1", "true", "yes", "on"}

@@ -16,6 +16,8 @@ from unittest.mock import MagicMock
 import azure.functions as func
 import pytest
 
+from core import log_blobs, storage
+
 
 class FakeOut(func.Out):
     """Minimal table output binding stub that captures writes."""
@@ -54,15 +56,14 @@ def make_body(**overrides) -> dict:
 def no_real_azure(monkeypatch):
     """Every test runs fully offline: no real queue/table/blob client is
     ever constructed, regardless of AzureWebJobsStorage configuration."""
-    import function_app
 
     monkeypatch.setattr(
-        function_app, "_get_queue_client", MagicMock(return_value=MagicMock())
+        storage, "get_queue_client", MagicMock(return_value=MagicMock())
     )
     monkeypatch.setattr(
-        function_app, "_get_table_client", MagicMock(return_value=MagicMock())
+        storage, "get_table_client", MagicMock(return_value=MagicMock())
     )
-    monkeypatch.setattr(function_app, "_get_blob_service", MagicMock())
+    monkeypatch.setattr(storage, "get_blob_service", MagicMock())
 
 
 @pytest.fixture(autouse=True)
@@ -197,13 +198,12 @@ def test_receiver_without_logs_writes_empty_log_field():
 
 
 def test_receiver_decodes_base64_logs_and_uploads_to_blob(monkeypatch):
-    import function_app
     from function_app import _process_receiver_body
 
     upload_mock = MagicMock(return_value="blobref://runbook-logs/2024/exec-123.log")
-    monkeypatch.setattr(function_app, "_upload_log_to_blob", upload_mock)
+    monkeypatch.setattr(log_blobs, "upload_log_to_blob", upload_mock)
 
-    logs_b64 = function_app._encode_logs("line1\nline2 error").decode("utf-8")
+    logs_b64 = log_blobs.encode_logs("line1\nline2 error").decode("utf-8")
     out = FakeOut()
 
     _process_receiver_body(make_body(logs_b64=logs_b64), out)
@@ -214,14 +214,13 @@ def test_receiver_decodes_base64_logs_and_uploads_to_blob(monkeypatch):
 
 
 def test_receiver_falls_back_to_table_log_when_blob_upload_fails(monkeypatch):
-    import function_app
     from function_app import _process_receiver_body
 
     monkeypatch.setattr(
-        function_app, "_upload_log_to_blob", MagicMock(side_effect=RuntimeError("boom"))
+        log_blobs, "upload_log_to_blob", MagicMock(side_effect=RuntimeError("boom"))
     )
 
-    logs_b64 = function_app._encode_logs("some failure output").decode("utf-8")
+    logs_b64 = log_blobs.encode_logs("some failure output").decode("utf-8")
     out = FakeOut()
 
     _process_receiver_body(make_body(logs_b64=logs_b64), out)
@@ -231,13 +230,12 @@ def test_receiver_falls_back_to_table_log_when_blob_upload_fails(monkeypatch):
 
 
 def test_receiver_reuses_provided_log_ref_without_reuploading(monkeypatch):
-    import function_app
     from function_app import _process_receiver_body
 
     upload_mock = MagicMock()
-    monkeypatch.setattr(function_app, "_upload_log_to_blob", upload_mock)
+    monkeypatch.setattr(log_blobs, "upload_log_to_blob", upload_mock)
 
-    logs_b64 = function_app._encode_logs("already stored elsewhere").decode("utf-8")
+    logs_b64 = log_blobs.encode_logs("already stored elsewhere").decode("utf-8")
     out = FakeOut()
 
     _process_receiver_body(
@@ -254,13 +252,12 @@ def test_receiver_reuses_provided_log_ref_without_reuploading(monkeypatch):
 
 
 def test_receiver_ignores_malformed_log_ref_and_uses_logs_instead(monkeypatch):
-    import function_app
     from function_app import _process_receiver_body
 
     monkeypatch.setattr(
-        function_app, "_upload_log_to_blob", MagicMock(return_value="blobref://x/y.log")
+        log_blobs, "upload_log_to_blob", MagicMock(return_value="blobref://x/y.log")
     )
-    logs_b64 = function_app._encode_logs("fallback logs").decode("utf-8")
+    logs_b64 = log_blobs.encode_logs("fallback logs").decode("utf-8")
     out = FakeOut()
 
     _process_receiver_body(
@@ -402,13 +399,10 @@ def test_receiver_skips_routing_gracefully_when_smart_routing_unavailable(
 
 
 def test_receiver_does_not_enqueue_ai_triage_when_disabled(monkeypatch):
-    import function_app
     from function_app import _process_receiver_body
 
     queue_mock = MagicMock()
-    monkeypatch.setattr(
-        function_app, "_get_queue_client", MagicMock(return_value=queue_mock)
-    )
+    monkeypatch.setattr(storage, "get_queue_client", MagicMock(return_value=queue_mock))
 
     out = FakeOut()
     _process_receiver_body(make_body(status="Failed"), out)
@@ -417,15 +411,12 @@ def test_receiver_does_not_enqueue_ai_triage_when_disabled(monkeypatch):
 
 
 def test_receiver_enqueues_ai_triage_for_failed_status_when_enabled(monkeypatch):
-    import function_app
     import smart_routing
     from function_app import _process_receiver_body
 
     monkeypatch.setattr(smart_routing, "get_setting", MagicMock(return_value="true"))
     queue_mock = MagicMock()
-    monkeypatch.setattr(
-        function_app, "_get_queue_client", MagicMock(return_value=queue_mock)
-    )
+    monkeypatch.setattr(storage, "get_queue_client", MagicMock(return_value=queue_mock))
 
     out = FakeOut()
     _process_receiver_body(
@@ -443,15 +434,12 @@ def test_receiver_enqueues_ai_triage_for_failed_status_when_enabled(monkeypatch)
 
 
 def test_receiver_does_not_enqueue_ai_triage_for_succeeded_status(monkeypatch):
-    import function_app
     import smart_routing
     from function_app import _process_receiver_body
 
     monkeypatch.setattr(smart_routing, "get_setting", MagicMock(return_value="true"))
     queue_mock = MagicMock()
-    monkeypatch.setattr(
-        function_app, "_get_queue_client", MagicMock(return_value=queue_mock)
-    )
+    monkeypatch.setattr(storage, "get_queue_client", MagicMock(return_value=queue_mock))
 
     out = FakeOut()
     _process_receiver_body(make_body(status="Completed"), out)
@@ -460,15 +448,12 @@ def test_receiver_does_not_enqueue_ai_triage_for_succeeded_status(monkeypatch):
 
 
 def test_receiver_skips_ai_triage_for_dev_test_run_by_name(monkeypatch):
-    import function_app
     import smart_routing
     from function_app import _process_receiver_body
 
     monkeypatch.setattr(smart_routing, "get_setting", MagicMock(return_value="true"))
     queue_mock = MagicMock()
-    monkeypatch.setattr(
-        function_app, "_get_queue_client", MagicMock(return_value=queue_mock)
-    )
+    monkeypatch.setattr(storage, "get_queue_client", MagicMock(return_value=queue_mock))
 
     out = FakeOut()
     _process_receiver_body(
@@ -479,15 +464,12 @@ def test_receiver_skips_ai_triage_for_dev_test_run_by_name(monkeypatch):
 
 
 def test_receiver_skips_ai_triage_for_dev_test_run_by_team(monkeypatch):
-    import function_app
     import smart_routing
     from function_app import _process_receiver_body
 
     monkeypatch.setattr(smart_routing, "get_setting", MagicMock(return_value="true"))
     queue_mock = MagicMock()
-    monkeypatch.setattr(
-        function_app, "_get_queue_client", MagicMock(return_value=queue_mock)
-    )
+    monkeypatch.setattr(storage, "get_queue_client", MagicMock(return_value=queue_mock))
 
     out = FakeOut()
     _process_receiver_body(
@@ -498,14 +480,13 @@ def test_receiver_skips_ai_triage_for_dev_test_run_by_team(monkeypatch):
 
 
 def test_receiver_ai_triage_enqueue_failure_does_not_raise(monkeypatch):
-    import function_app
     import smart_routing
     from function_app import _process_receiver_body
 
     monkeypatch.setattr(smart_routing, "get_setting", MagicMock(return_value="true"))
     monkeypatch.setattr(
-        function_app,
-        "_get_queue_client",
+        storage,
+        "get_queue_client",
         MagicMock(side_effect=RuntimeError("queue unavailable")),
     )
 

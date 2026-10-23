@@ -1,5 +1,5 @@
-import ast
 import concurrent.futures
+import functools
 import json
 import logging
 import os
@@ -7,14 +7,16 @@ import re
 import threading
 from contextlib import asynccontextmanager
 from datetime import datetime
-from pathlib import Path
 from typing import Any, Callable, Optional
 
 import azure.functions as func
 import function_app as legacy
+from core.config import NOTIFICATION_QUEUE_NAME, TABLE_NAME
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse, Response
 from log_stream import stream_execution_logs, stream_executions
+
+from core import storage
 
 API_PREFIX = os.getenv("API_PREFIX", "/api")
 POLL_SECONDS = float(os.getenv("FASTAPI_QUEUE_POLL_SECONDS", "2"))
@@ -87,12 +89,6 @@ def _normalize_table_entity(entity: dict[str, Any]) -> dict[str, Any]:
     return normalized
 
 
-def _resolve_value(value: Any) -> Any:
-    if isinstance(value, str) and hasattr(legacy, value):
-        return getattr(legacy, value)
-    return value
-
-
 def _sanitize_method(method: Any) -> str:
     raw = str(getattr(method, "value", method) or "GET").strip().upper()
     if raw.startswith("HTTPMETHOD."):
@@ -132,7 +128,7 @@ def _to_fastapi_response(result: Any) -> Response:
 
 
 def _query_table_rows(binding: dict[str, Any], params: dict[str, str]) -> str:
-    table_name = _resolve_value(binding.get("table_name"))
+    table_name = binding.get("table_name")
     if not table_name:
         return "[]"
 
@@ -148,7 +144,7 @@ def _query_table_rows(binding: dict[str, Any], params: dict[str, str]) -> str:
         filter_parts.append(filter_template.format(**params))
 
     query_filter = " and ".join(filter_parts) if filter_parts else None
-    table = legacy._get_table_client(table_name)  # noqa: SLF001
+    table = storage.get_table_client(table_name)
     rows = (
         list(table.query_entities(query_filter=query_filter))
         if query_filter
@@ -158,11 +154,11 @@ def _query_table_rows(binding: dict[str, Any], params: dict[str, str]) -> str:
 
 
 def _flush_table_output(binding: dict[str, Any], out: _OutBinding) -> None:
-    table_name = _resolve_value(binding.get("table_name"))
+    table_name = binding.get("table_name")
     if not table_name:
         return
 
-    table = legacy._get_table_client(table_name)  # noqa: SLF001
+    table = storage.get_table_client(table_name)
     for raw in out.values():
         if raw is None:
             continue
@@ -175,32 +171,6 @@ def _flush_table_output(binding: dict[str, Any], out: _OutBinding) -> None:
                     table.upsert_entity(entity=_normalize_table_entity(item))
 
 
-def _parse_decorator_kwargs(call: ast.Call) -> dict[str, Any]:
-    data: dict[str, Any] = {}
-    for kw in call.keywords:
-        if not kw.arg:
-            continue
-        value = kw.value
-        if isinstance(value, ast.Constant):
-            data[kw.arg] = value.value
-            continue
-        if isinstance(value, ast.Name):
-            data[kw.arg] = value.id
-            continue
-        if isinstance(value, ast.List):
-            methods: list[str] = []
-            for item in value.elts:
-                if isinstance(item, ast.Attribute):
-                    methods.append(item.attr.upper())
-                elif isinstance(item, ast.Constant):
-                    methods.append(str(item.value).upper())
-            data[kw.arg] = methods
-            continue
-        if isinstance(value, ast.Attribute):
-            data[kw.arg] = value.attr
-    return data
-
-
 def _translate_route_pattern(route: str) -> list[str]:
     optional = re.findall(r"/\{([A-Za-z_][A-Za-z0-9_]*)\?\}", route)
     clean = re.sub(r"\{([A-Za-z_][A-Za-z0-9_]*)\?\}", r"{\1}", route)
@@ -211,34 +181,53 @@ def _translate_route_pattern(route: str) -> list[str]:
     return unique or [route]
 
 
-def _read_route_specs() -> list[dict[str, Any]]:
-    source = Path(legacy.__file__).read_text(encoding="utf-8")
-    tree = ast.parse(source)
-    specs: list[dict[str, Any]] = []
+@functools.cache
+def _get_legacy_functions() -> list[Any]:
+    # The SDK validates function names on every get_functions() call and
+    # rejects names it has already seen, so it must be called once per app.
+    return legacy.app.get_functions()
 
-    for node in tree.body:
-        if not isinstance(node, ast.FunctionDef):
+
+def _table_binding_spec(binding: Any) -> Optional[dict[str, Any]]:
+    data = binding.get_dict_repr()
+    if data.get("type") != "table":
+        return None
+    is_input = str(getattr(data.get("direction"), "name", "")) == "IN"
+    return {
+        "kind": "table_input" if is_input else "table_output",
+        "arg_name": data.get("name"),
+        "table_name": data.get("tableName"),
+        "partition_key": data.get("partitionKey"),
+        "row_key": data.get("rowKey"),
+        "filter": data.get("filter"),
+    }
+
+
+def _read_route_specs() -> list[dict[str, Any]]:
+    """Derive the HTTP routes from the Azure Functions app metadata.
+
+    Functions registered on the app directly or through Blueprints are
+    discovered the same way, regardless of the module they are defined in.
+    """
+    specs: list[dict[str, Any]] = []
+    for fn in _get_legacy_functions():
+        if not fn.is_http_function():
             continue
-        route_data: Optional[dict[str, Any]] = None
-        bindings: list[dict[str, Any]] = []
-        for dec in node.decorator_list:
-            if not isinstance(dec, ast.Call) or not isinstance(dec.func, ast.Attribute):
-                continue
-            name = dec.func.attr
-            kwargs = _parse_decorator_kwargs(dec)
-            if name == "route":
-                route_data = kwargs
-            elif name in {"table_input", "table_output"}:
-                bindings.append({"kind": name, **kwargs})
-        if route_data:
-            specs.append(
-                {
-                    "function_name": node.name,
-                    "route": str(route_data.get("route", "")).strip(),
-                    "methods": route_data.get("methods", ["GET", "POST"]),
-                    "bindings": bindings,
-                }
-            )
+        trigger = fn.get_trigger().get_dict_repr()
+        bindings = [
+            spec
+            for spec in (_table_binding_spec(b) for b in fn.get_bindings())
+            if spec is not None
+        ]
+        specs.append(
+            {
+                "function_name": fn.get_function_name(),
+                "handler": fn.get_user_function(),
+                "route": str(trigger.get("route") or "").strip(),
+                "methods": trigger.get("methods") or ["GET", "POST"],
+                "bindings": bindings,
+            }
+        )
     return specs
 
 
@@ -295,8 +284,8 @@ def _process_notification_message(msg: Any) -> None:
         # behave identically even if the message wasn't decoded upstream.
         out = _OutBinding()
         legacy.Receiver(_queue_message_to_legacy(payload), out)
-        _flush_table_output({"table_name": legacy.TABLE_NAME}, out)
-    queue = legacy._get_queue_client(legacy.NOTIFICATION_QUEUE_NAME)  # noqa: SLF001
+        _flush_table_output({"table_name": TABLE_NAME}, out)
+    queue = storage.get_queue_client(NOTIFICATION_QUEUE_NAME)
     queue.delete_message(msg.id, msg.pop_receipt)
 
 
@@ -308,7 +297,7 @@ def _poll_notification_queue() -> None:
     in_flight: set[concurrent.futures.Future] = set()
     while not _STOP_EVENT.is_set():
         try:
-            queue = legacy._get_queue_client(legacy.NOTIFICATION_QUEUE_NAME)  # noqa: SLF001
+            queue = storage.get_queue_client(NOTIFICATION_QUEUE_NAME)
 
             done = {f for f in in_flight if f.done()}
             in_flight -= done
@@ -449,9 +438,7 @@ for spec in _read_route_specs():
     route = spec["route"]
     if not route:
         continue
-    handler = getattr(legacy, spec["function_name"], None)
-    if not callable(handler):
-        continue
+    handler = spec["handler"]
     methods = [_sanitize_method(m) for m in spec["methods"]]
     endpoint = _build_endpoint(handler, spec["bindings"])
     for pattern in _translate_route_pattern(route):

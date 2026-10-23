@@ -2,6 +2,9 @@ import json
 
 import azure.functions as func
 import function_app
+from routes import settings as settings_routes
+
+from core import operators, team_access
 
 
 def make_request(query: str = "") -> func.HttpRequest:
@@ -21,7 +24,7 @@ def test_default_and_own_team_are_visible_to_operator():
         {"team": "platform", "id": "hidden"},
     ]
 
-    visible = function_app._filter_entities_by_team(
+    visible = team_access.filter_entities_by_team(
         entities, request, {"role": "OPERATOR", "team": "payments"}
     )
 
@@ -32,11 +35,11 @@ def test_only_admin_can_request_all_teams():
     request = make_request("?includeAllTeams=true")
     entities = [{"team": "payments"}, {"team": "platform"}]
 
-    assert function_app._filter_entities_by_team(
+    assert team_access.filter_entities_by_team(
         entities, request, {"role": "OPERATOR", "team": "payments"}
     ) == [{"team": "payments"}]
     assert (
-        function_app._filter_entities_by_team(
+        team_access.filter_entities_by_team(
             entities, request, {"role": "ADMIN", "team": "default"}
         )
         == entities
@@ -44,7 +47,7 @@ def test_only_admin_can_request_all_teams():
 
 
 def test_non_admin_cannot_assign_another_team():
-    team, error = function_app._requested_write_team(
+    team, error = team_access.requested_write_team(
         {"team": "platform"}, {"role": "OPERATOR", "team": "payments"}
     )
 
@@ -53,8 +56,8 @@ def test_non_admin_cannot_assign_another_team():
 
 
 def test_team_is_normalized_for_legacy_entities():
-    assert function_app._entity_team({}) == "default"
-    assert function_app._entity_team({"Team": "Payments"}) == "payments"
+    assert team_access.entity_team({}) == "default"
+    assert team_access.entity_team({"Team": "Payments"}) == "payments"
 
 
 class _FakeSettingsTable:
@@ -106,7 +109,7 @@ def test_operator_settings_update_is_scoped_to_own_team():
         ),
     }
 
-    updates = function_app._build_operator_settings_update(
+    updates = settings_routes._build_operator_settings_update(
         _FakeSettingsTable(stored), body, "ops", {"default", "ops", "other"}
     )
 
@@ -157,14 +160,12 @@ class _FakeUsersTable:
 
 
 def test_user_row_key_is_case_insensitive_and_keeps_legacy_rows():
-    assert function_app._resolve_user_row_key(_FakeUsersTable([]), " Fabio ") == "fabio"
+    assert operators.resolve_user_row_key(_FakeUsersTable([]), " Fabio ") == "fabio"
     assert (
-        function_app._resolve_user_row_key(_FakeUsersTable(["fabio"]), "FABIO")
-        == "fabio"
+        operators.resolve_user_row_key(_FakeUsersTable(["fabio"]), "FABIO") == "fabio"
     )
     assert (
-        function_app._resolve_user_row_key(_FakeUsersTable(["Fabio"]), "Fabio")
-        == "Fabio"
+        operators.resolve_user_row_key(_FakeUsersTable(["Fabio"]), "Fabio") == "Fabio"
     )
 
 
@@ -174,9 +175,9 @@ def test_only_admin_or_owning_team_can_modify_entities():
     admin = {"role": "ADMIN", "team": "core"}
     infra_op = {"role": "OPERATOR", "team": "infra"}
 
-    assert function_app._can_modify_entity(default_entity, admin)
-    assert function_app._can_modify_entity(infra_entity, infra_op)
-    assert not function_app._can_modify_entity(default_entity, infra_op)
-    assert not function_app._can_modify_entity({"team": "core"}, infra_op)
-    err = function_app._requested_write_team({}, infra_op, default_entity)[1]
+    assert team_access.can_modify_entity(default_entity, admin)
+    assert team_access.can_modify_entity(infra_entity, infra_op)
+    assert not team_access.can_modify_entity(default_entity, infra_op)
+    assert not team_access.can_modify_entity({"team": "core"}, infra_op)
+    err = team_access.requested_write_team({}, infra_op, default_entity)[1]
     assert err == "Resource belongs to another team"
