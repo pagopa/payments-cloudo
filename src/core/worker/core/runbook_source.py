@@ -52,9 +52,9 @@ def create_inline_script_temp_file(
         f.write(script_content)
         temp_path = f.name
 
-    # Make shell scripts executable
+    # Make shell scripts executable (owner only)
     if script_type.lower() in {"shell", "bash", "sh"}:
-        os.chmod(temp_path, 0o755)
+        os.chmod(temp_path, 0o700)
 
     logging.debug("Created inline %s script: %s", script_type, temp_path)
     return temp_path
