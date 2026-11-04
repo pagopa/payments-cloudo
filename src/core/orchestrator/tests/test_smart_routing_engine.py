@@ -127,10 +127,19 @@ def test_config_without_rules_key_gets_fallback_rules(monkeypatch):
     assert cfg["teams"] == {"ops": {}}
 
 
-def test_config_with_empty_rules_keeps_them_empty(monkeypatch):
+def test_config_with_empty_rules_keeps_them_empty_and_warns(monkeypatch, caplog):
     use_rules(monkeypatch, {"rules": []})
 
     assert smart_routing.load_routing_config()["rules"] == []
+    assert '"rules": []' in caplog.text
+
+
+def test_config_with_rules_does_not_warn_about_empty_rules(monkeypatch, caplog):
+    use_rules(monkeypatch, {"rules": [{"when": {"any": "*"}, "then": []}]})
+
+    smart_routing.load_routing_config()
+
+    assert '"rules": []' not in caplog.text
 
 
 def test_invalid_config_json_uses_fallback(monkeypatch):

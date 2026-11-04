@@ -139,6 +139,9 @@ module "cloudo" {
 
   # (Optional) EXAMPLE Routing configs
   # This is required if UI is not installed.
+  # Empty teams and rules: the built-in fallback rules are used.
+  # rules = [] with teams set: explicit "no rules", so no Slack notifications
+  # and only the JSM fallback for final statuses of on-call executions.
   # ==========================================
   routing_config = {
     teams = {

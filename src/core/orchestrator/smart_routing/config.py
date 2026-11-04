@@ -75,7 +75,6 @@ def load_routing_config() -> dict[str, Any]:
     Load routing configuration from Azure Table Storage (CloudoSettings/ROUTING_RULES).
     Fallback to env ROUTING_RULES (JSON).
     If both absent/invalid, return safe fallback with JSM default.
-    Do NOT store secrets (tokens/keys) in config JSON: resolve via environment.
     """
     defaults = _default_targets()
     fallback = _fallback_config(defaults)
@@ -105,7 +104,12 @@ def load_routing_config() -> dict[str, Any]:
             "channel", defaults["slack"]["channel"]
         )
         cfg.setdefault("teams", {})
-        cfg.setdefault("rules", cfg.get("rules") or fallback["rules"])
+        cfg.setdefault("rules", fallback["rules"])
+        if cfg["rules"] == []:
+            logging.warning(
+                'ROUTING_RULES has "rules": []: no routing rule will match, '
+                "only the JSM fallback remains for final statuses"
+            )
         return _cache_cfg(cfg)
     except Exception as e:
         logging.error(f"Invalid ROUTING_RULES JSON: {e}")
