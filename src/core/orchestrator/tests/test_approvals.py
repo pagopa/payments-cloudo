@@ -236,21 +236,28 @@ def test_already_decided_execution_returns_409(env, call):
     assert out.values == []
 
 
-def test_reject_checks_already_decided_before_the_signature(env):
+def test_reject_already_decided_response_allows_cors(env):
     decided = PENDING + [{"ExecId": EXEC_ID, "Status": "rejected"}]
 
-    res, _ = reject(make_request(params={}), today_logs=json.dumps(decided))
+    res, _ = reject(today_logs=json.dumps(decided))
 
     assert res.status_code == 409
     assert res.headers["Access-Control-Allow-Origin"] == "*"
 
 
-def test_approve_checks_the_signature_before_already_decided(env):
+@ENDPOINTS
+@pytest.mark.parametrize(
+    "params",
+    [{}, {**signed_query(), "s": "0" * 64}],
+    ids=["missing-signature", "invalid-signature"],
+)
+def test_signature_is_checked_before_already_decided(env, call, params):
     decided = PENDING + [{"ExecId": EXEC_ID, "Status": "rejected"}]
 
-    res, _ = approve(make_request(params={}), today_logs=json.dumps(decided))
+    res, out = call(make_request(params=params), today_logs=json.dumps(decided))
 
     assert res.status_code == 401
+    assert out.values == []
 
 
 @ENDPOINTS
