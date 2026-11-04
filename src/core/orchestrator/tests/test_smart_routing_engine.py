@@ -680,14 +680,71 @@ def test_execute_sends_to_every_target():
     ]
 
 
-def test_sender_returning_false_is_reported_failed_without_fallback():
+def test_sender_returning_false_with_another_delivery_sent_skips_fallback(monkeypatch):
+    monkeypatch.setenv("JSM_API_KEY_OPS", "jsm-ops")
     jsm_calls = []
 
     results = execute_actions(
-        decision_with(Action(type="slack", channel="#c", token="t", team="ops")),
+        decision_with(
+            Action(type="slack", channel="#c", token="t", team="ops"),
+            Action(type="jsm", team="ops", apiKey="k"),
+        ),
         PAYLOAD,
         send_slack_fn=lambda **kw: False,
-        send_jsm_fn=lambda **kw: jsm_calls.append(kw),
+        send_jsm_fn=lambda **kw: jsm_calls.append(kw) or True,
+    )
+
+    assert results == [
+        {"type": "slack", "team": "ops", "status": "failed", "channel": "#c"},
+        {"type": "jsm", "team": "ops", "status": "sent"},
+    ]
+    assert jsm_calls == [{"api_key": "k", "message": "j"}]
+
+
+def test_all_senders_returning_false_trigger_final_jsm_fallback(monkeypatch):
+    monkeypatch.setenv("JSM_API_KEY_OPS", "jsm-ops")
+    jsm_keys = []
+
+    def send_jsm(api_key, **kw):
+        jsm_keys.append(api_key)
+        return api_key == "jsm-ops"
+
+    results = execute_actions(
+        decision_with(
+            Action(type="slack", channel="#c", token="t", team="ops"),
+            Action(type="jsm", team="ops", apiKey="k"),
+        ),
+        PAYLOAD,
+        send_slack_fn=lambda **kw: False,
+        send_jsm_fn=send_jsm,
+    )
+
+    assert jsm_keys == ["k", "jsm-ops"]
+    assert results == [
+        {"type": "slack", "team": "ops", "status": "failed", "channel": "#c"},
+        {"type": "jsm", "team": "ops", "status": "failed"},
+        {"type": "jsm", "team": "ops", "status": "sent", "fallback": True},
+    ]
+
+
+@pytest.mark.parametrize(
+    "kwargs",
+    [
+        {"jsm_allowed": False},
+        {"reason": "no_action_non_final"},
+    ],
+)
+def test_sender_returning_false_respects_fallback_guards(monkeypatch, kwargs):
+    monkeypatch.setenv("JSM_API_KEY_OPS", "jsm-ops")
+    jsm_calls = []
+
+    results = execute_actions(
+        decision_with(
+            Action(type="slack", channel="#c", token="t", team="ops"), **kwargs
+        ),
+        PAYLOAD,
+        send_slack_fn=lambda **kw: False,
+        send_jsm_fn=lambda **kw: jsm_calls.append(kw) or True,
     )
 
     assert results == [
