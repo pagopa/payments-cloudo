@@ -146,8 +146,11 @@ def execute_actions(
             )
             continue
         if record is not None:
-            any_success = True
             results.append(record)
+            if record["status"] == "sent":
+                any_success = True
+            else:
+                failed_actions += 1
 
     if (
         not any_success
