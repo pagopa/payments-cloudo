@@ -6,6 +6,7 @@ import {
   HiOutlineAdjustments,
   HiOutlineCheckCircle,
   HiOutlineChevronRight,
+  HiOutlineExclamation,
   HiOutlinePlus,
   HiOutlineSave,
   HiOutlineTrash,
@@ -76,6 +77,12 @@ const emptyRule = (team: string): Rule => ({
   then: [{ type: "slack", team: team === "shared" ? "default" : team }],
 });
 
+const NO_RULES_IMPACT =
+  "No Slack notifications will be sent. JSM is still paged for on-call executions in failed, error, timeout, routed or scheduled status.";
+
+const ruleScopes = (rules: Rule[]): string[] =>
+  Array.from(new Set(rules.map((rule) => rule.team || "shared")));
+
 function emptyConfig(): RoutingConfig {
   return {
     version: 2,
@@ -100,6 +107,8 @@ export function SmartRoutingConsole() {
   const [saving, setSaving] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
   const [selectedRule, setSelectedRule] = useState<number | null>(null);
+  const [savedRuleScopes, setSavedRuleScopes] = useState<string[]>([]);
+  const [confirmingEmptiedScopes, setConfirmingEmptiedScopes] = useState(false);
   const isAdmin = currentUser?.role === "ADMIN";
   const currentUserTeam = currentUser?.team || "default";
   const canEdit =
@@ -192,6 +201,7 @@ export function SmartRoutingConsole() {
           };
         });
         setConfig(parsed);
+        setSavedRuleScopes(ruleScopes(parsed.rules));
         setManagedTeams(
           Array.isArray(teams)
             ? teams.filter((team: ManagedTeam) => team.enabled)
@@ -321,11 +331,25 @@ export function SmartRoutingConsole() {
       setNotice(
         response.ok ? "Smart-routing configuration saved" : "Save failed",
       );
+      if (response.ok) setSavedRuleScopes(ruleScopes(config.rules));
     } catch {
       setNotice("Save failed");
     } finally {
       setSaving(false);
     }
+  };
+
+  const currentRuleScopes = ruleScopes(config.rules);
+  const emptiedScopes = savedRuleScopes.filter(
+    (scope) => !currentRuleScopes.includes(scope),
+  );
+
+  const commit = () => {
+    if (emptiedScopes.length > 0) {
+      setConfirmingEmptiedScopes(true);
+      return;
+    }
+    void save();
   };
 
   if (loading) {
@@ -354,7 +378,7 @@ export function SmartRoutingConsole() {
         </div>
         {canEdit && (
           <button
-            onClick={save}
+            onClick={commit}
             disabled={saving}
             className="btn btn-primary h-10 px-5 flex items-center gap-2"
           >
@@ -537,6 +561,9 @@ export function SmartRoutingConsole() {
               {visibleRules.length === 0 && (
                 <div className="border border-dashed border-cloudo-border py-16 text-center text-[10px] text-cloudo-muted uppercase tracking-widest">
                   No rules for this scope
+                  <p className="mt-3 px-6 normal-case tracking-normal">
+                    {NO_RULES_IMPACT}
+                  </p>
                 </div>
               )}
             </div>
@@ -572,6 +599,75 @@ export function SmartRoutingConsole() {
           </aside>
         </div>
       </main>
+
+      {confirmingEmptiedScopes && (
+        <EmptiedScopesConfirmationModal
+          scopes={emptiedScopes}
+          onCancel={() => setConfirmingEmptiedScopes(false)}
+          onConfirm={() => {
+            setConfirmingEmptiedScopes(false);
+            void save();
+          }}
+        />
+      )}
+    </div>
+  );
+}
+
+function EmptiedScopesConfirmationModal({
+  scopes,
+  onCancel,
+  onConfirm,
+}: {
+  scopes: string[];
+  onCancel: () => void;
+  onConfirm: () => void;
+}) {
+  return (
+    <div
+      role="alertdialog"
+      aria-modal="true"
+      aria-labelledby="emptied-scopes-title"
+      className="fixed inset-0 bg-cloudo-dark/95 backdrop-blur-md flex items-center justify-center z-[60] p-4"
+    >
+      <div className="bg-cloudo-panel border border-cloudo-err/30 max-w-sm w-full p-10 text-center space-y-8 relative overflow-hidden">
+        <div className="absolute top-0 left-0 w-full h-1 bg-cloudo-err/50" />
+
+        <div className="w-14 h-14 bg-cloudo-err/10 border border-cloudo-err/20 flex items-center justify-center mx-auto text-cloudo-err">
+          <HiOutlineExclamation className="w-7 h-7" />
+        </div>
+
+        <div className="space-y-3">
+          <h3
+            id="emptied-scopes-title"
+            className="text-[11px] font-black text-cloudo-text uppercase tracking-[0.3em]"
+          >
+            Remove all routing rules?
+          </h3>
+          <p className="text-xs text-cloudo-muted leading-relaxed">
+            These scopes will have no routing rules:
+            <span className="text-cloudo-err mt-2 mb-2 block font-mono break-words">
+              {scopes.join(", ")}
+            </span>
+            {NO_RULES_IMPACT}
+          </p>
+        </div>
+
+        <div className="flex flex-col gap-3 pt-4">
+          <button
+            onClick={onConfirm}
+            className="w-full bg-cloudo-err text-cloudo-text py-4 text-[10px] font-black uppercase tracking-[0.3em] hover:bg-cloudo-err/90 transition-all"
+          >
+            Commit without rules
+          </button>
+          <button
+            onClick={onCancel}
+            className="text-[9px] font-black text-cloudo-muted hover:text-cloudo-text uppercase tracking-widest py-2 transition-all"
+          >
+            Cancel
+          </button>
+        </div>
+      </div>
     </div>
   );
 }
