@@ -211,14 +211,14 @@ def reject(
 
     smart_routing = smart_routing_api.load()
     exec_id = decision_steps.route_exec_id(req)
+    approver, session = decision_steps.resolve_approver(req)
 
+    pending, error_res = decision_steps.verify_link(req, exec_id)
+    if error_res:
+        return error_res
     error_res = decision_steps.already_decided(
         today_logs, exec_id, headers={"Access-Control-Allow-Origin": "*"}
     )
-    if error_res:
-        return error_res
-    approver, session = decision_steps.resolve_approver(req)
-    pending, error_res = decision_steps.verify_link(req, exec_id)
     if error_res:
         return error_res
     schema, error_res = decision_steps.load_schema(schemas, pending.schema_id)
