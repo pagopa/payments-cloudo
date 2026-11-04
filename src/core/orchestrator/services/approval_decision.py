@@ -227,11 +227,11 @@ def route_decision(
     resource_info = pending.resource_info or {}
     ctx = {
         "resourceId": (resource_info.get("resource_id") or ""),
-        "resourceGroup": (resource_info.get("resource_group") or ""),
+        "resourceGroup": (resource_info.get("resource_rg") or ""),
         "resourceName": (resource_info.get("resource_name") or ""),
         "schemaName": (schema.name or ""),
         "severity": pending.severity,
-        "namespace": (resource_info.get("namespace") or ""),
+        "namespace": (resource_info.get("aks_namespace") or ""),
         "oncall": schema.oncall,
         "status": status,
         "execId": pending.exec_id,

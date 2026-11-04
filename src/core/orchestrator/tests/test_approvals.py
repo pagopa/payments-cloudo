@@ -378,11 +378,11 @@ def test_approve_routing_and_notifications(env):
     ctx = env.route_alert.call_args.args[0]
     assert ctx == {
         "resourceId": "/sub/rg/res",
-        "resourceGroup": "",
+        "resourceGroup": "rg-1",
         "resourceName": "res-1",
         "schemaName": "My Rule",
         "severity": "Sev2",
-        "namespace": "",
+        "namespace": "ns-1",
         "oncall": True,
         "status": "accepted",
         "execId": EXEC_ID,
@@ -505,8 +505,8 @@ def test_reject_logs_audits_and_notifies(env):
     }
     ctx = env.route_alert.call_args.args[0]
     assert ctx["status"] == "rejected"
-    assert ctx["resourceGroup"] == ""
-    assert ctx["namespace"] == ""
+    assert ctx["resourceGroup"] == "rg-1"
+    assert ctx["namespace"] == "ns-1"
     env.execute_actions.assert_called_once_with(
         env.decision, {"slack": None}, send_slack_fn=None
     )
