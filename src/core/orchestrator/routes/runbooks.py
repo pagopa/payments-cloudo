@@ -215,20 +215,15 @@ def list_runbooks(req: func.HttpRequest) -> func.HttpResponse:
                     if resp.status_code == 200:
                         data = resp.json()
                         tree = data.get("tree", [])
+                        # Match whole path segments, so that a sibling such as
+                        # "src/runbooks-old/" is not listed under "src/runbooks".
+                        path_prefix = f"{prefix}/" if prefix else ""
                         for item in tree:
                             path = item.get("path", "")
-                            # Filter by prefix and extension
-                            if path.startswith(prefix) and (
+                            if path.startswith(path_prefix) and (
                                 path.endswith(".sh") or path.endswith(".py")
                             ):
-                                # If prefix is present, remove it from the path to get relative path
-                                if prefix:
-                                    prefix_len = len(prefix)
-                                    rel_path = path[prefix_len:].lstrip("/")
-                                    if rel_path:
-                                        runbooks.append(rel_path)
-                                else:
-                                    runbooks.append(path)
+                                runbooks.append(path.removeprefix(path_prefix))
                         break
                 except Exception as e:
                     logging.error(f"GitHub API list error: {e}")
