@@ -87,6 +87,8 @@ def dev_test_run(
         "payload": parsed_body.get("payload"),
     }
 
+    aks_login_required = True if resource_info["aks_namespace"] and resource_info["resource_name"] and resource_info["resource_rg"] else False
+
     if not script:
         return func.HttpResponse(
             json.dumps(
@@ -162,6 +164,7 @@ def dev_test_run(
             "group": "-",
             "resource_info": resource_info or {},
             "routing_info": {},
+            "aks_login_required": aks_login_required,
         }
 
         logging.debug(
