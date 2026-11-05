@@ -3,6 +3,7 @@
 import json
 import logging
 import os
+import re
 import uuid
 
 import azure.functions as func
@@ -11,6 +12,19 @@ from core.config import AUTH, STORAGE_CONN, TABLE_NAME, TABLE_WORKERS_SCHEMAS
 from core import audit, executions, security, storage
 
 bp = func.Blueprint()
+
+MAX_LABEL_LENGTH = 40
+
+
+def _slugify(value: object) -> str:
+    slug = re.sub(r"[^a-z0-9]+", "-", str(value or "").lower()).strip("-")
+    return slug[:MAX_LABEL_LENGTH].strip("-")
+
+
+def _dev_test_name(label: object, script_type: object, exec_id: str) -> str:
+    """Readable and unique run name"""
+    slug = _slugify(label) or _slugify(script_type) or "script"
+    return f"dev-test-{slug}-{exec_id[:8]}"
 
 
 @bp.route(route="dev/testrun", auth_level=AUTH)
@@ -35,6 +49,7 @@ def dev_test_run(
     Request body (JSON):
     {
       "script": "script_name.sh",
+      "label": "optional_readable_test_name",
       "args": "command_args",
       "body": {"json": "payload"},
       "capability": "worker_capability"
@@ -100,8 +115,9 @@ def dev_test_run(
             mimetype="application/json",
         )
 
-    # Generate unique test name for logging (instead of dumping full script)
-    script_name = f"dev-test-{uuid.uuid4().hex[:8]}"
+    # Generate execution ID and unique test name for logging (instead of dumping full script)
+    exec_id = str(uuid.uuid4())
+    script_name = _dev_test_name(req_body.get("label"), script_type, exec_id)
 
     if not capability:
         return func.HttpResponse(
@@ -113,8 +129,6 @@ def dev_test_run(
             mimetype="application/json",
         )
 
-    # Generate execution ID
-    exec_id = str(uuid.uuid4())
     requested_at = utils.format_requested_at()
 
     logging.debug(

@@ -813,7 +813,7 @@ export default function StudioPage() {
             {/* Modal Header */}
             <div className="px-8 py-4 border-b border-cloudo-border bg-cloudo-accent/5 flex justify-between items-center flex-shrink-0">
               <h2 className="text-xs font-black uppercase tracking-[0.3em] text-cloudo-accent">
-                Script Debugger // Live_Test_Environment
+                Runbook Test // Live_Test_Environment
               </h2>
               <button
                 onClick={() => setIsTestModalOpen(false)}
@@ -916,31 +916,27 @@ function TestScriptForm({
   onError: (err: string) => void;
 }) {
   const STORAGE_KEY = "cloudo_test_form_data";
+  const EMPTY_FORM = {
+    label: "",
+    script: "",
+    args: "",
+    body: "{}",
+    capability: "",
+    scriptType: "python",
+  };
 
   const [formData, setFormData] = useState(() => {
     if (typeof window !== "undefined") {
       const saved = localStorage.getItem(STORAGE_KEY);
       if (saved) {
         try {
-          return JSON.parse(saved);
+          return { ...EMPTY_FORM, ...JSON.parse(saved) };
         } catch {
-          return {
-            script: "",
-            args: "",
-            body: "{}",
-            capability: "",
-            scriptType: "python",
-          };
+          return EMPTY_FORM;
         }
       }
     }
-    return {
-      script: "",
-      args: "",
-      body: "{}",
-      capability: "",
-      scriptType: "python",
-    };
+    return EMPTY_FORM;
   });
   const [isBodyOpen, setIsBodyOpen] = useState(false);
   const [submitting, setSubmitting] = useState(false);
@@ -1006,7 +1002,12 @@ function TestScriptForm({
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     reader.onload = (event: any) => {
       const content = event.target?.result;
-      setFormData({ ...formData, script: content, scriptType: detectedType });
+      setFormData({
+        ...formData,
+        label: file.name.replace(/\.[^.]+$/, ""),
+        script: content,
+        scriptType: detectedType,
+      });
     };
     reader.readAsText(file);
   };
@@ -1031,13 +1032,7 @@ function TestScriptForm({
   };
 
   const handleClear = () => {
-    setFormData({
-      script: "",
-      args: "",
-      body: "{}",
-      capability: "",
-      scriptType: "python",
-    });
+    setFormData(EMPTY_FORM);
   };
 
   const handleSubmit = async () => {
@@ -1062,6 +1057,7 @@ function TestScriptForm({
       }
 
       const payload = {
+        label: formData.label,
         script: formData.script,
         args: formData.args,
         body: bodyPayload,
@@ -1105,6 +1101,16 @@ function TestScriptForm({
       <div className="flex gap-6 flex-1 overflow-hidden">
         {/* LEFT COLUMN: SETTINGS */}
         <div className="w-80 flex flex-col gap-5 overflow-y-auto pr-2 flex-shrink-0">
+          <FormField
+            label="Test Name (optional)"
+            icon={<HiOutlineTerminal className="w-3 h-3 text-cloudo-accent" />}
+            value={formData.label}
+            onChange={(e) =>
+              setFormData({ ...formData, label: e.target.value })
+            }
+            placeholder="my-runbook"
+          />
+
           <FormField
             label="Worker Capability"
             icon={<HiOutlineCube className="w-3 h-3 text-cloudo-accent" />}
