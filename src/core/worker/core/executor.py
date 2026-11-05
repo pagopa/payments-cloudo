@@ -8,6 +8,7 @@ import signal
 import subprocess
 import sys
 import tempfile
+import threading
 import time
 from subprocess import CompletedProcess
 from typing import Any, Optional
@@ -248,11 +249,26 @@ def run_script(
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
             text=True,
+            # Runbooks can print anything: bad bytes must not fail the execution.
+            errors="replace",
             bufsize=0,
             close_fds=True,
             env=script_env,
             cwd=execution_cwd,
         )
+
+        # Drain stderr while stdout is read below. Otherwise a script that fills the
+        # stderr pipe blocks on that write, stdout never closes and the run hangs.
+        stderr_chunks: list[str] = []
+        stderr_reader: Optional[threading.Thread] = None
+        if proc.stderr:
+            stderr_reader = threading.Thread(
+                target=lambda stream: stderr_chunks.append(stream.read() or ""),
+                args=(proc.stderr,),
+                name=f"runbook-stderr-{(payload or {}).get('exec_id')}",
+                daemon=True,
+            )
+            stderr_reader.start()
 
         # Record the process to be stopped
         try:
@@ -308,9 +324,9 @@ def run_script(
 
         stdout_data = "".join(collected_stdout)
         _push_running_status_if_due(force=True)
-        stderr_data = ""
-        if proc.stderr:
-            stderr_data = proc.stderr.read() or ""
+        if stderr_reader:
+            stderr_reader.join()
+        stderr_data = "".join(stderr_chunks)
 
         returncode = proc.wait()
         if returncode != 0 and returncode not in TERMINATED_CODES:
