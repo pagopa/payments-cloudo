@@ -31,6 +31,7 @@ logger = logging.getLogger(__name__)
 def days_until_expiry(host: str, port: int) -> float:
     """Returns the days left. An invalid certificate fails the TLS handshake."""
     context = ssl.create_default_context()
+    context.minimum_version = ssl.TLSVersion.TLSv1_2
     with (
         socket.create_connection((host, port), timeout=10) as raw_socket,
         context.wrap_socket(raw_socket, server_hostname=host) as tls_socket,
