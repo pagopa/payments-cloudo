@@ -53,6 +53,9 @@ the [Infrastructure as Code Documentation](src/core/iac/README.md).
 
 Actually the Runbooks can be written with `bash` & `python` programming language.
 
+Templates, worked examples and the full runbook contract are in
+[examples/runbooks](examples/runbooks/README.md).
+
 When the alert originates from Azure Kubernetes Service (AKS),
 the runbook has the following environment variables available:
 
