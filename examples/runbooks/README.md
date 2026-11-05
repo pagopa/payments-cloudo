@@ -50,8 +50,7 @@ Each file lists the schema fields it needs in its header.
 **Outcome.** The exit code decides it: `0` is succeeded, anything else is failed.
 
 **Logs.** Write to stdout. It is streamed while the runbook runs and saved as the
-execution log. Stderr only appears when the runbook fails, and it is read after stdout
-closes, so writing a lot to it can block the runbook.
+execution log. Stderr only appears when the runbook fails.
 
 **Files.** A runbook is downloaded as a single file and runs in a temporary directory,
 so it cannot source helpers or read files stored next to it.
