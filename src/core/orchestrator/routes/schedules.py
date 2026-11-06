@@ -7,6 +7,8 @@ from datetime import datetime
 from typing import Any, Optional
 
 import azure.functions as func
+from azure.core import MatchConditions
+from azure.core.exceptions import ResourceModifiedError, ResourceNotFoundError
 from core.config import (
     AUTH,
     DEFAULT_TEAM,
@@ -19,6 +21,31 @@ from utils import as_bool, create_cors_response
 from core import audit, executions, security, storage, team_access
 
 bp = func.Blueprint()
+
+
+def _claim_schedule_run(table_client, schedule, claimed_at: datetime) -> bool:
+    """
+    Atomically take this schedule's run, so that only one replica dispatches it.
+    """
+    from azure.data.tables import UpdateMode
+
+    try:
+        table_client.update_entity(
+            entity={
+                "PartitionKey": schedule["PartitionKey"],
+                "RowKey": schedule["RowKey"],
+                "last_run": claimed_at.isoformat(),
+            },
+            mode=UpdateMode.MERGE,
+            etag=schedule.metadata["etag"],
+            match_condition=MatchConditions.IfNotModified,
+        )
+    except (ResourceModifiedError, ResourceNotFoundError) as e:
+        logging.info(
+            f"[Scheduler] Skipping {schedule['RowKey']}: row changed since read ({type(e).__name__})"
+        )
+        return False
+    return True
 
 
 @bp.route(
@@ -344,7 +371,7 @@ def scheduler_engine(schedulerTimer: func.TimerRequest) -> None:
                     if (now - last_run_dt).total_seconds() >= 45:
                         should_run = True
 
-            if should_run:
+            if should_run and _claim_schedule_run(table_client, s, now):
                 exec_id = str(uuid.uuid4())
                 logging.info(
                     f"[Scheduler] Triggering {s['name']} (ID: {s['RowKey']}) -> ExecId: {exec_id}"
@@ -420,9 +447,6 @@ def scheduler_engine(schedulerTimer: func.TimerRequest) -> None:
                         logging.warning(f"[Scheduler] Queue {q_name} not found")
                     else:
                         raise qe
-
-                s["last_run"] = now.isoformat()
-                table_client.update_entity(entity=s)
 
     except Exception as e:
         logging.error(f"[Scheduler] Error: {e}")
