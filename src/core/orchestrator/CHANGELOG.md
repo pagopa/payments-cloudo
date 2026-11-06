@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.30.3](https://github.com/pagopa/payments-cloudo/compare/orchestrator-v0.30.2...orchestrator-v0.30.3) (2026-11-06)
+
+
+### 🐛 Fixes
+
+* [PAYMCLOUD-1483] prevent duplicate schedule dispatch across scheduler replicas ([#129](https://github.com/pagopa/payments-cloudo/issues/129)) ([9fc974c](https://github.com/pagopa/payments-cloudo/commit/9fc974cd243d006f1c73eaeb8f2a77b389fe136f))
+
 ## [0.30.2](https://github.com/pagopa/payments-cloudo/compare/orchestrator-v0.30.1...orchestrator-v0.30.2) (2026-11-05)
 
 
