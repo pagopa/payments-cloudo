@@ -495,8 +495,8 @@ export default function SchedulesPage() {
                                   disabled={togglingId === s.id}
                                   className={`p-1.5 border transition-all ${
                                     s.enabled
-                                      ? "bg-cloudo-accent/10 border-cloudo-border text-cloudo-muted hover:border-cloudo-muted/40"
-                                      : "bg-cloudo-accent/10 border-cloudo-border text-cloudo-ok hover:border-white/20"
+                                      ? "bg-cloudo-accent/10 border-cloudo-border text-cloudo-ok hover:border-white/20"
+                                      : "bg-cloudo-accent/10 border-cloudo-border text-cloudo-muted hover:border-cloudo-muted/40"
                                   } ${
                                     togglingId === s.id
                                       ? "opacity-50 cursor-not-allowed"
@@ -509,16 +509,16 @@ export default function SchedulesPage() {
                                   }`}
                                   title={
                                     s.enabled
-                                      ? "Disable Schedule"
-                                      : "Enable Schedule"
+                                      ? "Enable Schedule"
+                                      : "Disable Schedule"
                                   }
                                 >
                                   {togglingId === s.id ? (
                                     <HiOutlineRefresh className="w-4 h-4 animate-spin" />
                                   ) : s.enabled ? (
-                                    <HiOutlineBan className="w-4 h-4" />
-                                  ) : (
                                     <HiOutlineCheck className="w-4 h-4" />
+                                  ) : (
+                                    <HiOutlineBan className="w-4 h-4" />
                                   )}
                                 </button>
                                 <button
