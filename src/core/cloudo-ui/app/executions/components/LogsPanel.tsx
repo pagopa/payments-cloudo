@@ -63,6 +63,8 @@ interface LogEntry {
   team?: string;
   ResourceInfo?: string;
   Notifications?: string;
+  AzureLoginStatus?: string;
+  AksLoginStatus?: string;
 }
 
 const statusPriority: Record<string, number> = {
@@ -589,6 +591,36 @@ function LogsPanelContent() {
       text: "text-cloudo-ok",
       dot: "bg-cloudo-ok",
       label: s || "UNKNOWN",
+    };
+  };
+
+  const getLoginStatusBadge = (status?: string) => {
+    const s = (status || "").trim().toLowerCase();
+    if (s === "ok") {
+      return {
+        label: "AUTHENTICATED",
+        className: "border-cloudo-ok/30 text-cloudo-ok bg-cloudo-ok/5",
+        icon: <HiCheckCircle className="w-3.5 h-3.5" />,
+      };
+    }
+    if (s === "skipped") {
+      return {
+        label: "NOT REQUIRED",
+        className: "border-cloudo-muted/60 text-cloudo-muted bg-cloudo-muted/5",
+        icon: <HiOutlineExclamationCircle className="w-3.5 h-3.5" />,
+      };
+    }
+    if (s.startsWith("failed")) {
+      return {
+        label: "NOT AUTHENTICATED",
+        className: "border-cloudo-warn/30 text-cloudo-warn bg-cloudo-warn/5",
+        icon: <HiOutlineExclamationCircle className="w-3.5 h-3.5" />,
+      };
+    }
+    return {
+      label: "N/A",
+      className: "border-cloudo-muted/60 text-cloudo-muted bg-cloudo-muted/5",
+      icon: <HiOutlineExclamationCircle className="w-3.5 h-3.5" />,
     };
   };
 
@@ -1388,6 +1420,42 @@ function LogsPanelContent() {
                   />
                 </div>
               </div>
+
+              {(detailLog.AzureLoginStatus || detailLog.AksLoginStatus) && (
+                <div className="border border-cloudo-border bg-cloudo-dark/40 p-4 space-y-3">
+                  <div className="text-[10px] font-black uppercase tracking-[0.2em] text-cloudo-muted">
+                    Auth Status
+                  </div>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+                    {[
+                      { key: "Azure CLI", value: detailLog.AzureLoginStatus },
+                      { key: "AKS / kubectl", value: detailLog.AksLoginStatus },
+                    ].map(({ key, value }) => {
+                      const badge = getLoginStatusBadge(value);
+                      const failed = (value || "")
+                        .toLowerCase()
+                        .startsWith("failed");
+                      return (
+                        <div
+                          key={key}
+                          className="bg-cloudo-dark/55 border border-cloudo-border px-3 py-2 space-y-1.5"
+                        >
+                          <div className="text-[10px] font-black uppercase tracking-widest text-cloudo-muted/70">
+                            {key}
+                          </div>
+                          <div
+                            className={`inline-flex items-center gap-1.5 rounded-sm border px-1.5 py-0.5 text-[9px] font-black uppercase tracking-wider ${badge.className}`}
+                            title={failed ? value : undefined}
+                          >
+                            {badge.icon}
+                            <span>{badge.label}</span>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
 
               <div className="border border-cloudo-border bg-cloudo-dark/40 p-4 space-y-3">
                 <div className="text-[10px] font-black uppercase tracking-[0.2em] text-cloudo-muted">

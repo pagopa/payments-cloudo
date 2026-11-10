@@ -16,19 +16,9 @@ export KUBECONFIG=$1
 
 log() { echo "[aks-login] $*"; }
 
-# Azure login (Managed Identity, non-interactive)
-log "Azure login with Managed Identity..."
-if [[ -n "${AZURE_CLIENT_ID:-}" ]]; then
-  az login --identity --client-id "$AZURE_CLIENT_ID" 1>/dev/null
-else
-  az login --identity 1>/dev/null
-fi
-
-# Optional subscription
-if [[ -n "${AZURE_SUBSCRIPTION_ID:-}" ]]; then
-  log "Setting subscription: ${AZURE_SUBSCRIPTION_ID}"
-  az account set --subscription "$AZURE_SUBSCRIPTION_ID"
-fi
+# Azure CLI login (Managed Identity) and subscription selection are handled
+# once per execution by az-login.sh before this script runs; this script only
+# sets up AKS/kubectl access on top of that already-authenticated session.
 
 # Fetch kubeconfig
 log "Fetching AKS credentials for ${CLUSTER_NAME}..."

@@ -282,6 +282,8 @@ def logs_query(req: func.HttpRequest) -> func.HttpResponse:
             "ResourceInfo",
             "team",
             "Notifications",
+            "AzureLoginStatus",
+            "AksLoginStatus",
         ]
         if include_log_content or q:
             selected_columns.append("Log")

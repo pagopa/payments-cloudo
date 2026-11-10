@@ -126,6 +126,8 @@ def _write_log(
         monitor_condition=body.get("monitor_condition"),
         severity=body.get("severity"),
         team=body.get("team") or resource_info.get("team"),
+        azure_login_status=body.get("azure_login_status"),
+        aks_login_status=body.get("aks_login_status"),
     )
     log_entity = log_blobs.ensure_log_entity_size_for_table(log_entity)
     log_table.set(json.dumps(log_entity, ensure_ascii=False))

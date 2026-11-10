@@ -54,6 +54,8 @@ _ENTRY_COLUMNS = [
     "ResourceInfo",
     "team",
     "Notifications",
+    "AzureLoginStatus",
+    "AksLoginStatus",
     "Log",
 ]
 

@@ -29,6 +29,54 @@ def _clean_path(p: Optional[str]) -> Optional[str]:
     return s
 
 
+def run_az_login(
+    payload: dict = None,
+    env: dict = None,
+) -> None:
+    """
+    Runs the local Azure CLI login script (Managed Identity, non-interactive)
+    """
+    exec_id = (payload or {}).get("exec_id", "unknown")
+
+    if env is None:
+        env = os.environ.copy()
+
+    script_path = os.path.normpath("utils/az-login.sh")
+    if not os.path.exists(script_path):
+        raise FileNotFoundError(f"[{exec_id}] az login script not found: {script_path}")
+
+    logging.info(f"[{exec_id}] Running Azure CLI login: %s", script_path)
+    try:
+        proc = subprocess.Popen(
+            [script_path],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            text=True,
+            bufsize=1,
+            universal_newlines=True,
+            env=env,
+        )
+
+        collected_stdout = []
+        if proc.stdout:
+            for line in proc.stdout:
+                if not line:
+                    continue
+                msg = line.rstrip()
+                collected_stdout.append(line)
+                logging.info(f"[{exec_id}] {msg}")
+
+        stdout_data = "".join(collected_stdout)
+        rc = proc.wait()
+        if rc != 0:
+            combined_output = stdout_data.strip() or "No output captured from az login"
+            raise RuntimeError(
+                f"[{exec_id}] az login error (rc={rc}). Full output:\n{combined_output}"
+            )
+    except OSError as e:
+        raise RuntimeError(f"[{exec_id}] az login execution error: {e}") from e
+
+
 def run_aks_login(
     resource_info: dict,
     payload: dict = None,

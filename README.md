@@ -71,18 +71,15 @@ the runbook has the following environment variables available:
 
 The runbooks have already integrated the azcli support and the python library for az management.
 
-#### Log in on azure
+#### Azure login
 
-If you need to write a runbook that works on Azure copy/paste this piece of code on top to
-ensure manage identity login of ClouDO Worker.
-
-```bash
-# Ensure Azure login
-if ! az account show >/dev/null 2>&1; then
-  echo "Logging into Azure..."
-  az login --identity --client-id "$AZURE_CLIENT_ID" >/dev/null
-fi
-```
+The worker logs in to Azure with its managed identity (`az login --identity`) once
+before every runbook, so you don't need to add that boilerplate to your script
+anymore. This happens regardless of `aks_login_required` and is best-effort: not
+every environment provides a usable managed identity, and a failed login does not
+stop the runbook from running. The outcome is reported as the execution's "Auth
+Status" in the UI (and as `azure_login_status` in the execution log) rather than as
+a hard failure.
 
 ### Example schemas
 
