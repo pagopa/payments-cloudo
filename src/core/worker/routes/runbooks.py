@@ -18,6 +18,23 @@ from core import executor, registry, reporting
 bp = func.Blueprint()
 
 
+def _short_error(e: Exception, max_len: int = 160) -> str:
+    """One-line, truncated description of an exception for compact auth logs."""
+    first_line = str(e).splitlines()[0] if str(e) else ""
+    text = f"{type(e).__name__}: {first_line}" if first_line else type(e).__name__
+    return text[:max_len]
+
+
+def _auth_summary(status: str) -> str:
+    """Compact yes/no/n-a form of an azure_login_status/aks_login_status value."""
+    if status == "ok":
+        return "yes"
+    if status == "skipped":
+        return "n/a"
+    reason = status.removeprefix("failed:").strip()
+    return f"no ({reason})" if reason else "no"
+
+
 def _parse_resource_info(value: Any, exec_id: str) -> dict:
     if isinstance(value, dict):
         return value
@@ -102,6 +119,12 @@ def process_runbook(msg: func.QueueMessage) -> None:
     execution_temp_dir = tempfile.mkdtemp(prefix=f"cloudo-{exec_id}-")
 
     try:
+        try:
+            executor.run_az_login(payload=payload, env=env)
+            payload["azure_login_status"] = "ok"
+        except Exception as e:
+            payload["azure_login_status"] = f"failed: {_short_error(e)}"
+
         info = _parse_resource_info(payload.get("resource_info"), exec_id)
         kubeconfig_path = None
         aks_login_required = (
@@ -126,47 +149,39 @@ def process_runbook(msg: func.QueueMessage) -> None:
                 os.environ.get("AKS_INTEGRATION_ENABLED", "").strip().lower()
             )
             if aks_integration_enabled == "false":
-                err_msg = (
-                    f"{log_prefix} AKS login failed: tf var AKS_INTEGRATION "
-                    "not defined for this deployment"
+                payload["aks_login_status"] = (
+                    "failed: AKS_INTEGRATION not enabled for this deployment"
                 )
-                reporting.dispatch_status(payload, status="error", log_message=err_msg)
-                logging.error(err_msg)
-                return
-
-            required_aks_settings = {
-                "resource_rg": "resource group (RESOURCE_RG)",
-                "resource_name": "cluster name (RESOURCE_NAME)",
-                "aks_namespace": "namespace (AKS_NAMESPACE)",
-            }
-            missing_settings = [
-                label
-                for key, label in required_aks_settings.items()
-                if not str(info.get(key) or "").strip()
-            ]
-            if missing_settings:
-                err_msg = (
-                    f"{log_prefix} AKS login failed: missing "
-                    f"{', '.join(missing_settings)} in resource_info, schema "
-                    "definition, or worker environment"
-                )
-                reporting.dispatch_status(payload, status="error", log_message=err_msg)
-                logging.error(err_msg)
-                return
-
-            try:
-                kubeconfig_path = executor.run_aks_login(
-                    info, payload, env=env, temp_dir=execution_temp_dir
-                )
-                logging.info(f"{log_prefix} AKS login completed successfully")
-            except Exception as e:
-                # Report error and stop processing
-                err_msg = f"{log_prefix} AKS login failed: {type(e).__name__}: {e}"
-                reporting.dispatch_status(payload, status="error", log_message=err_msg)
-                logging.error(f"{err_msg}")
-                return
+            else:
+                required_aks_settings = {
+                    "resource_rg": "resource group (RESOURCE_RG)",
+                    "resource_name": "cluster name (RESOURCE_NAME)",
+                    "aks_namespace": "namespace (AKS_NAMESPACE)",
+                }
+                missing_settings = [
+                    label
+                    for key, label in required_aks_settings.items()
+                    if not str(info.get(key) or "").strip()
+                ]
+                if missing_settings:
+                    payload["aks_login_status"] = (
+                        f"failed: missing {', '.join(missing_settings)}"
+                    )
+                else:
+                    try:
+                        kubeconfig_path = executor.run_aks_login(
+                            info, payload, env=env, temp_dir=execution_temp_dir
+                        )
+                        payload["aks_login_status"] = "ok"
+                    except Exception as e:
+                        payload["aks_login_status"] = f"failed: {_short_error(e)}"
         else:
-            logging.info(f"{log_prefix} AKS login skipped: not required by schema")
+            payload["aks_login_status"] = "skipped"
+
+        logging.info(
+            f"{log_prefix} Auth: azure={_auth_summary(payload['azure_login_status'])}, "
+            f"aks={_auth_summary(payload['aks_login_status'])}"
+        )
 
         result = executor.run_script(
             script_name=payload.get("runbook"),

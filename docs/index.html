@@ -992,14 +992,17 @@
             </table>
             <p>
               The worker image includes the Azure CLI and Python Azure
-              libraries. For Azure CLI operations outside the schema-managed AKS
-              connection, the worker's managed identity can be used with:
+              libraries. The worker logs in with its managed identity (<code
+                >az login --identity</code
+              >) once before every runbook, so scripts needing Azure CLI
+              operations outside the schema-managed AKS connection don't need to
+              log in themselves. This happens regardless of
+              <code>aks_login_required</code> and is best-effort: not every
+              environment provides a usable managed identity, and a failed login
+              does not stop the runbook from running. The outcome is reported as
+              the execution's "Auth Status" in the UI (and as
+              <code>azure_login_status</code> in the execution log).
             </p>
-            <pre><code># Ensure Azure login
-if ! az account show &gt;/dev/null 2&gt;&amp;1; then
-  echo "Logging into Azure..."
-  az login --identity --client-id "$AZURE_CLIENT_ID" &gt;/dev/null
-fi</code></pre>
             <h3>AKS connection</h3>
             <p>
               Enable <code>aks_login_required</code> in a schema when its
@@ -1036,8 +1039,12 @@ fi</code></pre>
               <code>KUBECONFIG</code> to the runbook, so
               <code>kubectl</code> commands use that connection without another
               login in the script. The worker removes the kubeconfig after
-              execution. Authentication, authorization or token generation
-              failures stop the runbook and report an execution error.
+              execution. The login is best-effort: authentication, authorization
+              or token generation failures no longer stop the runbook. They are
+              reported as the execution's "Auth Status" in the UI (and as
+              <code>aks_login_status</code> in the execution log) so a script
+              that genuinely needs <code>KUBECONFIG</code>
+              can check for it and fail on its own terms.
             </p>
             <div class="note">
               For Terraform deployments, configure
@@ -1045,8 +1052,9 @@ fi</code></pre>
               grants its managed identity the AKS Cluster User and AKS RBAC
               Admin roles on those clusters, and sets
               <code>AKS_INTEGRATION_ENABLED</code>. If that setting is
-              explicitly <code>false</code>, a schema requesting AKS login fails
-              rather than running without a cluster connection.
+              explicitly <code>false</code>, a schema requesting AKS login still
+              runs the runbook, just without a cluster connection; the reason is
+              recorded in the execution's "Auth Status".
             </div>
             <h3>Describing the runbook</h3>
             <pre><code>[

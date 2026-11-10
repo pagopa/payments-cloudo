@@ -2,7 +2,6 @@
 
 import json
 import logging
-import uuid
 from typing import Any, Optional
 
 import azure.functions as func
@@ -92,6 +91,14 @@ def _log_invocation(body: dict, log_prefix: str) -> None:
     )
 
 
+def _status_row_key(exec_id: Optional[str], status_label: str) -> str:
+    """Deterministic RowKey so a redelivered status (HTTP timeout + queue fallback,
+    or a queue retry) upserts the same row instead of inserting a duplicate."""
+    safe_exec_id = str(exec_id or "unknown").strip() or "unknown"
+    safe_status = str(status_label or "unknown").strip() or "unknown"
+    return f"{safe_exec_id}_{safe_status}"
+
+
 def _write_log(
     body: dict,
     status_label: str,
@@ -103,7 +110,7 @@ def _write_log(
     log_entity = executions.build_log_entry(
         status=status_label,
         partition_key=partition_key,
-        row_key=str(uuid.uuid4()),
+        row_key=_status_row_key(body.get("exec_id"), status_label),
         exec_id=body.get("exec_id"),
         requested_at=utils.format_requested_at(),
         name=body.get("name"),
@@ -119,6 +126,8 @@ def _write_log(
         monitor_condition=body.get("monitor_condition"),
         severity=body.get("severity"),
         team=body.get("team") or resource_info.get("team"),
+        azure_login_status=body.get("azure_login_status"),
+        aks_login_status=body.get("aks_login_status"),
     )
     log_entity = log_blobs.ensure_log_entity_size_for_table(log_entity)
     log_table.set(json.dumps(log_entity, ensure_ascii=False))

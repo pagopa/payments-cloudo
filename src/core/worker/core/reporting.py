@@ -82,6 +82,8 @@ def _build_status_headers(payload: dict, status: str, log_message: str) -> dict:
         "Team": payload.get("team") or WORKER_TEAM,
         "ResourceInfo": payload.get("resource_info"),
         "RoutingInfo": payload.get("routing_info"),
+        "AzureLoginStatus": payload.get("azure_login_status"),
+        "AksLoginStatus": payload.get("aks_login_status"),
     }
 
 
@@ -149,6 +151,8 @@ def post_status(payload: dict, status: str, log_message: str) -> str:
         "team": headers.get("Team"),
         "resource_info": headers.get("ResourceInfo"),
         "routing_info": headers.get("RoutingInfo"),
+        "azure_login_status": headers.get("AzureLoginStatus"),
+        "aks_login_status": headers.get("AksLoginStatus"),
         "log_ref": log_ref,
         "logs_b64": log_bytes.decode("utf-8"),
         "content_type": "text/plain; charset=utf-8",

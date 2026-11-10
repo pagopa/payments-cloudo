@@ -68,7 +68,7 @@ passed to the script.
 | `CLOUDO_PAYLOAD`                                                   | The alert's full `resource_info`, as JSON |
 | `CLOUDO_EXEC_ID`, `CLOUDO_NAME`, `CLOUDO_RUNBOOK`, `CLOUDO_WORKER` | The current execution                     |
 | `CLOUDO_ENVIRONMENT`                                               | The environment of the worker             |
-| `KUBECONFIG`                                                       | Only set with `aks_login_required`        |
+| `KUBECONFIG`                                                       | Only set when the AKS login step succeeds |
 
 - Variables whose name contains `TOKEN`, `SECRET`, `KEY`, `PASS`, `PWD`, `AUTH` or
   similar reach the runbook masked as `******`. To use a secret, read it from Key Vault.
@@ -78,9 +78,15 @@ passed to the script.
 - The token lasts 10 minutes, so keep every wait below that.
 - Access is limited to the namespace, which rules out cluster-wide resources such as
   nodes. The default role covers workloads, jobs, HPAs, ScaledObjects and core objects.
+- The login is best-effort: if it fails, the runbook still runs without `KUBECONFIG`.
+  Check for it if your script depends on `kubectl`, and check the execution's "Auth
+  Status" (`aks_login_status`) if a run fails unexpectedly.
 
-**Azure.** The worker runs headless, so log in with `az login --identity` and never fall
-back to an interactive login. Set the subscription if `AZURE_SUBSCRIPTION_ID` is present.
+**Azure.** The worker already logs in with `az login --identity` once before every
+runbook, so you don't need to do that yourself. This is also best-effort: not every
+environment provides a managed identity, so check `az account show` first if your
+script truly requires Azure CLI access, and check the execution's "Auth Status"
+(`azure_login_status`) if a run fails unexpectedly.
 
 **Databases.** The worker image includes `psql` and `psycopg2`. Connect with a Microsoft
 Entra token, as `database/postgres_health.py` does. If the server only supports passwords,
