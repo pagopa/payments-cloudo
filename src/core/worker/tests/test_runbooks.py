@@ -54,19 +54,20 @@ def test_process_runbook_happy_path(monkeypatch):
         reporting, "_send_status_to_receiver", side_effect=fake_send_status_to_receiver
     ):
         with patch.object(executor, "run_script", return_value=fake_completed):
-            # Ensure internal registries are clean
-            registry.ACTIVE_RUNS.clear()
-            registry.PROCESS_BY_EXEC.clear()
+            with patch.object(executor, "run_az_login", return_value=None):
+                # Ensure internal registries are clean
+                registry.ACTIVE_RUNS.clear()
+                registry.PROCESS_BY_EXEC.clear()
 
-            msg = make_queue_message(payload)
-            runbooks.process_runbook(msg)
+                msg = make_queue_message(payload)
+                runbooks.process_runbook(msg)
 
-            # Verify status transitions: running -> succeeded
-            assert status_calls[0][0] == "running"
-            assert status_calls[-1][0] == "succeeded"
+                # Verify status transitions: running -> succeeded
+                assert status_calls[0][0] == "running"
+                assert status_calls[-1][0] == "succeeded"
 
-            # Ensure the run is no longer tracked
-            assert payload["exec_id"] not in registry.ACTIVE_RUNS
+                # Ensure the run is no longer tracked
+                assert payload["exec_id"] not in registry.ACTIVE_RUNS
 
 
 def test_process_runbook_uses_schema_aks_settings_unless_resource_info_overrides(
@@ -104,7 +105,7 @@ def test_process_runbook_uses_schema_aks_settings_unless_resource_info_overrides
 
     with patch.object(
         reporting, "_send_status_to_receiver", return_value=True
-    ), patch.object(
+    ), patch.object(executor, "run_az_login", return_value=None), patch.object(
         executor, "run_aks_login", side_effect=fake_aks_login
     ), patch.object(executor, "run_script", side_effect=fake_run_script):
         registry.ACTIVE_RUNS.clear()
@@ -137,13 +138,106 @@ def test_process_runbook_skips_aks_login_when_schema_does_not_require_it(
     result = MagicMock(returncode=0, stdout="all good\n", stderr="")
     with patch.object(
         reporting, "_send_status_to_receiver", return_value=True
-    ), patch.object(executor, "run_aks_login") as login, patch.object(
-        executor, "run_script", return_value=result
-    ):
+    ), patch.object(executor, "run_az_login", return_value=None), patch.object(
+        executor, "run_aks_login"
+    ) as login, patch.object(executor, "run_script", return_value=result):
         registry.ACTIVE_RUNS.clear()
         runbooks.process_runbook(make_queue_message(payload))
 
     login.assert_not_called()
+
+
+def test_process_runbook_always_runs_az_login_regardless_of_aks_flag(monkeypatch):
+    """Azure CLI login must run once per execution even when the schema does
+    not require AKS access, so any `az` command in the runbook is authenticated."""
+    payload = {
+        "name": "MyRule",
+        "runbook": "script.py",
+        "exec_id": "exec-az-login",
+        "resource_info": None,
+    }
+
+    result = MagicMock(returncode=0, stdout="all good\n", stderr="")
+    with patch.object(
+        reporting, "_send_status_to_receiver", return_value=True
+    ), patch.object(
+        executor, "run_az_login", return_value=None
+    ) as az_login, patch.object(executor, "run_script", return_value=result):
+        registry.ACTIVE_RUNS.clear()
+        runbooks.process_runbook(make_queue_message(payload))
+
+    az_login.assert_called_once()
+
+
+def test_process_runbook_continues_and_reports_status_when_az_login_fails(
+    monkeypatch,
+):
+    """Not every environment requires Azure CLI auth: a failed az login must
+    not block the runbook, only be recorded for the execution detail UI."""
+    payload = {
+        "name": "MyRule",
+        "runbook": "script.py",
+        "exec_id": "exec-az-login-fail",
+        "resource_info": None,
+    }
+
+    messages = []
+
+    def fake_send_status_to_receiver(message_json, _payload):
+        messages.append(json.loads(message_json))
+        return True
+
+    result = MagicMock(returncode=0, stdout="all good\n", stderr="")
+    with patch.object(
+        reporting,
+        "_send_status_to_receiver",
+        side_effect=fake_send_status_to_receiver,
+    ), patch.object(
+        executor, "run_az_login", side_effect=RuntimeError("az login error (rc=1)")
+    ), patch.object(executor, "run_script", return_value=result) as run_script:
+        registry.ACTIVE_RUNS.clear()
+        runbooks.process_runbook(make_queue_message(payload))
+
+    run_script.assert_called_once()
+    assert messages[-1]["status"] == "succeeded"
+    assert messages[-1]["azure_login_status"].startswith("failed: RuntimeError")
+
+
+def test_process_runbook_continues_and_reports_status_when_aks_login_fails(
+    monkeypatch,
+):
+    payload = {
+        "name": "MyRule",
+        "runbook": "script.py",
+        "exec_id": "exec-aks-login-fail",
+        "aks_login_required": True,
+        "resource_info": {
+            "resource_name": "aks-demo",
+            "resource_rg": "rg-demo",
+            "aks_namespace": "demo-ns",
+        },
+    }
+
+    messages = []
+
+    def fake_send_status_to_receiver(message_json, _payload):
+        messages.append(json.loads(message_json))
+        return True
+
+    result = MagicMock(returncode=0, stdout="all good\n", stderr="")
+    with patch.object(
+        reporting,
+        "_send_status_to_receiver",
+        side_effect=fake_send_status_to_receiver,
+    ), patch.object(executor, "run_az_login", return_value=None), patch.object(
+        executor, "run_aks_login", side_effect=RuntimeError("aks login error (rc=1)")
+    ), patch.object(executor, "run_script", return_value=result) as run_script:
+        registry.ACTIVE_RUNS.clear()
+        runbooks.process_runbook(make_queue_message(payload))
+
+    run_script.assert_called_once()
+    assert messages[-1]["status"] == "succeeded"
+    assert messages[-1]["aks_login_status"].startswith("failed: RuntimeError")
 
 
 def test_process_runbook_skips_if_already_running(monkeypatch):

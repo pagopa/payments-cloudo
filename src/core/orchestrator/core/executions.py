@@ -71,6 +71,8 @@ def build_log_entry(
     approval_expires_at: Optional[str] = None,
     approval_decision_by: Optional[str] = None,
     notifications: Optional[str] = None,
+    azure_login_status: Optional[str] = None,
+    aks_login_status: Optional[str] = None,
 ) -> dict[str, Any]:
     # Normalized log entity for Azure Table Storage (with optional approval fields)
     return {
@@ -98,6 +100,8 @@ def build_log_entry(
         "ApprovalExpiresAt": approval_expires_at,
         "ApprovalDecisionBy": approval_decision_by,
         "Notifications": notifications,
+        "AzureLoginStatus": azure_login_status,
+        "AksLoginStatus": aks_login_status,
     }
 
 
