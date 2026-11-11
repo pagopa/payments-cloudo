@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.31.0](https://github.com/pagopa/payments-cloudo/compare/orchestrator-v0.30.2...orchestrator-v0.31.0) (2026-11-11)
+
+
+### 🚀 Features
+
+* [PAYMCLOUD-1517] run best-effort Azure login before every runbook and report auth status ([#132](https://github.com/pagopa/payments-cloudo/issues/132)) ([fce18c1](https://github.com/pagopa/payments-cloudo/commit/fce18c186dfd56d08b5740a5f643dd7cc18b3aac))
+* [PAYMCLOUD-1522] add schedule severity and read-only view for Terraform-managed schedules ([#138](https://github.com/pagopa/payments-cloudo/issues/138)) ([f56640c](https://github.com/pagopa/payments-cloudo/commit/f56640ca1067bcc068978f0a5edb0f85365d4cb1))
+
+
+### 🐛 Fixes
+
+* [PAYMCLOUD-1483] prevent duplicate schedule dispatch across scheduler replicas ([#129](https://github.com/pagopa/payments-cloudo/issues/129)) ([9fc974c](https://github.com/pagopa/payments-cloudo/commit/9fc974cd243d006f1c73eaeb8f2a77b389fe136f))
+* [PAYMCLOUD-1515] use deterministic RowKey for status update log entries ([#131](https://github.com/pagopa/payments-cloudo/issues/131)) ([e47831f](https://github.com/pagopa/payments-cloudo/commit/e47831f6ca7480ef1fd38e8f5a4f102fe41dde2a))
+
 ## [0.30.2](https://github.com/pagopa/payments-cloudo/compare/orchestrator-v0.30.1...orchestrator-v0.30.2) (2026-11-05)
 
 
