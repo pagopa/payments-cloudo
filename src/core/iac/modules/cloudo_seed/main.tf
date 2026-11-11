@@ -95,6 +95,7 @@ resource "azurerm_storage_table_entity" "schedules" {
       managed_by = "terraform"
       locked     = tostring(true)
       team       = lookup(each.value.entity, "team", "default")
+      severity   = lookup(each.value.entity, "severity", "")
     },
     {
       "enabled@odata.type" = "Edm.Boolean"
