@@ -70,7 +70,7 @@ variable "schedules" {
         alltrue([
           for item in v.entity : (
             length(setsubtract(keys(item), [
-              "name", "cron", "runbook", "run_args", "queue", "worker_pool", "enabled", "oncall", "team"
+              "name", "cron", "runbook", "run_args", "queue", "worker_pool", "enabled", "oncall", "team", "severity"
             ])) == 0 &&
             item.name != "" && item.cron != "" && item.runbook != "" &&
             contains([true, false], lookup(item, "enabled", true)) &&

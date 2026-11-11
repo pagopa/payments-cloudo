@@ -105,6 +105,7 @@ def schedules_management(req: func.HttpRequest) -> func.HttpResponse:
                         "worker_pool": e.get("worker_pool"),
                         "enabled": e.get("enabled"),
                         "oncall": e.get("oncall"),
+                        "severity": e.get("severity") or "",
                         "last_run": e.get("last_run"),
                         "managed_by": e.get("managed_by") or "manual",
                         "locked": _is_terraform_locked(e),
@@ -204,6 +205,7 @@ def schedules_management(req: func.HttpRequest) -> func.HttpResponse:
                         default=as_bool(existing.get("enabled"), default=True),
                     ),
                     "oncall": as_bool(existing.get("oncall"), default=True),
+                    "severity": existing.get("severity", ""),
                     "last_run": existing.get("last_run", ""),
                     "managed_by": existing.get("managed_by", "terraform"),
                     "locked": as_bool(existing.get("locked"), default=True),
@@ -221,6 +223,7 @@ def schedules_management(req: func.HttpRequest) -> func.HttpResponse:
                     "worker_pool": body.get("worker_pool"),
                     "enabled": as_bool(body.get("enabled"), default=True),
                     "oncall": as_bool(body.get("oncall"), default=True),
+                    "severity": body.get("severity") or "",
                     "last_run": (existing or {}).get("last_run", ""),
                     "managed_by": (existing or {}).get("managed_by", "manual"),
                     "locked": as_bool((existing or {}).get("locked"), default=False),
@@ -405,6 +408,7 @@ def scheduler_engine(schedulerTimer: func.TimerRequest) -> None:
                     "require_approval": False,
                     "requested_at": requested_at,
                     "team": team_access.entity_team(s),
+                    "severity": s.get("severity") or "",
                 }
 
                 try:
@@ -429,7 +433,7 @@ def scheduler_engine(schedulerTimer: func.TimerRequest) -> None:
                             ensure_ascii=False,
                         ),
                         monitor_condition="",
-                        severity="",
+                        severity=s.get("severity") or "",
                         team=team_access.entity_team(s),
                     )
                     log_table_client.create_entity(entity=log_entry)

@@ -228,14 +228,17 @@ module "cloudo" {
         "run_args": "--namespace apiconfig",
         "worker_pool": "generic",
         "enabled": true,
-        "oncall": true
+        "oncall": true,
+        "severity": "Sev2"
       }
     ]
   }
 }
 ```
 
-`id` is generated automatically by Terraform as UUID.
+`id` is generated automatically by Terraform as UUID. `severity` is optional ("Sev0".."Sev4"):
+schedules have no alert payload to read it from, so it drives on-call paging
+priority when `oncall` is true and the run fails; omit it to leave it unset.
 
 ## Requirements
 
