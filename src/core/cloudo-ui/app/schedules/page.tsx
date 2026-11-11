@@ -14,6 +14,7 @@ import {
   HiOutlineTerminal,
   HiOutlineTrash,
   HiOutlinePencil,
+  HiOutlineEye,
   HiOutlineX,
   HiOutlineCheck,
   HiOutlineCheckCircle,
@@ -57,7 +58,9 @@ export default function SchedulesPage() {
   const [schedules, setSchedules] = useState<Schedule[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState("");
-  const [modalMode, setModalMode] = useState<"create" | "edit" | null>(null);
+  const [modalMode, setModalMode] = useState<"create" | "edit" | "view" | null>(
+    null,
+  );
   const [selectedSchedule, setSelectedSchedule] = useState<Schedule | null>(
     null,
   );
@@ -524,24 +527,14 @@ export default function SchedulesPage() {
                                 </button>
                                 <button
                                   onClick={() => {
-                                    if (isTerraformSchedule) {
-                                      addNotification(
-                                        "error",
-                                        "Terraform schedule is read-only and cannot be edited",
-                                      );
-                                      return;
-                                    }
                                     setSelectedSchedule(s);
-                                    setModalMode("edit");
+                                    setModalMode(
+                                      isTerraformSchedule ? "view" : "edit",
+                                    );
                                     fetchAvailableRunbooks();
                                     fetchWorkers();
                                   }}
-                                  disabled={isTerraformSchedule}
                                   className={`p-1.5 bg-cloudo-accent/10 border border-cloudo-border hover:border-white/20 text-cloudo-muted hover:text-cloudo-text transition-all group/btn ${
-                                    isTerraformSchedule
-                                      ? "opacity-50 cursor-not-allowed"
-                                      : ""
-                                  } ${
                                     !canModify ||
                                     (user?.role !== "ADMIN" &&
                                       user?.role !== "OPERATOR")
@@ -550,11 +543,15 @@ export default function SchedulesPage() {
                                   }`}
                                   title={
                                     isTerraformSchedule
-                                      ? "Terraform-managed schedule (read-only)"
+                                      ? "View Schedule (Terraform-managed, read-only)"
                                       : "Edit Schedule"
                                   }
                                 >
-                                  <HiOutlinePencil className="w-4 h-4" />
+                                  {isTerraformSchedule ? (
+                                    <HiOutlineEye className="w-4 h-4" />
+                                  ) : (
+                                    <HiOutlinePencil className="w-4 h-4" />
+                                  )}
                                 </button>
                                 <button
                                   onClick={() => {
@@ -617,7 +614,9 @@ export default function SchedulesPage() {
                 <h3 className="text-sm font-black uppercase tracking-[0.3em] text-cloudo-text">
                   {modalMode === "create"
                     ? "Provision Schedule"
-                    : "Update Cron Schedule"}
+                    : modalMode === "view"
+                      ? "View Schedule (Read-Only)"
+                      : "Update Cron Schedule"}
                 </h3>
               </div>
               <button
@@ -766,7 +765,7 @@ function ScheduleForm({
   onError,
 }: {
   initialData: Schedule | null;
-  mode: "create" | "edit";
+  mode: "create" | "edit" | "view";
   availableRunbooks: string[];
   availableWorkers: string[];
   onSuccess: (msg: string) => void;
@@ -819,6 +818,8 @@ function ScheduleForm({
       .catch(() => setTeams([]));
   }, []);
 
+  const isDisabled = mode === "view" || submitting;
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setSubmitting(true);
@@ -858,7 +859,8 @@ function ScheduleForm({
           <input
             type="text"
             required
-            className="input h-11 w-full"
+            disabled={isDisabled}
+            className="input h-11 w-full disabled:opacity-50 disabled:cursor-not-allowed"
             value={formData.name}
             onChange={(e) => setFormData({ ...formData, name: e.target.value })}
             placeholder="NIGHTLY_CLEANUP"
@@ -870,7 +872,7 @@ function ScheduleForm({
             Team
           </label>
           <select
-            disabled={!isAdmin}
+            disabled={isDisabled || !isAdmin}
             className="input h-11 w-full disabled:opacity-50"
             value={formData.team}
             onChange={(e) => setFormData({ ...formData, team: e.target.value })}
@@ -897,7 +899,8 @@ function ScheduleForm({
           <input
             type="text"
             required
-            className="input h-11 font-mono text-cloudo-accent w-full"
+            disabled={isDisabled}
+            className="input h-11 font-mono text-cloudo-accent w-full disabled:opacity-50 disabled:cursor-not-allowed"
             value={formData.cron}
             onChange={(e) => setFormData({ ...formData, cron: e.target.value })}
             placeholder="0 */5 * * * *"
@@ -948,7 +951,8 @@ function ScheduleForm({
             <input
               type="text"
               required
-              className="input input-icon h-11 font-mono w-full"
+              disabled={isDisabled}
+              className="input input-icon h-11 font-mono w-full disabled:opacity-50 disabled:cursor-not-allowed"
               value={formData.runbook}
               onChange={(e) =>
                 setFormData({ ...formData, runbook: e.target.value })
@@ -969,7 +973,8 @@ function ScheduleForm({
           </label>
           <input
             type="text"
-            className="input h-11 font-mono w-full"
+            disabled={isDisabled}
+            className="input h-11 font-mono w-full disabled:opacity-50 disabled:cursor-not-allowed"
             value={formData.run_args}
             onChange={(e) =>
               setFormData({ ...formData, run_args: e.target.value })
@@ -987,7 +992,8 @@ function ScheduleForm({
           </div>
           <select
             required
-            className="input input-icon font-mono w-full appearance-none cursor-pointer"
+            disabled={isDisabled}
+            className="input input-icon font-mono w-full appearance-none cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
             value={formData.worker_pool}
             onChange={(e) =>
               setFormData({ ...formData, worker_pool: e.target.value })
@@ -1030,8 +1036,11 @@ function ScheduleForm({
 
       <div className="grid grid-cols-2 gap-5">
         <div
-          className="flex items-center justify-between p-3 bg-cloudo-accent/10 border border-cloudo-border group hover:border-cloudo-accent/40 transition-all cursor-pointer"
+          className={`flex items-center justify-between p-3 bg-cloudo-accent/10 border border-cloudo-border group hover:border-cloudo-accent/40 transition-all ${
+            isDisabled ? "cursor-default" : "cursor-pointer"
+          }`}
           onClick={() =>
+            !isDisabled &&
             setFormData({ ...formData, enabled: !formData.enabled })
           }
         >
@@ -1059,8 +1068,13 @@ function ScheduleForm({
           </div>
         </div>
         <div
-          className="flex items-center justify-between p-3 bg-cloudo-accent/10 border border-cloudo-border group hover:border-cloudo-accent/40 transition-all cursor-pointer"
-          onClick={() => setFormData({ ...formData, oncall: !formData.oncall })}
+          className={`flex items-center justify-between p-3 bg-cloudo-accent/10 border border-cloudo-border group hover:border-cloudo-accent/40 transition-all ${
+            isDisabled ? "cursor-default" : "cursor-pointer"
+          }`}
+          onClick={() =>
+            !isDisabled &&
+            setFormData({ ...formData, oncall: !formData.oncall })
+          }
         >
           <div className="space-y-0.5">
             <p className="text-sm font-black text-cloudo-text uppercase tracking-widest">
@@ -1092,7 +1106,8 @@ function ScheduleForm({
           Severity
         </label>
         <select
-          className="input h-11 font-mono w-full appearance-none cursor-pointer"
+          disabled={isDisabled}
+          className="input h-11 font-mono w-full appearance-none cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
           value={formData.severity}
           onChange={(e) =>
             setFormData({ ...formData, severity: e.target.value })
@@ -1117,15 +1132,22 @@ function ScheduleForm({
           onClick={onCancel}
           className="btn btn-ghost flex-1 h-10"
         >
-          Abort
+          {mode === "view" ? "Close" : "Abort"}
         </button>
-        <button
-          type="submit"
-          disabled={submitting}
-          className="btn btn-primary flex-1 h-10"
-        >
-          {submitting ? "Saving..." : "Save Schedule"}
-        </button>
+        {mode === "view" ? (
+          <div className="flex-1 flex items-center justify-center gap-2 px-4 h-10 bg-cloudo-accent/5 border border-cloudo-accent/20 text-cloudo-muted text-[10px] font-black uppercase tracking-widest">
+            <HiOutlineEye className="w-4 h-4 text-cloudo-accent" />
+            READ_ONLY_ACCESS
+          </div>
+        ) : (
+          <button
+            type="submit"
+            disabled={submitting}
+            className="btn btn-primary flex-1 h-10"
+          >
+            {submitting ? "Saving..." : "Save Schedule"}
+          </button>
+        )}
       </div>
     </form>
   );
