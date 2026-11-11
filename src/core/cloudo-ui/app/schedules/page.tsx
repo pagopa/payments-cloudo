@@ -37,6 +37,7 @@ interface Schedule {
   worker_pool?: string;
   enabled: boolean;
   oncall: boolean;
+  severity?: string;
   last_run?: string;
   managed_by?: string;
   locked?: boolean;
@@ -607,10 +608,10 @@ export default function SchedulesPage() {
           onClick={() => setModalMode(null)}
         >
           <div
-            className="bg-cloudo-panel border border-cloudo-border shadow-2xl w-full max-w-xl overflow-hidden animate-in zoom-in-95 duration-200"
+            className="bg-cloudo-panel border border-cloudo-border shadow-2xl w-full max-w-4xl max-h-[85vh] overflow-hidden flex flex-col animate-in zoom-in-95 duration-200"
             onClick={(e) => e.stopPropagation()}
           >
-            <div className="px-8 py-5 border-b border-cloudo-border flex justify-between items-center bg-cloudo-accent/5">
+            <div className="px-8 py-5 border-b border-cloudo-border flex justify-between items-center bg-cloudo-accent/5 shrink-0">
               <div className="flex items-center gap-3">
                 <HiOutlineClock className="text-cloudo-accent w-5 h-5" />
                 <h3 className="text-sm font-black uppercase tracking-[0.3em] text-cloudo-text">
@@ -803,6 +804,7 @@ function ScheduleForm({
     worker_pool: initialData?.worker_pool || "",
     enabled: initialData?.enabled ?? true,
     oncall: initialData?.oncall ?? false,
+    severity: initialData?.severity || "",
     team: initialData?.team || (isAdmin ? "default" : currentUserTeam),
   });
   const [submitting, setSubmitting] = useState(false);
@@ -844,8 +846,11 @@ function ScheduleForm({
   };
 
   return (
-    <form onSubmit={handleSubmit} className="p-5 space-y-4">
-      <div className="grid grid-cols-2 gap-5">
+    <form
+      onSubmit={handleSubmit}
+      className="p-5 space-y-4 overflow-y-auto flex-1"
+    >
+      <div className="grid grid-cols-3 gap-5">
         <div className="space-y-1.5">
           <label className="text-[11px] font-black uppercase tracking-widest text-cloudo-muted ml-1 block">
             Task Name
@@ -1023,59 +1028,87 @@ function ScheduleForm({
         </div>
       </div>
 
-      <div
-        className="flex items-center justify-between p-3 bg-cloudo-accent/10 border border-cloudo-border group hover:border-cloudo-accent/40 transition-all cursor-pointer"
-        onClick={() => setFormData({ ...formData, enabled: !formData.enabled })}
-      >
-        <div className="space-y-0.5">
-          <p className="text-sm font-black text-cloudo-text uppercase tracking-widest">
-            Enabled
-          </p>
-          <p className="text-[11px] text-cloudo-muted uppercase font-bold opacity-70">
-            Set Schedule State
-          </p>
+      <div className="grid grid-cols-2 gap-5">
+        <div
+          className="flex items-center justify-between p-3 bg-cloudo-accent/10 border border-cloudo-border group hover:border-cloudo-accent/40 transition-all cursor-pointer"
+          onClick={() =>
+            setFormData({ ...formData, enabled: !formData.enabled })
+          }
+        >
+          <div className="space-y-0.5">
+            <p className="text-sm font-black text-cloudo-text uppercase tracking-widest">
+              Enabled
+            </p>
+            <p className="text-[11px] text-cloudo-muted uppercase font-bold opacity-70">
+              Set Schedule State
+            </p>
+          </div>
+          <div
+            className={`flex items-center gap-2 px-3 py-1 border font-black text-[11px] uppercase tracking-widest transition-all ${
+              formData.enabled
+                ? "bg-cloudo-ok/10 border-cloudo-ok text-cloudo-ok"
+                : "bg-cloudo-muted/10 border-cloudo-muted text-cloudo-muted opacity-70"
+            }`}
+          >
+            {formData.enabled ? (
+              <HiOutlineSwitchHorizontal className="w-4 h-4 text-cloudo-accent" />
+            ) : (
+              <HiOutlineBan className="w-4 h-4 text-cloudo-muted" />
+            )}
+            {formData.enabled ? "Yes" : "Nope"}
+          </div>
         </div>
         <div
-          className={`flex items-center gap-2 px-3 py-1 border font-black text-[11px] uppercase tracking-widest transition-all ${
-            formData.enabled
-              ? "bg-cloudo-ok/10 border-cloudo-ok text-cloudo-ok"
-              : "bg-cloudo-muted/10 border-cloudo-muted text-cloudo-muted opacity-70"
-          }`}
+          className="flex items-center justify-between p-3 bg-cloudo-accent/10 border border-cloudo-border group hover:border-cloudo-accent/40 transition-all cursor-pointer"
+          onClick={() => setFormData({ ...formData, oncall: !formData.oncall })}
         >
-          {formData.enabled ? (
-            <HiOutlineSwitchHorizontal className="w-4 h-4 text-cloudo-accent" />
-          ) : (
-            <HiOutlineBan className="w-4 h-4 text-cloudo-muted" />
-          )}
-          {formData.enabled ? "Yes" : "Nope"}
+          <div className="space-y-0.5">
+            <p className="text-sm font-black text-cloudo-text uppercase tracking-widest">
+              On Call
+            </p>
+            <p className="text-[11px] text-cloudo-muted uppercase font-bold opacity-70">
+              Set On Call Flow
+            </p>
+          </div>
+          <div
+            className={`flex items-center gap-2 px-3 py-1 border font-black text-[11px] uppercase tracking-widest transition-all ${
+              formData.oncall
+                ? "bg-cloudo-ok/10 border-cloudo-ok text-cloudo-ok"
+                : "bg-cloudo-muted/10 border-cloudo-muted text-cloudo-muted opacity-70"
+            }`}
+          >
+            {formData.oncall ? (
+              <HiOutlineSwitchHorizontal className="w-4 h-4 text-cloudo-accent" />
+            ) : (
+              <HiOutlineBan className="w-4 h-4 text-cloudo-muted" />
+            )}
+            {formData.oncall ? "Yes" : "Nope"}
+          </div>
         </div>
       </div>
-      <div
-        className="flex items-center justify-between p-3 bg-cloudo-accent/10 border border-cloudo-border group hover:border-cloudo-accent/40 transition-all cursor-pointer"
-        onClick={() => setFormData({ ...formData, oncall: !formData.oncall })}
-      >
-        <div className="space-y-0.5">
-          <p className="text-sm font-black text-cloudo-text uppercase tracking-widest">
-            On Call
-          </p>
-          <p className="text-[11px] text-cloudo-muted uppercase font-bold opacity-70">
-            Set On Call Flow
-          </p>
-        </div>
-        <div
-          className={`flex items-center gap-2 px-3 py-1 border font-black text-[11px] uppercase tracking-widest transition-all ${
-            formData.oncall
-              ? "bg-cloudo-ok/10 border-cloudo-ok text-cloudo-ok"
-              : "bg-cloudo-muted/10 border-cloudo-muted text-cloudo-muted opacity-70"
-          }`}
+
+      <div className="space-y-1.5">
+        <label className="text-[11px] font-black uppercase tracking-widest text-cloudo-muted ml-1 block">
+          Severity
+        </label>
+        <select
+          className="input h-11 font-mono w-full appearance-none cursor-pointer"
+          value={formData.severity}
+          onChange={(e) =>
+            setFormData({ ...formData, severity: e.target.value })
+          }
         >
-          {formData.oncall ? (
-            <HiOutlineSwitchHorizontal className="w-4 h-4 text-cloudo-accent" />
-          ) : (
-            <HiOutlineBan className="w-4 h-4 text-cloudo-muted" />
-          )}
-          {formData.oncall ? "Yes" : "Nope"}
-        </div>
+          <option value="">Unset (empty)</option>
+          {["Sev0", "Sev1", "Sev2", "Sev3", "Sev4"].map((value) => (
+            <option key={value} value={value}>
+              {value}
+            </option>
+          ))}
+        </select>
+        <p className="text-[11px] text-cloudo-muted uppercase font-bold opacity-70 ml-1">
+          Used for on-call paging priority when this schedule fails — there is
+          no alert payload to read it from.
+        </p>
       </div>
 
       <div className="flex gap-3 pt-4 border-t border-cloudo-border">
