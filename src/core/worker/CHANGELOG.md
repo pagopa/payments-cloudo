@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.27.0](https://github.com/pagopa/payments-cloudo/compare/worker-v0.26.3...worker-v0.27.0) (2026-11-11)
+
+
+### 🚀 Features
+
+* [PAYMCLOUD-1517] run best-effort Azure login before every runbook and report auth status ([#132](https://github.com/pagopa/payments-cloudo/issues/132)) ([fce18c1](https://github.com/pagopa/payments-cloudo/commit/fce18c186dfd56d08b5740a5f643dd7cc18b3aac))
+
 ## [0.26.3](https://github.com/pagopa/payments-cloudo/compare/worker-v0.26.2...worker-v0.26.3) (2026-11-05)
 
 
