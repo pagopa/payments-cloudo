@@ -168,7 +168,9 @@ function LogsPanelContent() {
   const [isResizing, setIsResizing] = useState(false);
   const [copied, setCopied] = useState(false);
   const [linkCopied, setLinkCopied] = useState(false);
-  const [isRawExpanded, setIsRawExpanded] = useState(false);
+  const [expandedInfoKeys, setExpandedInfoKeys] = useState<
+    Record<string, boolean>
+  >({});
   const [showAiModal, setShowAiModal] = useState(false);
 
   useEffect(() => {
@@ -282,7 +284,7 @@ function LogsPanelContent() {
           const target = finalLogs.find((l) => l.ExecId === eId);
           if (target) {
             setSelectedLog(target);
-            setIsRawExpanded(false);
+            setExpandedInfoKeys({});
           }
         }
       } catch (error) {
@@ -959,7 +961,7 @@ function LogsPanelContent() {
                     key={log.ExecId}
                     onClick={() => {
                       setSelectedLog(log);
-                      setIsRawExpanded(false);
+                      setExpandedInfoKeys({});
                       setShowAiModal(false);
                     }}
                     className={`group cursor-pointer transition-all duration-200 border-l-2 hover:z-20 hover:shadow-xl ${
@@ -1110,7 +1112,7 @@ function LogsPanelContent() {
                   key={log.ExecId}
                   onClick={() => {
                     setSelectedLog(log);
-                    setIsRawExpanded(false);
+                    setExpandedInfoKeys({});
                     setShowAiModal(false);
                   }}
                   className={`p-4 sm:p-5 flex flex-col gap-3 transition-all duration-200 border-l-4 ${
@@ -1482,10 +1484,18 @@ function LogsPanelContent() {
                   }
                 }
 
+                const isEmptyInfoValue = (v: unknown) => {
+                  if (v === null || v === undefined) return true;
+                  if (typeof v === "object") {
+                    return Array.isArray(v)
+                      ? v.length === 0
+                      : Object.keys(v).length === 0;
+                  }
+                  return String(v).trim() === "";
+                };
+
                 const validEntries = Object.entries(info).filter(
-                  // eslint-disable-next-line @typescript-eslint/no-unused-vars
-                  ([__unused, v]) =>
-                    v !== null && v !== undefined && String(v).trim() !== "",
+                  ([, v]) => !isEmptyInfoValue(v),
                 );
 
                 if (validEntries.length > 0) {
@@ -1497,7 +1507,10 @@ function LogsPanelContent() {
                       <div className="divide-y divide-cloudo-border">
                         {validEntries.map(([k, v]) => {
                           const isRaw = k === "_raw";
-                          let displayValue = String(v);
+                          const isObjectValue =
+                            v !== null && typeof v === "object";
+                          const isExpandable = isRaw || isObjectValue;
+                          let displayValue: string;
 
                           if (isRaw) {
                             try {
@@ -1505,15 +1518,21 @@ function LogsPanelContent() {
                                 typeof v === "string" ? JSON.parse(v) : v;
                               displayValue = JSON.stringify(parsed, null, 2);
                             } catch {
-                              // fallback
+                              displayValue = String(v);
                             }
+                          } else if (isObjectValue) {
+                            displayValue = JSON.stringify(v, null, 2);
+                          } else {
+                            displayValue = String(v);
                           }
+
+                          const isKeyExpanded = !!expandedInfoKeys[k];
 
                           return (
                             <div
                               key={k}
                               className={`py-2.5 ${
-                                isRaw
+                                isExpandable
                                   ? "space-y-2"
                                   : "grid grid-cols-[8rem_1fr] gap-3 items-start"
                               }`}
@@ -1521,19 +1540,22 @@ function LogsPanelContent() {
                               <div className="text-[10px] font-black text-cloudo-muted uppercase tracking-widest">
                                 {k}
                               </div>
-                              {isRaw ? (
+                              {isExpandable ? (
                                 <>
                                   <button
                                     onClick={() =>
-                                      setIsRawExpanded(!isRawExpanded)
+                                      setExpandedInfoKeys((prev) => ({
+                                        ...prev,
+                                        [k]: !prev[k],
+                                      }))
                                     }
                                     className="text-[9px] font-black uppercase tracking-widest text-cloudo-accent hover:text-white transition-colors"
                                   >
-                                    {isRawExpanded
+                                    {isKeyExpanded
                                       ? "[ COLLAPSE ]"
                                       : "[ EXPAND ]"}
                                   </button>
-                                  {isRawExpanded && (
+                                  {isKeyExpanded && (
                                     <pre className="text-xs font-mono text-cloudo-text whitespace-pre-wrap break-all">
                                       {displayValue}
                                     </pre>
