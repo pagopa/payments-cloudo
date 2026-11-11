@@ -2,11 +2,7 @@
 
 import { useState, useEffect, useRef, ChangeEvent } from "react";
 import {
-  HiOutlineCode,
   HiOutlineTerminal,
-  HiOutlineClipboardCopy,
-  HiOutlineCheck,
-  HiOutlineDownload,
   HiOutlineLightBulb,
   HiOutlineBookOpen,
   HiOutlineDocumentText,
@@ -25,6 +21,8 @@ import {
   HiOutlineRocketLaunch,
   HiOutlineDocumentArrowUp,
   HiOutlineArrowsRightLeft,
+  HiOutlineArrowTopRightOnSquare,
+  HiOutlineArrowDownTray,
 } from "react-icons/hi2";
 import { cloudoFetch } from "@/lib/api";
 import {
@@ -34,117 +32,254 @@ import {
   ResizeHandle,
 } from "./components";
 
-const TEMPLATES = [
+const EXAMPLE_CATEGORIES = [
   {
-    id: "py-alert",
-    name: "Python Alert Handler",
-    lang: "python",
-    description:
-      "Ottimizzato per gestire allarmi da Azure Monitor o sistemi esterni.",
-    code: `#!/usr/bin/env python3
-"""
-ClouDO Python Template: Alert Handler
-Questo script processa i payload JSON inviati dai sistemi di monitoraggio.
-"""
-import json
-import logging
-import os
-import sys
-
-# Configurazione logging su stderr per visibilità in console ClouDO
-logging.basicConfig(level=logging.INFO, format='%(levelname)s: %(message)s')
-
-def main():
-    # ClouDO passa il payload via variabile d'ambiente CLOUDO_PAYLOAD
-    try:
-        input_data = os.environ.get('CLOUDO_PAYLOAD', '{}')
-        payload = json.loads(input_data)
-    except Exception as e:
-        logging.error(f"Failed to parse input: {e}")
-        sys.exit(1)
-
-    logging.info("--- CLOUDO OPERATIONAL STREAM START ---")
-
-    # Esempio: Estrazione dati da un allarme Azure
-    essentials = payload.get('data', {}).get('essentials', {})
-    alert_rule = essentials.get('alertRule', 'Unknown Rule')
-    severity = essentials.get('severity', 'N/A')
-
-    logging.info(f"SIGNAL_DETECTED: {alert_rule}")
-    logging.info(f"SEVERITY_LEVEL: {severity}")
-
-    # --- TUA LOGICA QUI ---
-    # Esempio: Ripristino servizio, pulizia log, etc.
-
-    logging.info("AUTOMATION_LOGIC_EXECUTED")
-    print("SUCCESS: Runbook completed successfully")
-
-if __name__ == "__main__":
-    main()`,
+    path: "templates",
+    label: "Templates",
+    count: 4,
+    desc: "Punti di partenza per alert handler e runbook manuali, in bash e Python.",
   },
   {
-    id: "sh-manual",
-    name: "Bash Manual Script",
-    lang: "bash",
-    description: "Script robusto per esecuzioni manuali veloci e diagnostica.",
-    code: `#!/bin/bash
-# ClouDO Bash Template: Manual Execution
-# Utilizzato per task ad-hoc sui nodi del cluster.
-
-echo "--- CLOUDO SYSTEM DIAGNOSTICS ---"
-echo "NODE_IDENTIFIER: $(hostname)"
-echo "EXECUTION_TIME: $(date)"
-echo "OPERATOR_CONTEXT: $USER"
-
-# Il payload JSON è disponibile via variabile d'ambiente CLOUDO_PAYLOAD
-PAYLOAD=$CLOUDO_PAYLOAD
-
-echo "RAW_PAYLOAD_RECEIVED: $PAYLOAD"
-
-# Funzione per simulare un'operazione tecnica
-perform_health_check() {
-    echo "STATUS: VERIFYING_FILESYSTEM..."
-    df -h | grep '^/'
-    sleep 1
-    echo "STATUS: CHECKING_RESOURCES..."
-    free -m
-}
-
-perform_health_check
-
-echo "--------------------------------"
-echo "RESULT: COMPLIANT"
-echo "ClouDO_EXEC_STATUS: OK"
-exit 0`,
+    path: "aks",
+    label: "AKS",
+    count: 4,
+    desc: "Diagnostica, restart, scaling e retry di job su Kubernetes.",
   },
   {
-    id: "py-minimal",
-    name: "Python Minimal",
-    lang: "python",
-    description:
-      "Template essenziale per script personalizzati ad alte prestazioni.",
-    code: `#!/usr/bin/env python3
-import json
-import os
-import sys
+    path: "azure",
+    label: "Azure",
+    count: 4,
+    desc: "App Gateway, metriche risorse, node pool, segreti Key Vault in scadenza.",
+  },
+  {
+    path: "database",
+    label: "Database",
+    count: 2,
+    desc: "Health check Postgres e terminazione di query bloccate.",
+  },
+  {
+    path: "messaging",
+    label: "Messaging",
+    count: 2,
+    desc: "Profondità code Service Bus e requeue di messaggi in errore.",
+  },
+  {
+    path: "application",
+    label: "Application",
+    count: 4,
+    desc: "Health check HTTP, scadenza TLS, restart App Service, purge cache.",
+  },
+];
 
-# ClouDO Data Ingestion
-payload = json.loads(os.environ.get('CLOUDO_PAYLOAD', '{}'))
+const PAYLOAD_PRESETS: {
+  id: string;
+  label: string;
+  desc: string;
+  payload: unknown;
+  args: string;
+}[] = [
+  {
+    id: "aks-alert",
+    label: "Alert AKS",
+    desc: "Azure Monitor alert con label Kubernetes: popola AKS_*.",
+    payload: {
+      data: {
+        essentials: {
+          alertRule: "test-alert-rule",
+          severity: "Sev4",
+          monitorCondition: "Fired",
+          alertTargetIDs: [
+            "/subscriptions/00000000-0000-0000-0000-000000000001/resourcegroups/mock-RG/providers/microsoft.operationalinsights/workspaces/mock-workspace",
+          ],
+        },
+        alertContext: {
+          labels: {
+            alertname: "KubeHpaMaxedOut",
+            cluster: "mock-aks-cluster",
+            horizontalpodautoscaler: "mock-hpa-name",
+            instance: "ama-metrics-ksm.kube-system.svc.cluster.local:8080",
+            job: "kube-state-metrics",
+            deployment: "mock-deployment",
+            namespace: "mock-namespace",
+            resourcename: "mock-aks-resource",
+            resourcegroup: "mock-aks-rg",
+          },
+        },
+      },
+    },
+    args: "--verbose --timeout 30",
+  },
+  {
+    id: "azure-alert",
+    label: "Alert Azure (no AKS)",
+    desc: "Alert su una risorsa Azure qualsiasi: nessuna label Kubernetes, quindi AKS_* resta vuoto.",
+    payload: {
+      data: {
+        essentials: {
+          alertRule: "keyvault-secret-expiring",
+          severity: "Sev2",
+          monitorCondition: "Fired",
+          alertTargetIDs: [
+            "/subscriptions/00000000-0000-0000-0000-000000000001/resourcegroups/mock-RG/providers/Microsoft.KeyVault/vaults/mock-keyvault",
+          ],
+        },
+        alertContext: {},
+      },
+    },
+    args: "",
+  },
+  {
+    id: "manual",
+    label: "Manuale / Schedule",
+    desc: "Esecuzione manuale o da schedule: nessun alert in ingresso, solo run_args.",
+    payload: {},
+    args: "--mode=dry-run --target=prod",
+  },
+  {
+    id: "elastic-aks",
+    label: "Elastic → AKS",
+    desc: 'source: "elastic" con payload.type "aks": popola risorsa e AKS_* dagli attributes.',
+    payload: {
+      source: "elastic",
+      payload: {
+        type: "aks",
+        attributes: {
+          namespace: "mock-namespace",
+          cluster_name: "mock-aks-cluster",
+          cluster_rg_name: "mock-aks-rg",
+          deployment: "mock-deployment",
+          hpa: "mock-hpa-name",
+          job: "mock-job",
+          severity: "Sev2",
+        },
+      },
+    },
+    args: "",
+  },
+  {
+    id: "cloudo-source",
+    label: 'Source "cloudo"',
+    desc: "Il payload resta dentro resource_info ma serializzato come stringa JSON: serve un json.loads in più nel runbook.",
+    payload: {
+      source: "cloudo",
+      payload: { foo: "bar" },
+    },
+    args: "",
+  },
+  {
+    id: "custom-source",
+    label: "Source custom",
+    desc: 'Qualsiasi source non registrato (qui "manual") lascia il payload come oggetto JSON pulito: il modo più semplice per dati custom.',
+    payload: {
+      source: "manual",
+      payload: {
+        myVar: "var1",
+      },
+    },
+    args: "",
+  },
+];
 
-# Logic Block
-def run():
-    print(f"ClouDO Engine v4.0 Active")
-    print(f"Processing payload: {payload}")
-    # Insert code here
+const ENV_VAR_GROUPS: {
+  title: string;
+  vars: { name: string; desc: string }[];
+}[] = [
+  {
+    title: "Risorsa Azure",
+    vars: [
+      {
+        name: "AZURE_SUBSCRIPTION_ID",
+        desc: "Azure subscription ID (eg. 1111-wdqdq-23131....).",
+      },
+      { name: "RESOURCE_ID", desc: "Azure resource ID (/subscriptions/...)." },
+      { name: "RESOURCE_RG", desc: "Resource group della risorsa." },
+      { name: "RESOURCE_NAME", desc: "Nome finale della risorsa." },
+      { name: "MONITOR_CONDITION", desc: "Stato dell'alert (Fired/Resolved)." },
+    ],
+  },
+  {
+    title: "Kubernetes (AKS)",
+    vars: [
+      { name: "AKS_NAMESPACE", desc: "Namespace Kubernetes (se presente)." },
+      { name: "AKS_POD", desc: "Nome del Pod (se presente)." },
+      { name: "AKS_DEPLOYMENT", desc: "Nome del Deployment (se presente)." },
+      { name: "AKS_JOB", desc: "Nome del Job (se presente)." },
+      { name: "AKS_HPA", desc: "Horizontal Pod Autoscaler (se presente)." },
+      {
+        name: "KUBECONFIG",
+        desc: "Presente solo se l'AKS login è andato a buon fine.",
+      },
+    ],
+  },
+  {
+    title: "Esecuzione",
+    vars: [
+      {
+        name: "CLOUDO_PAYLOAD",
+        desc: "resource_info completo come JSON (include anche severity e schema_id).",
+      },
+      { name: "CLOUDO_EXEC_ID", desc: "ID univoco di questa esecuzione." },
+      { name: "CLOUDO_NAME", desc: "Nome assegnato all'esecuzione." },
+      { name: "CLOUDO_RUNBOOK", desc: "Nome del runbook in esecuzione." },
+      { name: "CLOUDO_WORKER", desc: "Worker che ha eseguito lo script." },
+      {
+        name: "CLOUDO_ONCALL",
+        desc: "Il runbook è gestito nel flusso di oncall (true/false).",
+      },
+    ],
+  },
+  {
+    title: "Ambiente",
+    vars: [
+      {
+        name: "CLOUDO_ENVIRONMENT",
+        desc: "Environment di riferimento ClouDO (dev, uat, prod).",
+      },
+      {
+        name: "CLOUDO_ENVIRONMENT_SHORT",
+        desc: "Environment abbreviato (d, u, p).",
+      },
+    ],
+  },
+];
 
-if __name__ == "__main__":
-    run()`,
+const HANDBOOK_SECTIONS = [
+  { id: "simulator", label: "Simulator" },
+  { id: "manuale", label: "Manuale" },
+  { id: "parsers", label: "Parser" },
+  { id: "env-vars", label: "Variabili" },
+  { id: "deployment", label: "Deployment" },
+];
+
+const SOURCE_PARSERS: { source: string; result: string; example: string }[] = [
+  {
+    source: '(nessuno) / "azure_monitor"',
+    result:
+      "Si aspetta un alert Azure Monitor (data.essentials/alertContext). Altrimenti tutti i campi restano vuoti e payload è sempre {}.",
+    example:
+      '{"data": {"essentials": {"severity": "Sev2", "monitorCondition": "Fired"}, "alertContext": {}}}',
+  },
+  {
+    source: '"elastic"',
+    result: "Solo per alert Elastic→AKS in un formato specifico.",
+    example:
+      '{"source": "elastic", "payload": {"type": "aks", "attributes": {"namespace": "ns", "cluster_name": "my-cluster", "cluster_rg_name": "my-rg"}}}',
+  },
+  {
+    source: '"cloudo"',
+    result:
+      "Payload preservato ma come stringa JSON — serve un json.loads in più nel runbook.",
+    example: '{"source": "cloudo", "payload": {"foo": "bar"}}',
+  },
+  {
+    source: "qualsiasi altro nome",
+    result:
+      "Payload preservato come oggetto JSON pulito: il modo più semplice per dati custom.",
+    example: '{"source": "example", "payload": {"myVar": "..."}}',
   },
 ];
 
 export default function StudioPage() {
-  const [selectedTemplate, setSelectedTemplate] = useState(TEMPLATES[0]);
-  const [copied, setCopied] = useState(false);
   const [notifications, setNotifications] = useState<
     { id: string; type: "success" | "error"; message: string }[]
   >([]);
@@ -159,39 +294,20 @@ export default function StudioPage() {
   };
 
   // Payload Simulator State
+  const [activePresetId, setActivePresetId] = useState(PAYLOAD_PRESETS[0].id);
   const [payloadInput, setPayloadInput] = useState(
-    JSON.stringify(
-      {
-        data: {
-          essentials: {
-            alertRule: "test-alert-rule",
-            severity: "Sev4",
-            monitorCondition: "Fired",
-            alertTargetIDs: [
-              "/subscriptions/00000000-0000-0000-0000-000000000001/resourcegroups/mock-RG/providers/microsoft.operationalinsights/workspaces/mock-workspace",
-            ],
-          },
-          alertContext: {
-            labels: {
-              alertname: "KubeHpaMaxedOut",
-              cluster: "mock-aks-cluster",
-              horizontalpodautoscaler: "mock-hpa-name",
-              instance: "ama-metrics-ksm.kube-system.svc.cluster.local:8080",
-              job: "kube-state-metrics",
-              deployment: "mock-deployment",
-              namespace: "mock-namespace",
-              resourcename: "mock-aks-resource",
-              resourcegroup: "mock-aks-rg",
-            },
-          },
-        },
-      },
-      null,
-      2,
-    ),
+    JSON.stringify(PAYLOAD_PRESETS[0].payload, null, 2),
   );
-  const [runArgsInput, setRunArgsInput] = useState("--verbose --timeout 30");
+  const [runArgsInput, setRunArgsInput] = useState(PAYLOAD_PRESETS[0].args);
   const [parsedEnv, setParsedEnv] = useState<Record<string, string>>({});
+
+  const applyPreset = (presetId: string) => {
+    const preset = PAYLOAD_PRESETS.find((p) => p.id === presetId);
+    if (!preset) return;
+    setActivePresetId(presetId);
+    setPayloadInput(JSON.stringify(preset.payload, null, 2));
+    setRunArgsInput(preset.args);
+  };
 
   // Fetch feature flag for dev test run
   useEffect(() => {
@@ -234,7 +350,6 @@ export default function StudioPage() {
   useEffect(() => {
     try {
       const parsed = JSON.parse(payloadInput);
-      const env: Record<string, string> = {};
 
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const getLower = (obj: any, key: string): any => {
@@ -246,128 +361,224 @@ export default function StudioPage() {
         return foundKey ? obj[foundKey] : undefined;
       };
 
-      const data = getLower(parsed, "data") || {};
-      const essentials = getLower(data, "essentials") || {};
-      const ctx = getLower(data, "alertcontext") || {};
-      const labels = getLower(ctx, "labels") || {};
-      const annotations = getLower(ctx, "annotations") || {};
+      const sourceRaw = getLower(parsed, "source");
+      const source =
+        typeof sourceRaw === "string" && sourceRaw.trim() !== ""
+          ? sourceRaw.toLowerCase()
+          : "azure_monitor";
 
-      // Resolve Resource ID
-      let resource_id: string | null = null;
-      const candidates: string[] = [];
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      let resourceInfo: Record<string, any>;
 
-      const alertTargetIds = getLower(essentials, "alerttargetids");
-      if (Array.isArray(alertTargetIds)) {
-        candidates.push(...alertTargetIds.filter((x) => typeof x === "string"));
-      }
+      if (source === "azure_monitor") {
+        const data = getLower(parsed, "data") || {};
+        const essentials = getLower(data, "essentials") || {};
+        const ctx = getLower(data, "alertcontext") || {};
+        const labels = getLower(ctx, "labels") || {};
+        const annotations = getLower(ctx, "annotations") || {};
 
-      const mrid = getLower(labels, "microsoft.resourceid");
-      if (typeof mrid === "string") candidates.push(mrid);
+        // Resolve Resource ID
+        let resource_id: string | null = null;
+        const candidates: string[] = [];
 
-      const rid = getLower(ctx, "resourceid");
-      if (typeof rid === "string") candidates.push(rid);
-
-      resource_id =
-        candidates.find((x) => x.startsWith("/subscriptions/")) || null;
-
-      // Resolve RG and Name
-      let resource_group: string | null = null;
-      let resource_name: string | null = null;
-
-      if (resource_id) {
-        const parts = resource_id.replace(/^\/+|\/+$/g, "").split("/");
-        const parts_l = parts.map((p) => p.toLowerCase());
-        const rg_index = parts_l.indexOf("resourcegroups");
-        if (rg_index !== -1 && parts[rg_index + 1]) {
-          resource_group = parts[rg_index + 1];
+        const alertTargetIds = getLower(essentials, "alerttargetids");
+        if (Array.isArray(alertTargetIds)) {
+          candidates.push(
+            ...alertTargetIds.filter((x) => typeof x === "string"),
+          );
         }
-        resource_name = parts[parts.length - 1] || null;
-      } else {
-        const config_items = getLower(essentials, "configurationitems");
-        if (Array.isArray(config_items) && config_items.length > 0) {
-          resource_name = config_items[0];
-        }
-        resource_name =
-          resource_name ||
-          getLower(ctx, "resourcename") ||
-          getLower(labels, "resourcename") ||
-          null;
-        resource_group =
-          getLower(ctx, "resourcegroup") ||
-          getLower(labels, "resourcegroup") ||
-          null;
+
+        const mrid = getLower(labels, "microsoft.resourceid");
+        if (typeof mrid === "string") candidates.push(mrid);
+
+        const rid = getLower(ctx, "resourceid");
+        if (typeof rid === "string") candidates.push(rid);
+
         resource_id =
-          getLower(ctx, "resourceid") || getLower(labels, "resourceid") || null;
-      }
+          candidates.find((x) => x.startsWith("/subscriptions/")) || null;
 
-      if (resource_id) env["RESOURCE_ID"] = resource_id;
-      if (resource_group) env["RESOURCE_RG"] = resource_group;
-      if (resource_name) env["RESOURCE_NAME"] = resource_name;
+        // Resolve RG and Name
+        let resource_group: string | null = null;
+        let resource_name: string | null = null;
 
-      // Kubernetes fields
-      const namespace =
-        getLower(labels, "namespace") ||
-        getLower(labels, "kubernetes_namespace") ||
-        getLower(annotations, "namespace") ||
-        getLower(annotations, "kubernetes_namespace");
-      if (namespace) env["K8S_NAMESPACE"] = String(namespace);
-
-      const pod =
-        getLower(labels, "pod") ||
-        getLower(labels, "kubernetes_pod_name") ||
-        getLower(annotations, "pod") ||
-        getLower(annotations, "kubernetes_pod_name");
-      if (pod) env["K8S_POD"] = String(pod);
-
-      const deployment =
-        getLower(labels, "deployment") ||
-        getLower(labels, "kubernetes_deployment") ||
-        getLower(annotations, "deployment") ||
-        getLower(annotations, "kubernetes_deployment");
-      if (deployment) env["K8S_DEPLOYMENT"] = String(deployment);
-
-      const hpa =
-        getLower(labels, "horizontalpodautoscaler") ||
-        getLower(labels, "kubernetes_horizontalpodautoscaler") ||
-        getLower(annotations, "horizontalpodautoscaler") ||
-        getLower(annotations, "kubernetes_horizontalpodautoscaler");
-      if (hpa) env["K8S_HPA"] = String(hpa);
-
-      let job =
-        getLower(labels, "kubernetes_job_name") ||
-        getLower(annotations, "kubernetes_job_name") ||
-        getLower(labels, "job_name") ||
-        getLower(annotations, "job_name");
-
-      if (!job) {
-        const cand = getLower(labels, "job") || getLower(annotations, "job");
-        if (cand && cand !== "kube-state-metrics") {
-          job = cand;
+        if (resource_id) {
+          const parts = resource_id.replace(/^\/+|\/+$/g, "").split("/");
+          const parts_l = parts.map((p) => p.toLowerCase());
+          const rg_index = parts_l.indexOf("resourcegroups");
+          if (rg_index !== -1 && parts[rg_index + 1]) {
+            resource_group = parts[rg_index + 1];
+          }
+          resource_name = parts[parts.length - 1] || null;
+        } else {
+          const config_items = getLower(essentials, "configurationitems");
+          if (Array.isArray(config_items) && config_items.length > 0) {
+            resource_name = config_items[0];
+          }
+          resource_name =
+            resource_name ||
+            getLower(ctx, "resourcename") ||
+            getLower(labels, "resourcename") ||
+            null;
+          resource_group =
+            getLower(ctx, "resourcegroup") ||
+            getLower(labels, "resourcegroup") ||
+            null;
+          resource_id =
+            getLower(ctx, "resourceid") ||
+            getLower(labels, "resourceid") ||
+            null;
         }
+
+        // Kubernetes fields
+        const namespace =
+          getLower(labels, "namespace") ||
+          getLower(labels, "kubernetes_namespace") ||
+          getLower(annotations, "namespace") ||
+          getLower(annotations, "kubernetes_namespace") ||
+          null;
+
+        const pod =
+          getLower(labels, "pod") ||
+          getLower(labels, "kubernetes_pod_name") ||
+          getLower(annotations, "pod") ||
+          getLower(annotations, "kubernetes_pod_name") ||
+          null;
+
+        const deployment =
+          getLower(labels, "deployment") ||
+          getLower(labels, "kubernetes_deployment") ||
+          getLower(annotations, "deployment") ||
+          getLower(annotations, "kubernetes_deployment") ||
+          null;
+
+        const hpa =
+          getLower(labels, "horizontalpodautoscaler") ||
+          getLower(labels, "kubernetes_horizontalpodautoscaler") ||
+          getLower(annotations, "horizontalpodautoscaler") ||
+          getLower(annotations, "kubernetes_horizontalpodautoscaler") ||
+          null;
+
+        let job =
+          getLower(labels, "kubernetes_job_name") ||
+          getLower(annotations, "kubernetes_job_name") ||
+          getLower(labels, "job_name") ||
+          getLower(annotations, "job_name") ||
+          null;
+
+        if (!job) {
+          const cand = getLower(labels, "job") || getLower(annotations, "job");
+          if (cand && cand !== "kube-state-metrics") {
+            job = cand;
+          }
+        }
+
+        resourceInfo = {
+          _raw: JSON.stringify(parsed),
+          schema_id: null,
+          monitor_condition: getLower(essentials, "monitorcondition") || "Fired",
+          severity: getLower(essentials, "severity") || "Sev4",
+          resource_name,
+          resource_rg: resource_group,
+          resource_id,
+          aks_namespace: namespace,
+          aks_pod: pod,
+          aks_deployment: deployment,
+          aks_job: job,
+          aks_horizontalpodautoscaler: hpa,
+          team: null,
+          // Hardcoded empty for this source, regardless of input: the real
+          // AzureMonitorParser never preserves the raw body as payload.
+          payload: {},
+        };
+      } else {
+        // GenericSourceParser (elastic, cloudo, or any other custom name):
+        // expects the envelope {"source": "...", "payload": {...}}.
+        const rule = getLower(parsed, "rule") || "";
+        let severity = getLower(parsed, "severity") || "Sev4";
+        let monitorCondition =
+          getLower(parsed, "monitorcondition") ||
+          getLower(parsed, "monitor_condition") ||
+          "Fired";
+
+        const payloadFieldRaw = getLower(parsed, "payload");
+        const innerPayload =
+          payloadFieldRaw &&
+          typeof payloadFieldRaw === "object" &&
+          !Array.isArray(payloadFieldRaw)
+            ? payloadFieldRaw
+            : {};
+
+        let resource_name: string | null = null;
+        let resource_group: string | null = null;
+        let namespace: string | null = null;
+        let deployment: string | null = null;
+        let hpa: string | null = null;
+        let job: string | null = null;
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        let payloadOut: any = innerPayload;
+
+        if (source === "elastic") {
+          const attrs = getLower(innerPayload, "attributes") || {};
+          const payloadSeverity =
+            getLower(attrs, "severity") || getLower(innerPayload, "severity");
+          if (payloadSeverity) severity = payloadSeverity;
+          const payloadMonitorCondition =
+            getLower(attrs, "monitorcondition") ||
+            getLower(attrs, "monitor_condition") ||
+            getLower(innerPayload, "monitorcondition") ||
+            getLower(innerPayload, "monitor_condition");
+          if (payloadMonitorCondition)
+            monitorCondition = payloadMonitorCondition;
+
+          if (getLower(innerPayload, "type") === "aks") {
+            namespace = getLower(attrs, "namespace") || null;
+            resource_name = getLower(attrs, "cluster_name") || null;
+            resource_group = getLower(attrs, "cluster_rg_name") || null;
+            deployment = getLower(attrs, "deployment") || null;
+            hpa = getLower(attrs, "hpa") || null;
+            job = getLower(attrs, "job") || null;
+          }
+          // payload stays the original object for this source.
+        } else if (source === "cloudo") {
+          // CloudoParser serializes payload to a JSON string instead of
+          // keeping it as an object — the one source that double-encodes.
+          payloadOut = JSON.stringify(innerPayload);
+        }
+        // Any other source name: generic fallback, no field extraction,
+        // payload stays a plain object (innerPayload).
+
+        resourceInfo = {
+          _raw: JSON.stringify(parsed),
+          schema_id: rule ? [rule] : [],
+          monitor_condition: monitorCondition,
+          severity,
+          resource_name,
+          resource_rg: resource_group,
+          resource_id: null,
+          aks_namespace: namespace,
+          aks_pod: null,
+          aks_deployment: deployment,
+          aks_job: job,
+          aks_horizontalpodautoscaler: hpa,
+          team: null,
+          payload: payloadOut,
+        };
       }
-      if (job) env["K8S_JOB"] = String(job);
 
-      // 4. Essentials
-      const monitorCondition = getLower(essentials, "monitorcondition");
-      if (monitorCondition) env["MONITOR_CONDITION"] = String(monitorCondition);
+      const env: Record<string, string> = {};
+      if (resourceInfo.resource_id) env["RESOURCE_ID"] = String(resourceInfo.resource_id);
+      if (resourceInfo.resource_rg) env["RESOURCE_RG"] = String(resourceInfo.resource_rg);
+      if (resourceInfo.resource_name) env["RESOURCE_NAME"] = String(resourceInfo.resource_name);
+      if (resourceInfo.monitor_condition) env["MONITOR_CONDITION"] = String(resourceInfo.monitor_condition);
+      if (resourceInfo.aks_namespace) env["AKS_NAMESPACE"] = String(resourceInfo.aks_namespace);
+      if (resourceInfo.aks_pod) env["AKS_POD"] = String(resourceInfo.aks_pod);
+      if (resourceInfo.aks_deployment) env["AKS_DEPLOYMENT"] = String(resourceInfo.aks_deployment);
+      if (resourceInfo.aks_job) env["AKS_JOB"] = String(resourceInfo.aks_job);
+      if (resourceInfo.aks_horizontalpodautoscaler) env["AKS_HPA"] = String(resourceInfo.aks_horizontalpodautoscaler);
 
-      const severity = getLower(essentials, "severity");
-      if (severity) env["SEVERITY"] = String(severity);
-
-      // 5. Schema IDs (simulato)
-      const alertId = getLower(essentials, "alertid");
-      const alertRule = getLower(essentials, "alertrule");
-      const schemaCandidates: string[] = [];
-      if (alertId)
-        schemaCandidates.push(String(alertId).split("/").pop() || "");
-      if (alertRule)
-        schemaCandidates.push(String(alertRule).split("/").pop() || "");
-      if (schemaCandidates.length > 0)
-        env["SCHEMA_ID // ALERT_ID"] = Array.from(
-          new Set(schemaCandidates),
-        ).join(",");
-
-      env["CLOUDO_PAYLOAD"] = JSON.stringify(parsed);
+      // Severity and schema/alert IDs are not separate env vars: they only
+      // appear as fields inside CLOUDO_PAYLOAD (resource_info JSON).
+      env["CLOUDO_PAYLOAD"] = JSON.stringify(resourceInfo);
       if (JSON.stringify(parsedEnv) !== JSON.stringify(env)) {
         // eslint-disable-next-line react-hooks/set-state-in-effect
         setParsedEnv(env);
@@ -387,26 +598,17 @@ export default function StudioPage() {
     setNotifications((prev) => prev.filter((n) => n.id !== id));
   };
 
-  const handleCopy = () => {
-    navigator.clipboard.writeText(selectedTemplate.code);
-    setCopied(true);
-    addNotification("success", "Code copied to clipboard");
-    setTimeout(() => setCopied(false), 2000);
-  };
-
-  const handleTemplateSelect = (tpl: (typeof TEMPLATES)[0]) => {
-    setSelectedTemplate(tpl);
-  };
-
-  const handleDownload = () => {
+  const handleExportEnv = () => {
+    const lines = Object.entries(parsedEnv).map(
+      ([key, value]) => `${key}="${String(value).replace(/"/g, '\\"')}"`,
+    );
     const element = document.createElement("a");
-    const file = new Blob([selectedTemplate.code], { type: "text/plain" });
+    const file = new Blob([lines.join("\n") + "\n"], { type: "text/plain" });
     element.href = URL.createObjectURL(file);
-    element.download =
-      selectedTemplate.lang === "python" ? "runbook.py" : "runbook.sh";
+    element.download = "runbook.env";
     document.body.appendChild(element);
     element.click();
-    addNotification("success", "Runbook file exported");
+    addNotification("success", "Variabili esportate come runbook.env");
   };
 
   return (
@@ -442,44 +644,59 @@ export default function StudioPage() {
       </div>
 
       <div className="flex-1 flex overflow-hidden">
-        {/* Left Sidebar: Templates */}
+        {/* Left Sidebar: Examples & Tips */}
         <div className="w-80 border-r border-cloudo-border bg-cloudo-accent/5 overflow-y-auto p-6 space-y-6 shrink-0">
           <div className="flex items-center gap-2 mb-3">
             <HiOutlineDocumentText className="text-cloudo-accent w-4 h-4" />
             <h2 className="text-[11px] font-black uppercase tracking-[0.2em] text-cloudo-text">
-              Reference Blueprints
+              Examples &amp; Templates
             </h2>
           </div>
-          <div className="space-y-3">
-            {TEMPLATES.map((tpl) => (
-              <button
-                key={tpl.id}
-                onClick={() => handleTemplateSelect(tpl)}
-                className={`w-full text-left p-4 border transition-all relative group ${
-                  selectedTemplate.id === tpl.id
-                    ? "bg-cloudo-accent/5 border-cloudo-accent/40"
-                    : "bg-cloudo-panel border-cloudo-border hover:border-cloudo-muted/70"
-                }`}
+          <p className="text-[11px] text-cloudo-muted leading-relaxed">
+            Template vuoti e runbook reali, mantenuti nel repository: parti da
+            un esempio invece che da zero.
+          </p>
+          <a
+            href="https://github.com/pagopa/payments-cloudo/tree/main/examples/runbooks"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="flex items-center justify-between gap-2 p-3 bg-cloudo-panel border border-cloudo-accent/30 hover:border-cloudo-accent transition-colors group"
+          >
+            <span className="text-[11px] font-black text-cloudo-accent uppercase tracking-widest">
+              examples/runbooks
+            </span>
+            <HiOutlineArrowTopRightOnSquare className="w-3.5 h-3.5 text-cloudo-accent shrink-0 group-hover:translate-x-0.5 group-hover:-translate-y-0.5 transition-transform" />
+          </a>
+          <div className="space-y-2">
+            {EXAMPLE_CATEGORIES.map((cat) => (
+              <a
+                key={cat.path}
+                href={`https://github.com/pagopa/payments-cloudo/tree/main/examples/runbooks/${cat.path}`}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="block p-3 bg-cloudo-panel border border-cloudo-border hover:border-cloudo-muted/70 transition-all"
               >
-                <div className="flex items-center gap-3 mb-2">
-                  {tpl.lang === "python" ? (
-                    <HiOutlineCode className="text-cloudo-accent w-4 h-4" />
-                  ) : (
-                    <HiOutlineTerminal className="text-cloudo-accent w-4 h-4" />
-                  )}
+                <div className="flex items-center justify-between mb-1">
                   <span className="text-[11px] font-black text-cloudo-text uppercase tracking-widest">
-                    {tpl.name}
+                    {cat.label}
+                  </span>
+                  <span className="text-[10px] text-cloudo-muted opacity-60">
+                    {cat.count} file
                   </span>
                 </div>
-                <p className="text-[11px] text-cloudo-muted leading-relaxed opacity-60 group-hover:opacity-100">
-                  {tpl.description}
+                <p className="text-[11px] text-cloudo-muted leading-relaxed opacity-60">
+                  {cat.desc}
                 </p>
-                {selectedTemplate.id === tpl.id && (
-                  <div className="absolute left-[-1px] top-0 w-[2px] h-full bg-cloudo-accent" />
-                )}
-              </button>
+              </a>
             ))}
           </div>
+          <p className="text-[11px] text-cloudo-muted leading-relaxed italic">
+            Per provarne uno subito, copia il contenuto nel pannello{" "}
+            <span className="text-cloudo-accent">Test Runbook</span> qui sopra:
+            gira su un worker senza bisogno di merge. Se e solo se è attivo il
+            pannello da feature Flags, se disabilitato farlo abilitare o tornare
+            in <span className="text-cloudo-accent">ambiente di sviluppo.</span>
+          </p>
 
           <div className="pt-8 space-y-4">
             <div className="flex items-center gap-2 mb-3">
@@ -491,8 +708,10 @@ export default function StudioPage() {
             <div className="space-y-4">
               <TipItem text="Gestisci esplicitamente gli exit code per permettere al Worker di capire l'esito." />
               <TipItem text="I parametri vengono passati sia via CLOUDO_PAYLOAD che variabili d'ambiente singole." />
-              <TipItem text="In caso di allarmi inerenti ad AKS ClouDO si loggerà nel cluster nel namespace conivolto con la proprio SA staccando un token valido per 10 minuti." />
-              <TipItem text="Assegna schemi allo stesso gruppo per evitare che runbook che creerebero conflitti in un esecuzione parallela possano girare insieme." />
+              <TipItem text="Rendi il runbook sicuro da eseguire due volte: un alert può ripartire più volte sullo stesso stato." />
+              <TipItem text="In caso di allarmi inerenti ad AKS, ClouDO effettua il login nel namespace coinvolto con un token valido 10 minuti; verifica sempre che KUBECONFIG sia presente prima di usare kubectl." />
+              <TipItem text="Non loggare mai secret o token: le variabili con TOKEN, SECRET, KEY, PASS o AUTH nel nome arrivano comunque mascherate come ******." />
+              <TipItem text="Assegna schemi allo stesso gruppo per evitare che runbook in conflitto tra loro possano girare in parallelo." />
             </div>
           </div>
         </div>
@@ -500,7 +719,19 @@ export default function StudioPage() {
         {/* Center: Handbook Content */}
         <div className="flex-1 overflow-y-auto bg-cloudo-dark custom-scrollbar">
           <div className="max-w-4xl mx-auto p-12 space-y-12">
-            <section className="space-y-6">
+            <nav className="sticky top-0 z-10 -mt-12 -mx-12 px-12 py-3 mb-4 bg-cloudo-dark/95 backdrop-blur-sm border-b border-cloudo-border flex gap-6">
+              {HANDBOOK_SECTIONS.map((s) => (
+                <a
+                  key={s.id}
+                  href={`#${s.id}`}
+                  className="text-[10px] font-black uppercase tracking-widest text-cloudo-muted hover:text-cloudo-accent transition-colors"
+                >
+                  {s.label}
+                </a>
+              ))}
+            </nav>
+
+            <section id="simulator" className="space-y-6 scroll-mt-16">
               <div className="flex items-center gap-3 border-b border-cloudo-border pb-4">
                 <HiOutlinePlay className="text-cloudo-accent w-6 h-6" />
                 <h2 className="text-xl font-black uppercase tracking-widest text-cloudo-text">
@@ -510,8 +741,34 @@ export default function StudioPage() {
               <p className="text-sm text-cloudo-muted leading-relaxed">
                 Utilizza questa area per simulare come ClouDO interpreterà il
                 tuo payload e come verrà composto il comando di esecuzione
-                finale.
+                finale. Il parsing segue lo stesso routing per{" "}
+                <code className="text-cloudo-accent">source</code> descritto
+                più sotto in &quot;Alert Source &amp; Payload Parsing&quot;:
+                prova i preset per vedere come cambia ogni parser.
               </p>
+
+              <div className="space-y-2">
+                <label className="text-[10px] font-black uppercase tracking-widest text-cloudo-muted">
+                  Preset
+                </label>
+                <div className="flex flex-wrap gap-2">
+                  {PAYLOAD_PRESETS.map((preset) => (
+                    <button
+                      key={preset.id}
+                      type="button"
+                      onClick={() => applyPreset(preset.id)}
+                      title={preset.desc}
+                      className={`text-[10px] font-bold uppercase tracking-widest px-3 py-2 border transition-colors ${
+                        activePresetId === preset.id
+                          ? "bg-cloudo-accent/10 border-cloudo-accent text-cloudo-accent"
+                          : "bg-cloudo-panel border-cloudo-border text-cloudo-muted hover:border-cloudo-muted/70"
+                      }`}
+                    >
+                      {preset.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
 
               <div className="grid grid-cols-2 gap-8">
                 <div className="space-y-4">
@@ -564,10 +821,19 @@ export default function StudioPage() {
               </div>
 
               <div className="space-y-4">
-                <label className="text-[11px] font-black uppercase tracking-widest text-cloudo-text flex items-center gap-2 block">
-                  <HiOutlineVariable className="text-cloudo-accent" /> ClouDO
-                  Parsed Environment Variables
-                </label>
+                <div className="flex items-center justify-between">
+                  <label className="text-[11px] font-black uppercase tracking-widest text-cloudo-text flex items-center gap-2 block">
+                    <HiOutlineVariable className="text-cloudo-accent" /> ClouDO
+                    Parsed Environment Variables
+                  </label>
+                  <button
+                    type="button"
+                    onClick={handleExportEnv}
+                    className="text-[10px] uppercase font-bold text-cloudo-muted hover:text-cloudo-accent flex items-center gap-1 transition-colors"
+                  >
+                    <HiOutlineArrowDownTray className="w-3 h-3" /> Export .env
+                  </button>
+                </div>
                 <div className="grid grid-cols-2 gap-4 bg-cloudo-dark/50 border border-cloudo-border p-6 rounded-sm">
                   {Object.entries(parsedEnv).map(
                     ([key, value]) =>
@@ -600,7 +866,7 @@ export default function StudioPage() {
               </div>
             </section>
 
-            <section className="space-y-6">
+            <section id="manuale" className="space-y-6 scroll-mt-16">
               <div className="flex items-center gap-3 border-b border-cloudo-border pb-4">
                 <HiOutlineInformationCircle className="text-cloudo-accent w-6 h-6" />
                 <h2 className="text-xl font-black uppercase tracking-widest text-cloudo-text">
@@ -608,10 +874,92 @@ export default function StudioPage() {
                 </h2>
               </div>
               <p className="text-sm text-cloudo-muted leading-relaxed">
-                Benvenuto nella guida tecnica di ClouDO. In questa sezione
-                troverai tutto il necessario per costruire runbook robusti,
-                sicuri e integrati correttamente con l&apos;orchestratore.
+                Benvenuto nella guida tecnica di ClouDO. Qui sotto trovi il
+                riferimento rapido su cosa riceve il tuo script; per la guida
+                completa (comportamento del Worker, AKS/Azure login, regole di
+                sicurezza e checklist per scrivere un buon runbook) fai
+                riferimento al README di{" "}
+                <a
+                  href="https://github.com/pagopa/payments-cloudo/tree/main/examples/runbooks"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-cloudo-accent hover:underline inline-flex items-center gap-1"
+                >
+                  examples/runbooks
+                  <HiOutlineArrowTopRightOnSquare className="w-3 h-3" />
+                </a>
+                , che è la fonte di verità e viene mantenuto insieme al Worker.
               </p>
+            </section>
+
+            <section id="parsers" className="space-y-4 scroll-mt-16">
+              <div className="flex items-center gap-2 text-cloudo-text/80">
+                <span className="text-cloudo-accent">
+                  <HiOutlineCodeBracket />
+                </span>
+                <span className="text-[11px] font-black uppercase tracking-widest">
+                  Alert Source &amp; Payload Parsing
+                </span>
+              </div>
+              <p className="text-[13px] text-cloudo-muted leading-relaxed opacity-90">
+                Il campo <code className="text-cloudo-accent">source</code>{" "}
+                nel body decide come viene letto il payload. Senza di esso,
+                ClouDO assume un alert Azure Monitor: se il tuo JSON non ha
+                quella forma, i campi restano vuoti anche se è valido.
+              </p>
+
+              <div className="grid grid-cols-2 gap-4">
+                <div className="p-4 bg-cloudo-accent/5 border border-cloudo-accent/20 rounded-sm space-y-2">
+                  <span className="text-[10px] font-black uppercase tracking-widest text-cloudo-accent block">
+                    Valore semplice
+                  </span>
+                  <p className="text-[13px] text-cloudo-muted leading-relaxed">
+                    Usa{" "}
+                    <span className="text-cloudo-text">Run Arguments</span>{" "}
+                    qui sopra, non il payload: arriva sempre come argv.
+                  </p>
+                </div>
+                <div className="p-4 bg-cloudo-accent/5 border border-cloudo-accent/20 rounded-sm space-y-2">
+                  <span className="text-[10px] font-black uppercase tracking-widest text-cloudo-accent block">
+                    Dati strutturati
+                  </span>
+                  <code className="block text-[11px] text-cloudo-accent bg-cloudo-dark/50 p-2 rounded-sm break-all">
+                    {'{"source": "example", "payload": {"myVar": "..."}}'}
+                  </code>
+                  <p className="text-[13px] text-cloudo-muted leading-relaxed">
+                    Resta un oggetto JSON pulito in{" "}
+                    <code className="text-cloudo-text">
+                      resource_info.payload
+                    </code>
+                    . Qualsiasi nome va bene tranne{" "}
+                    <code className="text-cloudo-text">
+                      {'"cloudo"'}
+                    </code>
+                    (vedi sotto).
+                  </p>
+                </div>
+              </div>
+
+              <div className="border border-cloudo-border rounded-sm overflow-hidden divide-y divide-cloudo-border">
+                {SOURCE_PARSERS.map((p) => (
+                  <div
+                    key={p.source}
+                    className="px-4 py-3 grid grid-cols-[180px_1fr] gap-4 items-start"
+                  >
+                    <code className="text-xs text-cloudo-accent font-black">
+                      {p.source}
+                    </code>
+                    <div className="space-y-1.5">
+                      <span className="text-[13px] text-cloudo-muted leading-relaxed block">
+                        {p.result}
+                      </span>
+                      <code className="block text-[11px] text-cloudo-text/80 bg-cloudo-dark/50 p-2 rounded-sm break-all">
+                        {p.example}
+                      </code>
+                    </div>
+                  </div>
+                ))}
+              </div>
             </section>
 
             <div className="grid grid-cols-2 gap-8">
@@ -639,103 +987,60 @@ export default function StudioPage() {
               </HandbookSection>
             </div>
 
-            <HandbookSection
-              title="Common Environment Variables"
-              icon={<HiOutlineVariable />}
-            >
-              <div className="grid grid-cols-2 gap-x-12 gap-y-4 mt-4">
-                <VarItem
-                  name="RESOURCE_ID"
-                  desc="Azure resource ID (/subscriptions/...)"
-                />
-                <VarItem
-                  name="RESOURCE_RG"
-                  desc="Resource Group of the resource."
-                />
-                <VarItem name="RESOURCE_NAME" desc="Final resource name." />
-                <VarItem
-                  name="MONITOR_CONDITION"
-                  desc="Alert state (Fired/Resolved)."
-                />
-                <VarItem name="SEVERITY" desc="Severity level (Sev0-4)." />
-                <VarItem
-                  name="SCHEMA_ID // ALERT_ID"
-                  desc="Identificativo dello schema di allarme."
-                />
-                <VarItem
-                  name="K8S_NAMESPACE"
-                  desc="Namespace Kubernetes (se presente)."
-                />
-                <VarItem name="K8S_POD" desc="Nome del Pod (se presente)." />
-                <VarItem
-                  name="K8S_DEPLOYMENT"
-                  desc="Nome del Deployment (se presente)."
-                />
-                <VarItem name="K8S_JOB" desc="Nome del Job (se presente)." />
-                <VarItem
-                  name="K8S_HPA"
-                  desc="Horizontal Pod Autoscaler (se presente)."
-                />
-                <VarItem
-                  name="CLOUDO_ENVIRONMENT"
-                  desc="L'environment di riferimento cloudo (dev, uat, prod)."
-                />
-                <VarItem
-                  name="CLOUDO_ENVIRONMENT_SHORT"
-                  desc="L'environment di riferimento cloudo abbreviato (d, u, p)."
-                />
-                <VarItem
-                  name="CLOUDO_PAYLOAD"
-                  desc="L'intero payload JSON originale."
-                />
+            <section id="env-vars" className="space-y-2 scroll-mt-16">
+              <div className="flex items-center gap-2 text-cloudo-text/80">
+                <span className="text-cloudo-accent">
+                  <HiOutlineVariable />
+                </span>
+                <span className="text-[11px] font-black uppercase tracking-widest">
+                  Common Environment Variables
+                </span>
               </div>
-            </HandbookSection>
-
-            <section className="space-y-6 bg-cloudo-panel border border-cloudo-border p-8">
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-3">
-                  <HiOutlineCode className="text-cloudo-accent w-5 h-5" />
-                  <h3 className="text-sm font-black uppercase tracking-widest text-cloudo-text">
-                    Blueprint Selezionato: {selectedTemplate.name}
-                  </h3>
-                </div>
-                <div className="flex gap-4">
-                  <button
-                    onClick={handleDownload}
-                    className="text-[10px] uppercase font-bold text-cloudo-muted hover:text-cloudo-accent flex items-center gap-1 transition-colors"
-                  >
-                    <HiOutlineDownload className="w-3 h-3" /> Export
-                  </button>
-                  <button
-                    onClick={handleCopy}
-                    className="text-[10px] uppercase font-bold text-cloudo-muted hover:text-cloudo-accent flex items-center gap-1 transition-colors"
-                  >
-                    {copied ? (
-                      <HiOutlineCheck className="w-3 h-3" />
-                    ) : (
-                      <HiOutlineClipboardCopy className="w-3 h-3" />
-                    )}
-                    {copied ? "Copied" : "Copy"}
-                  </button>
-                </div>
+              <div className="mt-2 border border-cloudo-border rounded-sm overflow-hidden divide-y divide-cloudo-border">
+                {ENV_VAR_GROUPS.map((group) => (
+                  <div key={group.title}>
+                    <div className="px-4 py-2 bg-cloudo-accent/5 text-[10px] font-black uppercase tracking-widest text-cloudo-accent">
+                      {group.title}
+                    </div>
+                    <div className="divide-y divide-cloudo-border/30">
+                      {group.vars.map((v) => (
+                        <div
+                          key={v.name}
+                          className="px-4 py-3 grid grid-cols-[200px_1fr] gap-4 items-start"
+                        >
+                          <code className="text-xs text-cloudo-accent font-black break-all">
+                            {v.name}
+                          </code>
+                          <span className="text-[13px] text-cloudo-muted leading-relaxed">
+                            {v.desc}
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                ))}
               </div>
-              <div className="bg-cloudo-dark/50 border border-cloudo-border/50 p-4 rounded overflow-hidden">
-                <pre className="text-xs text-cloudo-muted overflow-x-auto custom-scrollbar leading-5">
-                  <code>{selectedTemplate.code}</code>
-                </pre>
-              </div>
+              <p className="text-[12px] text-cloudo-muted/70 leading-relaxed mt-3 italic">
+                Le variabili il cui nome contiene TOKEN, SECRET, KEY, PASS, PWD
+                o AUTH arrivano sempre mascherate come ******, anche se le
+                imposti tu stesso: per usare un segreto, leggilo da Key Vault a
+                runtime.
+              </p>
             </section>
 
             <HandbookSection
+              id="deployment"
               title="Deployment Workflow"
               icon={<HiOutlineDocumentText />}
             >
               <p>Per rendere operativo il tuo runbook:</p>
               <ol className="list-decimal list-inside mt-4 space-y-2 text-cloudo-muted/80">
                 <li>
-                  Salva lo script nel path configurato sul Worker (es:{" "}
-                  <code className="text-cloudo-text">src/cloudo/runbooks/</code>
-                  ).
+                  Salva lo script nel path configurato sul Worker o repo di
+                  riferimento (es.{" "}
+                  <code className="text-cloudo-text">src/runbooks/</code>), o
+                  parti da uno degli esempi mantenuti in{" "}
+                  <code className="text-cloudo-text">examples/runbooks/</code>.
                 </li>
                 <li>
                   Assicurati che lo script abbia i permessi di esecuzione (
@@ -744,6 +1049,13 @@ export default function StudioPage() {
                 <li>
                   Crea o aggiorna lo Schema nel Registry puntando al file
                   creato.
+                </li>
+                <li>
+                  Il Worker scarica i runbook da GitHub al momento
+                  dell&apos;esecuzione: una volta fatto merge sul branch
+                  configurato è già live, senza bisogno di un deploy. Vale anche
+                  al contrario: se sposti o rinomini il file, gli schemi che lo
+                  referenziano iniziano a fallire.
                 </li>
               </ol>
             </HandbookSection>
@@ -829,6 +1141,8 @@ export default function StudioPage() {
                 onSuccess={handleTestSuccess}
                 onCancel={() => setIsTestModalOpen(false)}
                 onError={(err: string) => addNotification("error", err)}
+                initialBody={payloadInput}
+                initialArgs={runArgsInput}
               />
             </div>
 
@@ -872,36 +1186,27 @@ function TipItem({ text }: { text: string }) {
 }
 
 function HandbookSection({
+  id,
   title,
   icon,
   children,
 }: {
+  id?: string;
   title: string;
   icon: React.ReactNode;
   children: React.ReactNode;
 }) {
   return (
-    <div className="space-y-2">
+    <div id={id} className={`space-y-2 ${id ? "scroll-mt-16" : ""}`}>
       <div className="flex items-center gap-2 text-cloudo-text/80">
         <span className="text-cloudo-accent">{icon}</span>
         <span className="text-[11px] font-black uppercase tracking-widest">
           {title}
         </span>
       </div>
-      <div className="text-[11px] text-cloudo-muted leading-relaxed font-bold opacity-80">
+      <div className="text-[13px] text-cloudo-muted leading-relaxed opacity-90">
         {children}
       </div>
-    </div>
-  );
-}
-
-function VarItem({ name, desc }: { name: string; desc: string }) {
-  return (
-    <div className="flex flex-col gap-0.5 border-b border-cloudo-border/20 pb-2">
-      <code className="text-cloudo-accent text-[11px] font-black">{name}</code>
-      <span className="text-[10px] text-cloudo-muted opacity-60 tracking-tighter">
-        {desc}
-      </span>
     </div>
   );
 }
@@ -910,10 +1215,14 @@ function TestScriptForm({
   onSuccess,
   onCancel,
   onError,
+  initialBody,
+  initialArgs,
 }: {
   onSuccess: (msg: string) => void;
   onCancel: () => void;
   onError: (err: string) => void;
+  initialBody: string;
+  initialArgs: string;
 }) {
   const STORAGE_KEY = "cloudo_test_form_data";
   const EMPTY_FORM = {
@@ -927,18 +1236,22 @@ function TestScriptForm({
 
   const [formData, setFormData] = useState(() => {
     if (typeof window !== "undefined") {
-      const saved = localStorage.getItem(STORAGE_KEY);
-      if (saved) {
+      const stored = localStorage.getItem(STORAGE_KEY);
+      if (stored) {
         try {
-          return { ...EMPTY_FORM, ...JSON.parse(saved) };
+          return { ...EMPTY_FORM, ...JSON.parse(stored) };
         } catch {
-          return EMPTY_FORM;
+          // fall through to the seeded defaults below
         }
       }
     }
-    return EMPTY_FORM;
+    return {
+      ...EMPTY_FORM,
+      body: initialBody,
+      args: initialArgs,
+    };
   });
-  const [isBodyOpen, setIsBodyOpen] = useState(false);
+  const [isBodyOpen, setIsBodyOpen] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [capabilities, setCapabilities] = useState<string[]>([]);
   const [loadingWorkers, setLoadingWorkers] = useState(true);
@@ -1145,8 +1458,12 @@ function TestScriptForm({
             icon={<HiOutlineVariable className="w-3 h-3 text-cloudo-accent" />}
             value={formData.args}
             onChange={(e) => setFormData({ ...formData, args: e.target.value })}
-            placeholder="--mode=dry-run --target=prod"
+            placeholder="--mode=dry-run --target=dev"
           />
+          <p className="text-[9px] text-cloudo-muted opacity-60 -mt-1 ml-1">
+            Precompilati dal Payload Simulator solo la prima volta; le tue
+            modifiche qui restano salvate per i test successivi.
+          </p>
 
           {/* COLLAPSIBLE JSON BODY */}
           <CollapsibleSection
