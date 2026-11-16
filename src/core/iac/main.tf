@@ -13,7 +13,7 @@ resource "random_password" "session_secret" {
 
 # Orchestrator Function
 module "cloudo_orchestrator" {
-  source                                   = "git::https://github.com/pagopa/terraform-azurerm-v4//IDH/app_service_function?ref=3063d95b6d1836d006da8d0f198285f122ea8510" #v10.12.0
+  source                                   = "git::https://github.com/pagopa/terraform-azurerm-v4//IDH/app_service_function?ref=52aee0d4e3f811253a24369db3d213c31369370d" #v10.52.0
   env                                      = var.env
   idh_resource_tier                        = var.cloudo_function_tier
   location                                 = var.location
@@ -97,7 +97,7 @@ module "cloudo_orchestrator" {
 module "cloudo_agent" {
   count = var.cloudo_agent_enabled ? 1 : 0
 
-  source                                   = "git::https://github.com/pagopa/terraform-azurerm-v4//IDH/app_service_function?ref=3063d95b6d1836d006da8d0f198285f122ea8510" #v10.12.0
+  source                                   = "git::https://github.com/pagopa/terraform-azurerm-v4//IDH/app_service_function?ref=52aee0d4e3f811253a24369db3d213c31369370d" #v10.52.0
   env                                      = var.env
   idh_resource_tier                        = var.cloudo_function_tier
   location                                 = var.location
@@ -160,7 +160,7 @@ module "cloudo_agent" {
 # UI App Service
 module "cloudo_ui" {
   count               = var.enable_ui ? 1 : 0
-  source              = "git::https://github.com/pagopa/terraform-azurerm-v4//IDH/app_service_webapp?ref=28d56d27f9e6a58d01f501ef9fe4d1a9b785e2e6" #v9.10.3
+  source              = "git::https://github.com/pagopa/terraform-azurerm-v4//IDH/app_service_webapp?ref=52aee0d4e3f811253a24369db3d213c31369370d" #v10.52.0
   env                 = var.env
   idh_resource_tier   = var.cloudo_ui_tier
   location            = var.location
@@ -211,7 +211,7 @@ module "cloudo_ui" {
 
 # Workers Function Module
 module "cloudo_worker" {
-  source   = "git::https://github.com/pagopa/terraform-azurerm-v4//IDH/app_service_function?ref=28d56d27f9e6a58d01f501ef9fe4d1a9b785e2e6" #v9.10.3
+  source   = "git::https://github.com/pagopa/terraform-azurerm-v4//IDH/app_service_function?ref=52aee0d4e3f811253a24369db3d213c31369370d" #v10.52.0
   for_each = var.workers_config.workers
 
   env                                      = var.env
