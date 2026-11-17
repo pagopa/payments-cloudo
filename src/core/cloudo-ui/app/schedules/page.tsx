@@ -25,6 +25,7 @@ import {
   HiOutlineClipboardCopy,
   HiOutlineChip,
   HiCode,
+  HiPlay,
 } from "react-icons/hi";
 import { HiMiniComputerDesktop } from "react-icons/hi2";
 
@@ -67,8 +68,10 @@ export default function SchedulesPage() {
   const [scheduleToDelete, setScheduleToDelete] = useState<Schedule | null>(
     null,
   );
+  const [scheduleToRun, setScheduleToRun] = useState<Schedule | null>(null);
   const [notifications, setNotifications] = useState<Notification[]>([]);
   const [togglingId, setTogglingId] = useState<string | null>(null);
+  const [runningId, setRunningId] = useState<string | null>(null);
   const [user, setUser] = useState<{ role: string; team?: string } | null>(
     null,
   );
@@ -206,6 +209,31 @@ export default function SchedulesPage() {
       addNotification("error", "Network error");
     } finally {
       setTogglingId(null);
+    }
+  };
+
+  const runScheduleNow = async (schedule: Schedule) => {
+    setRunningId(schedule.id);
+    try {
+      const res = await cloudoFetch(`/schedules/run`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ id: schedule.id }),
+      });
+
+      if (res.ok) {
+        addNotification("success", `Schedule ${schedule.id} run triggered`);
+      } else {
+        const d = await res.json();
+        addNotification("error", d.error || "Operation failed");
+      }
+    } catch {
+      addNotification("error", "Network error");
+    } finally {
+      setRunningId(null);
+      setScheduleToRun(null);
     }
   };
 
@@ -495,6 +523,22 @@ export default function SchedulesPage() {
                             <td className="px-3 py-2.5 text-right">
                               <div className="flex items-center justify-end gap-1">
                                 <button
+                                  onClick={() => setScheduleToRun(s)}
+                                  disabled={runningId === s.id}
+                                  className={`p-1.5 bg-cloudo-accent/10 border border-cloudo-border text-cloudo-accent hover:border-cloudo-accent/60 hover:text-white transition-all ${
+                                    runningId === s.id
+                                      ? "opacity-50 cursor-not-allowed"
+                                      : "cursor-pointer"
+                                  } ${!canModify || isViewer ? "hidden" : ""}`}
+                                  title="Run Now"
+                                >
+                                  {runningId === s.id ? (
+                                    <HiOutlineRefresh className="w-4 h-4 animate-spin" />
+                                  ) : (
+                                    <HiPlay className="w-4 h-4" />
+                                  )}
+                                </button>
+                                <button
                                   onClick={() => toggleSchedule(s)}
                                   disabled={togglingId === s.id}
                                   className={`p-1.5 border transition-all ${
@@ -640,6 +684,57 @@ export default function SchedulesPage() {
               onCancel={() => setModalMode(null)}
               onError={(msg: string) => addNotification("error", msg)}
             />
+          </div>
+        </div>
+      )}
+
+      {/* Run Now Confirmation Modal */}
+      {scheduleToRun && (
+        <div
+          className="fixed inset-0 bg-cloudo-dark/95 backdrop-blur-md flex items-center justify-center z-[60] p-4"
+          onClick={() => !runningId && setScheduleToRun(null)}
+        >
+          <div
+            className="bg-cloudo-panel border border-cloudo-accent/30 max-w-sm w-full p-10 text-center space-y-8 animate-in zoom-in-95 relative overflow-hidden"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="absolute top-0 left-0 w-full h-1 bg-cloudo-accent/50" />
+
+            <div className="w-14 h-14 bg-cloudo-accent/10 border border-cloudo-accent/20 flex items-center justify-center mx-auto text-cloudo-accent">
+              <HiPlay className="w-7 h-7" />
+            </div>
+
+            <div className="space-y-3">
+              <h3 className="text-base font-black text-cloudo-text uppercase tracking-[0.15em]">
+                Trigger Instant Run
+              </h3>
+              <p className="text-sm text-cloudo-muted uppercase font-bold leading-relaxed">
+                This will run the schedule outside its cron right now:
+                <br />
+                <span className="text-cloudo-accent mt-2 block font-mono text-base">
+                  {scheduleToRun.name} ({scheduleToRun.id})
+                </span>
+              </p>
+            </div>
+
+            <div className="flex flex-col gap-3 pt-4">
+              <button
+                onClick={() => runScheduleNow(scheduleToRun)}
+                disabled={runningId === scheduleToRun.id}
+                className="w-full bg-cloudo-accent text-cloudo-dark py-4 text-sm font-black uppercase tracking-[0.15em] hover:bg-cloudo-accent/90 transition-all disabled:opacity-50"
+              >
+                {runningId === scheduleToRun.id
+                  ? "Triggering..."
+                  : "Confirm Run Now"}
+              </button>
+              <button
+                onClick={() => setScheduleToRun(null)}
+                disabled={runningId === scheduleToRun.id}
+                className="text-sm font-black text-cloudo-muted hover:text-cloudo-text uppercase tracking-wide py-2 transition-all"
+              >
+                Cancel
+              </button>
+            </div>
           </div>
         </div>
       )}

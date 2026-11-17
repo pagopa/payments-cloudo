@@ -7,7 +7,7 @@ import {
   HiOutlineTerminal,
   HiOutlineChip,
   HiOutlineRefresh,
-  HiOutlinePlay,
+  HiPlay,
   HiOutlinePencil,
   HiOutlineEye,
   HiOutlineTrash,
@@ -22,13 +22,11 @@ interface SchemaCardProps {
   userRole?: string;
   userTeam?: string;
   copiedId: string | null;
-  confirmRunId: string | null;
   executingId: string | null;
   togglingId?: string | null;
   onCopyId: (id: string) => void;
   onRun: (id: string) => void;
   onToggle?: (schema: Schema) => void;
-  onConfirmRun: (id: string | null) => void;
   onViewSource: (runbook: string) => void;
   onEdit: (schema: Schema) => void;
   onDelete: (schema: Schema) => void;
@@ -40,13 +38,11 @@ export function SchemaCard({
   userRole,
   userTeam,
   copiedId,
-  confirmRunId,
   executingId,
   togglingId,
   onCopyId,
   onRun,
   onToggle,
-  onConfirmRun,
   onViewSource,
   onEdit,
   onDelete,
@@ -279,26 +275,18 @@ export function SchemaCard({
           {!isViewer && (
             <div className="relative group/run">
               <button
-                onClick={() => {
-                  if (confirmRunId === schema.id) {
-                    onRun(schema.id);
-                  } else {
-                    onConfirmRun(schema.id);
-                  }
-                }}
+                onClick={() => onRun(schema.id)}
                 disabled={executingId === schema.id}
-                className={`h-9 px-4 border transition-all flex items-center gap-2 font-black text-[10px] uppercase tracking-widest ${
-                  confirmRunId === schema.id
-                    ? "bg-cloudo-accent border-cloudo-accent text-cloudo-dark"
-                    : "bg-cloudo-accent/10 border-cloudo-border text-cloudo-accent hover:border-cloudo-accent/40"
-                } ${executingId === schema.id ? "opacity-50 cursor-wait" : ""}`}
+                className={`h-9 px-4 border transition-all flex items-center gap-2 font-black text-[10px] uppercase tracking-widest bg-cloudo-accent/10 border-cloudo-border text-cloudo-accent hover:border-cloudo-accent/40 ${
+                  executingId === schema.id ? "opacity-50 cursor-wait" : ""
+                }`}
               >
                 {executingId === schema.id ? (
                   <HiOutlineRefresh className="w-3.5 h-3.5 animate-spin" />
                 ) : (
-                  <HiOutlinePlay className="w-3.5 h-3.5" />
+                  <HiPlay className="w-3.5 h-3.5" />
                 )}
-                {confirmRunId === schema.id ? "Confirm?" : "Run"}
+                Run
               </button>
             </div>
           )}

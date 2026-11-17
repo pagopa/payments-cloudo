@@ -7,7 +7,7 @@ import {
   HiOutlineTerminal,
   HiOutlineChip,
   HiOutlineRefresh,
-  HiOutlinePlay,
+  HiPlay,
   HiOutlinePencil,
   HiOutlineEye,
   HiOutlineTrash,
@@ -23,13 +23,11 @@ interface SchemaTableProps {
   userRole?: string;
   userTeam?: string;
   copiedId: string | null;
-  confirmRunId: string | null;
   executingId: string | null;
   togglingId?: string | null;
   onCopyId: (id: string) => void;
   onRun: (id: string) => void;
   onToggle?: (schema: Schema) => void;
-  onConfirmRun: (id: string | null) => void;
   onViewSource: (runbook: string) => void;
   onEdit: (schema: Schema) => void;
   onDelete: (schema: Schema) => void;
@@ -41,13 +39,11 @@ export function SchemaTable({
   userRole,
   userTeam,
   copiedId,
-  confirmRunId,
   executingId,
   togglingId,
   onCopyId,
   onRun,
   onToggle,
-  onConfirmRun,
   onViewSource,
   onEdit,
   onDelete,
@@ -296,19 +292,9 @@ export function SchemaTable({
                     <div className="flex items-center justify-end gap-1">
                       {!isViewer && (
                         <button
-                          onClick={() => {
-                            if (confirmRunId === schema.id) {
-                              onRun(schema.id);
-                            } else {
-                              onConfirmRun(schema.id);
-                            }
-                          }}
+                          onClick={() => onRun(schema.id)}
                           disabled={executingId === schema.id}
-                          className={`h-7 px-2 border transition-all flex items-center gap-1.5 font-black text-[9px] uppercase tracking-widest ${
-                            confirmRunId === schema.id
-                              ? "bg-cloudo-accent border-cloudo-accent text-cloudo-dark"
-                              : "bg-cloudo-accent/5 border-cloudo-border text-cloudo-accent hover:border-cloudo-accent/40"
-                          } ${
+                          className={`h-7 px-2 border transition-all flex items-center gap-1.5 font-black text-[9px] uppercase tracking-widest bg-cloudo-accent/5 border-cloudo-border text-cloudo-accent hover:border-cloudo-accent/40 ${
                             executingId === schema.id
                               ? "opacity-50 cursor-wait"
                               : ""
@@ -317,9 +303,8 @@ export function SchemaTable({
                           {executingId === schema.id ? (
                             <HiOutlineRefresh className="w-3 h-3 animate-spin" />
                           ) : (
-                            <HiOutlinePlay className="w-3 h-3" />
+                            <HiPlay className="w-3 h-3" />
                           )}
-                          {confirmRunId === schema.id ? "Confirm?" : "Run"}
                         </button>
                       )}
                       <button
