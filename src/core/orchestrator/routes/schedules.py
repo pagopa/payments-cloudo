@@ -48,6 +48,190 @@ def _claim_schedule_run(table_client, schedule, claimed_at: datetime) -> bool:
     return True
 
 
+def _load_worker_pool_to_queue(workers_table) -> dict[tuple[str, str], str]:
+    worker_pool_to_queue: dict[tuple[str, str], str] = {}
+    try:
+        workers = workers_table.query_entities(
+            query_filter="PartitionKey ne ''",
+            select=["PartitionKey", "Queue", "team"],
+        )
+        for w in workers:
+            pool = str(w.get("PartitionKey") or "").strip()
+            queue_name = str(w.get("Queue") or "").strip()
+            worker_team = team_access.entity_team(w)
+            if pool and queue_name and (pool, worker_team) not in worker_pool_to_queue:
+                worker_pool_to_queue[(pool, worker_team)] = queue_name
+    except Exception as werr:
+        logging.error(f"[Scheduler] Failed to load WorkersRegistry map: {werr}")
+    return worker_pool_to_queue
+
+
+def _dispatch_schedule_run(
+    table_client,
+    log_table_client,
+    worker_pool_to_queue: dict[tuple[str, str], str],
+    schedule: dict[str, Any],
+    initiator: Optional[str] = None,
+) -> str:
+    """Build the queue payload for one schedule run, log it, and enqueue it. Returns exec_id."""
+    from utils import format_requested_at, today_partition_key
+
+    exec_id = str(uuid.uuid4())
+    worker_pool = schedule.get("worker_pool")
+    schedule_team = team_access.entity_team(schedule)
+    oncall_enabled = as_bool(schedule.get("oncall"), default=True)
+
+    target_queue = "cloudo-default"
+    if worker_pool:
+        target_queue = worker_pool_to_queue.get(
+            (worker_pool, schedule_team),
+            worker_pool_to_queue.get((worker_pool, DEFAULT_TEAM), target_queue),
+        )
+
+    requested_at = format_requested_at()
+    partition_key = today_partition_key()
+
+    queue_payload = {
+        "runbook": schedule.get("runbook"),
+        "run_args": schedule.get("run_args"),
+        "worker": worker_pool,
+        "group": "-",
+        "exec_id": exec_id,
+        "id": schedule.get("RowKey"),
+        "name": schedule.get("name"),
+        "status": "scheduled",
+        "oncall": oncall_enabled,
+        "require_approval": False,
+        "requested_at": requested_at,
+        "team": schedule_team,
+        "severity": schedule.get("severity") or "",
+        "initiator": initiator,
+    }
+
+    try:
+        log_entry = executions.build_log_entry(
+            status="scheduled",
+            partition_key=partition_key,
+            row_key=str(uuid.uuid4()),
+            exec_id=exec_id,
+            requested_at=requested_at,
+            name=schedule.get("name"),
+            schema_id=schedule.get("RowKey"),
+            runbook=schedule.get("runbook"),
+            run_args=schedule.get("run_args"),
+            worker=worker_pool,
+            group="-",
+            oncall=oncall_enabled,
+            initiator=initiator,
+            log_msg=json.dumps(
+                {"status": "scheduled", "queue": target_queue},
+                ensure_ascii=False,
+            ),
+            monitor_condition="",
+            severity=schedule.get("severity") or "",
+            team=schedule_team,
+        )
+        log_table_client.create_entity(entity=log_entry)
+    except Exception as le:
+        logging.error(f"[Scheduler] Failed to log scheduled status: {le}")
+
+    queue_service = storage.get_queue_client(target_queue)
+    try:
+        queue_service.send_message(json.dumps(queue_payload, ensure_ascii=False))
+    except Exception as qe:
+        if "QueueNotFound" in str(qe):
+            logging.warning(f"[Scheduler] Queue {target_queue} not found")
+        else:
+            raise qe
+
+    return exec_id
+
+
+@bp.route(
+    route="schedules/run",
+    methods=[func.HttpMethod.POST, func.HttpMethod.OPTIONS],
+    auth_level=AUTH,
+)
+def schedules_run_now(req: func.HttpRequest) -> func.HttpResponse:
+    if req.method == "OPTIONS":
+        return create_cors_response()
+
+    session, error_res = security.get_authenticated_user(req)
+    if error_res:
+        return error_res
+
+    if session.get("role") == "VIEWER":
+        return func.HttpResponse(
+            json.dumps({"error": "Unauthorized: Viewer cannot run schedules"}),
+            status_code=403,
+            mimetype="application/json",
+            headers={"Access-Control-Allow-Origin": "*"},
+        )
+
+    try:
+        body = req.get_json()
+    except ValueError:
+        body = None
+    schedule_id = (body or {}).get("id") if isinstance(body, dict) else None
+    if not schedule_id:
+        return func.HttpResponse(
+            json.dumps({"error": "Missing id"}),
+            status_code=400,
+            headers={"Access-Control-Allow-Origin": "*"},
+        )
+
+    table_client = storage.get_table_client(TABLE_SCHEDULES)
+    try:
+        schedule = table_client.get_entity(
+            partition_key="Schedule", row_key=schedule_id
+        )
+    except Exception:
+        return func.HttpResponse(
+            json.dumps({"error": f"Schedule '{schedule_id}' not found"}),
+            status_code=404,
+            headers={"Access-Control-Allow-Origin": "*"},
+        )
+
+    if not team_access.can_modify_entity(schedule, session):
+        return func.HttpResponse(
+            json.dumps({"error": "Schedule belongs to another team"}),
+            status_code=403,
+            headers={"Access-Control-Allow-Origin": "*"},
+        )
+
+    log_table_client = storage.get_table_client(TABLE_NAME)
+    workers_table = storage.get_table_client(TABLE_WORKERS_SCHEMAS)
+    worker_pool_to_queue = _load_worker_pool_to_queue(workers_table)
+
+    try:
+        exec_id = _dispatch_schedule_run(
+            table_client,
+            log_table_client,
+            worker_pool_to_queue,
+            schedule,
+            initiator=session.get("username"),
+        )
+    except Exception as e:
+        return func.HttpResponse(
+            json.dumps({"error": str(e)}),
+            status_code=500,
+            headers={"Access-Control-Allow-Origin": "*"},
+        )
+
+    audit.log_audit(
+        user=session.get("username") or "SYSTEM",
+        action="SCHEDULE_RUN_NOW",
+        target=schedule_id,
+        details=f"Manual run triggered, ExecId: {exec_id}",
+    )
+
+    return func.HttpResponse(
+        json.dumps({"success": True, "exec_id": exec_id}),
+        status_code=200,
+        headers={"Access-Control-Allow-Origin": "*"},
+    )
+
+
 @bp.route(
     route="schedules",
     methods=[
@@ -318,31 +502,14 @@ def scheduler_engine(schedulerTimer: func.TimerRequest) -> None:
     """
     from zoneinfo import ZoneInfo
 
-    from utils import format_requested_at, is_cron_now, today_partition_key
+    from utils import is_cron_now
 
     table_client = storage.get_table_client(TABLE_SCHEDULES)
     log_table_client = storage.get_table_client(TABLE_NAME)
     workers_table = storage.get_table_client(TABLE_WORKERS_SCHEMAS)
 
     try:
-        worker_pool_to_queue: dict[tuple[str, str], str] = {}
-        try:
-            workers = workers_table.query_entities(
-                query_filter="PartitionKey ne ''",
-                select=["PartitionKey", "Queue", "team"],
-            )
-            for w in workers:
-                pool = str(w.get("PartitionKey") or "").strip()
-                queue_name = str(w.get("Queue") or "").strip()
-                worker_team = team_access.entity_team(w)
-                if (
-                    pool
-                    and queue_name
-                    and (pool, worker_team) not in worker_pool_to_queue
-                ):
-                    worker_pool_to_queue[(pool, worker_team)] = queue_name
-        except Exception as werr:
-            logging.error(f"[Scheduler] Failed to load WorkersRegistry map: {werr}")
+        worker_pool_to_queue = _load_worker_pool_to_queue(workers_table)
 
         schedules = table_client.query_entities(
             query_filter="PartitionKey eq 'Schedule'"
@@ -359,7 +526,6 @@ def scheduler_engine(schedulerTimer: func.TimerRequest) -> None:
 
             cron_expr = s.get("cron", "0 */1 * * * *")
             last_run_str = s.get("last_run", "")
-            oncall_enabled = as_bool(s.get("oncall"), default=True)
 
             should_run_by_cron = is_cron_now(cron_expr, now_for_cron)
 
@@ -375,82 +541,12 @@ def scheduler_engine(schedulerTimer: func.TimerRequest) -> None:
                         should_run = True
 
             if should_run and _claim_schedule_run(table_client, s, now):
-                exec_id = str(uuid.uuid4())
+                exec_id = _dispatch_schedule_run(
+                    table_client, log_table_client, worker_pool_to_queue, s
+                )
                 logging.info(
                     f"[Scheduler] Triggering {s['name']} (ID: {s['RowKey']}) -> ExecId: {exec_id}"
                 )
-
-                worker_pool = s.get("worker_pool")
-                schedule_team = team_access.entity_team(s)
-                target_queue = "cloudo-default"
-
-                if worker_pool:
-                    target_queue = worker_pool_to_queue.get(
-                        (worker_pool, schedule_team),
-                        worker_pool_to_queue.get(
-                            (worker_pool, DEFAULT_TEAM), target_queue
-                        ),
-                    )
-
-                requested_at = format_requested_at()
-                partition_key = today_partition_key()
-
-                queue_payload = {
-                    "runbook": s.get("runbook"),
-                    "run_args": s.get("run_args"),
-                    "worker": worker_pool,
-                    "group": "-",
-                    "exec_id": exec_id,
-                    "id": s.get("RowKey"),
-                    "name": s.get("name"),
-                    "status": "scheduled",
-                    "oncall": oncall_enabled,
-                    "require_approval": False,
-                    "requested_at": requested_at,
-                    "team": team_access.entity_team(s),
-                    "severity": s.get("severity") or "",
-                }
-
-                try:
-                    log_entry = executions.build_log_entry(
-                        status="scheduled",
-                        partition_key=partition_key,
-                        row_key=str(uuid.uuid4()),
-                        exec_id=exec_id,
-                        requested_at=requested_at,
-                        name=s.get("name"),
-                        schema_id=s.get("RowKey"),
-                        runbook=s.get("runbook"),
-                        run_args=s.get("run_args"),
-                        worker=worker_pool,
-                        group="-",
-                        oncall=oncall_enabled,
-                        log_msg=json.dumps(
-                            {
-                                "status": "scheduled",
-                                "queue": target_queue,
-                            },
-                            ensure_ascii=False,
-                        ),
-                        monitor_condition="",
-                        severity=s.get("severity") or "",
-                        team=team_access.entity_team(s),
-                    )
-                    log_table_client.create_entity(entity=log_entry)
-                except Exception as le:
-                    logging.error(f"[Scheduler] Failed to log scheduled status: {le}")
-
-                q_name = target_queue
-                queue_service = storage.get_queue_client(q_name)
-                try:
-                    queue_service.send_message(
-                        json.dumps(queue_payload, ensure_ascii=False)
-                    )
-                except Exception as qe:
-                    if "QueueNotFound" in str(qe):
-                        logging.warning(f"[Scheduler] Queue {q_name} not found")
-                    else:
-                        raise qe
 
     except Exception as e:
         logging.error(f"[Scheduler] Error: {e}")

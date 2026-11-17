@@ -19,6 +19,7 @@ import {
   HiOutlineViewList,
   HiOutlineBan,
   HiCode,
+  HiOutlinePlay,
 } from "react-icons/hi";
 import { MdOutlineSchema } from "react-icons/md";
 import { DeleteConfirmationModal } from "../utils/modals";
@@ -110,7 +111,7 @@ export default function SchemasPage() {
   ]);
 
   const [schemaToDelete, setSchemaToDelete] = useState<Schema | null>(null);
-  const [confirmRunId, setConfirmRunId] = useState<string | null>(null);
+  const [schemaToRun, setSchemaToRun] = useState<Schema | null>(null);
   const [executingId, setExecutingId] = useState<string | null>(null);
   const [togglingId, setTogglingId] = useState<string | null>(null);
   const [notifications, setNotifications] = useState<Notification[]>([]);
@@ -223,9 +224,14 @@ export default function SchemasPage() {
     setTimeout(() => setCopiedId(null), 2000);
   };
 
+  const confirmRun = (id: string) => {
+    const schema = schemas.find((s) => s.id === id) || null;
+    setSchemaToRun(schema);
+  };
+
   const handleRun = async (id: string) => {
     setExecutingId(id);
-    setConfirmRunId(null);
+    setSchemaToRun(null);
     try {
       const response = await cloudoFetch(`/Trigger?id=${id}`, {
         method: "POST",
@@ -633,13 +639,11 @@ export default function SchemasPage() {
                   userRole={user?.role}
                   userTeam={user?.team}
                   copiedId={copiedId}
-                  confirmRunId={confirmRunId}
                   executingId={executingId}
                   togglingId={togglingId}
                   onCopyId={copyToClipboard}
-                  onRun={handleRun}
+                  onRun={confirmRun}
                   onToggle={handleToggleSchema}
-                  onConfirmRun={setConfirmRunId}
                   onViewSource={fetchRunbookContent}
                   onEdit={(s) =>
                     router.push(`/schemas/${encodeURIComponent(s.id)}`)
@@ -655,13 +659,11 @@ export default function SchemasPage() {
               userRole={user?.role}
               userTeam={user?.team}
               copiedId={copiedId}
-              confirmRunId={confirmRunId}
               executingId={executingId}
               togglingId={togglingId}
               onCopyId={copyToClipboard}
-              onRun={handleRun}
+              onRun={confirmRun}
               onToggle={handleToggleSchema}
-              onConfirmRun={setConfirmRunId}
               onViewSource={fetchRunbookContent}
               onEdit={(s) =>
                 router.push(`/schemas/${encodeURIComponent(s.id)}`)
@@ -760,6 +762,57 @@ export default function SchemasPage() {
           )}
         </div>
       </div>
+
+      {/* Run Confirmation Modal */}
+      {schemaToRun && (
+        <div
+          className="fixed inset-0 bg-cloudo-dark/95 backdrop-blur-md flex items-center justify-center z-[60] p-4"
+          onClick={() => executingId === null && setSchemaToRun(null)}
+        >
+          <div
+            className="bg-cloudo-panel border border-cloudo-accent/30 max-w-sm w-full p-10 text-center space-y-8 animate-in zoom-in-95 relative overflow-hidden"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="absolute top-0 left-0 w-full h-1 bg-cloudo-accent/50" />
+
+            <div className="w-14 h-14 bg-cloudo-accent/10 border border-cloudo-accent/20 flex items-center justify-center mx-auto text-cloudo-accent">
+              <HiOutlinePlay className="w-7 h-7" />
+            </div>
+
+            <div className="space-y-3">
+              <h3 className="text-base font-black text-cloudo-text uppercase tracking-[0.15em]">
+                Trigger Manual Run
+              </h3>
+              <p className="text-sm text-cloudo-muted uppercase font-bold leading-relaxed">
+                This will execute the runbook right now:
+                <br />
+                <span className="text-cloudo-accent mt-2 block font-mono text-base">
+                  {schemaToRun.name} ({schemaToRun.id})
+                </span>
+              </p>
+            </div>
+
+            <div className="flex flex-col gap-3 pt-4">
+              <button
+                onClick={() => handleRun(schemaToRun.id)}
+                disabled={executingId === schemaToRun.id}
+                className="w-full bg-cloudo-accent text-cloudo-dark py-4 text-sm font-black uppercase tracking-[0.15em] hover:bg-cloudo-accent/90 transition-all disabled:opacity-50"
+              >
+                {executingId === schemaToRun.id
+                  ? "Triggering..."
+                  : "Confirm Run Now"}
+              </button>
+              <button
+                onClick={() => setSchemaToRun(null)}
+                disabled={executingId === schemaToRun.id}
+                className="text-sm font-black text-cloudo-muted hover:text-cloudo-text uppercase tracking-wide py-2 transition-all"
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Delete Confirmation Modal */}
       {schemaToDelete && (
