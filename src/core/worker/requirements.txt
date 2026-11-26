@@ -21,3 +21,5 @@ azure-monitor-query
 slack-sdk==3.36.0
 #postgresql client
 psycopg2-binary
+# mongodb client
+pymongo
